@@ -137,7 +137,7 @@ HEADERS_OAI = {
     "Authorization": f"Bearer {AI_API_KEY}",
     "Content-Type": "application/json",
     "ngrok-skip-browser-warning": "true",
-    "User-Agent": "Mozilla/5.0"
+    "User-Agent": "OpenAI-Python/1.0.0"
 }
 
 ENDPOINTS_OAI = ["/chat/completions", "/v1/chat/completions", "/api/v1/chat/completions"]
