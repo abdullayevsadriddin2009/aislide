@@ -1,11 +1,13 @@
+# Maxfiy fayllar
+.env
+.env.*
+
+# Python kesh fayllari
 __pycache__/
 *.pyc
 *.pyo
-.env
-*.db
-bot_database.db
-*.log
-bot_logs.log
-output/
-.venv/
-venv/
+*.pyd
+
+# Boshqa keraksizlar
+.DS_Store
+node_modules/
