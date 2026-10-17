@@ -1,0 +1,29 @@
+# Render.com avtomatik konfiguratsiya
+services:
+  - type: web
+    name: ai-slide-bot
+    runtime: python
+    plan: free                    # doimiy ishlashi uchun: starter ($7/oy) yoki free + UptimeRobot
+    region: frankfurt
+    buildCommand: pip install -r requirements.txt
+    startCommand: python run.py
+    healthCheckPath: /
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: BOT_TOKEN
+        sync: false                # Render dashboard'da qo'lda kiritiladi
+      - key: ADMIN_ID
+        sync: false
+      - key: AI_BASE_URL
+        sync: false                # masalan: https://openrouter.ai/api/v1
+      - key: AI_API_KEY
+        sync: false
+      - key: AI_MODEL
+        value: auto
+      - key: WEB_ADMIN_PASSWORD
+        sync: false
+      - key: FREE_MODE
+        value: "1"
+      - key: DATA_DIR
+        value: /opt/render/project/src/data
