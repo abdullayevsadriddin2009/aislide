@@ -139,7 +139,7 @@ HEADERS_OAI = {
     "ngrok-skip-browser-warning": "true"
 }
 
-ENDPOINTS_OAI = ["/v1/chat/completions", "/chat/completions", "/api/v1/chat/completions"]
+ENDPOINTS_OAI = ["/chat/completions", "/v1/chat/completions", "/api/v1/chat/completions"]
 
 CANDIDATE_URLS = list(dict.fromkeys([
     AI_API_URL, "http://127.0.0.1:31415", "http://localhost:31415",
