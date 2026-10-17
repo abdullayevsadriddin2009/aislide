@@ -15,9 +15,9 @@ except Exception:
     DATA_DIR = BASE_DIR
 DB_PATH = os.path.join(DATA_DIR, "bot_database.db")
 # ===== AI API (freellmapi) =====
-AI_BASE_URL = os.getenv("AI_BASE_URL", "http://127.0.0.1:31415")
+AI_BASE_URL = os.environ.get("AI_BASE_URL", "https://area-tarnish-drained.ngrok-free.dev")
 AI_API_URL = AI_BASE_URL
-AI_API_KEY = os.getenv("AI_API_KEY", "freellmapi-3152adfb01a3283afee590e02c449d1454c914868f248af5")
+AI_API_KEY = os.environ.get("AI_API_KEY", "3152adfb01a3283afee590e02c449d1454c914868f248af5")
 AI_MODEL = os.getenv("AI_MODEL", "auto")
 AI_TIMEOUT = int(os.getenv("AI_TIMEOUT", "120"))
 # ===== Proxy (Telegram bloklangan bo'lsa) =====
