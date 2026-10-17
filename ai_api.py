@@ -36,42 +36,42 @@ API_LIST = [
         "name": "Groq 1",
         "base_url": "https://api.groq.com/openai/v1",
         "api_key": os.getenv("GROQ_KEY_1", ""),
-        "model": "llama3-8b-8192",
+        "model": "llama3-8b-8192",  # ✅ Bor
         "type": "openai"
     },
     {
         "name": "Groq 2",
         "base_url": "https://api.groq.com/openai/v1",
         "api_key": os.getenv("GROQ_KEY_2", ""),
-        "model": "llama3-8b-8192",
+        "model": "llama3-8b-8192",  # ✅ Bor
         "type": "openai"
     },
     {
         "name": "Google AI 1",
-        "base_url": "https://generativelanguage.googleapis.com/v1beta",
+        "base_url": "https://generativelanguage.googleapis.com/v1",  # ✅ v1beta emas, v1
         "api_key": os.getenv("GOOGLE_KEY_1", ""),
-        "model": "gemini-pro",
+        "model": "gemini-1.5-flash",  # ✅ gemini-pro emas
         "type": "google"
     },
     {
         "name": "Google AI 2",
-        "base_url": "https://generativelanguage.googleapis.com/v1beta",
+        "base_url": "https://generativelanguage.googleapis.com/v1",  # ✅ v1
         "api_key": os.getenv("GOOGLE_KEY_2", ""),
-        "model": "gemini-pro",
+        "model": "gemini-1.5-flash",  # ✅ yangi model
         "type": "google"
     },
     {
         "name": "Open Code",
         "base_url": "https://api.openai.com/v1",
         "api_key": os.getenv("OPENCODE_KEY", ""),
-        "model": "gpt-3.5-turbo",
+        "model": "gpt-3.5-turbo",  # ✅ Qo'shildi
         "type": "openai"
     },
     {
         "name": "Local FreeLLMAPI",
-        "base_url": AI_API_URL,
-        "api_key": os.getenv("LOCAL_API_KEY", ""),
-        "model": AI_MODEL,
+        "base_url": os.getenv("AI_BASE_URL", ""),
+        "api_key": os.getenv("AI_API_KEY", ""),  # ✅ To'g'rilandi
+        "model": os.getenv("AI_MODEL", "auto"),
         "type": "openai"
     }
 ]
