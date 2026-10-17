@@ -135,8 +135,8 @@ PREDEFINED_SLIDES = {
 # === API sozlamalari ===
 HEADERS_OAI = {
     "Authorization": f"Bearer {AI_API_KEY}",
-    "Content-Type": "application/json"
-    "ngrok-skip-browser-warning": "true" 
+    "Content-Type": "application/json",
+    "ngrok-skip-browser-warning": "true"
 }
 
 ENDPOINTS_OAI = ["/v1/chat/completions", "/chat/completions", "/api/v1/chat/completions"]
