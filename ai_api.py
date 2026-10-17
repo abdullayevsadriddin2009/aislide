@@ -1,4 +1,4 @@
-"""AI API integratsiyasi — to'liq ishlovchi versiya.
+"""AI API integratsiyasi — ko'p manbali avtomatik almashish versiyasi.
 Oldindan tayyorlangan slayd strukturalari (4 ta mashhur mavzu).
 Rasm faqat 1, 4, 7, oxirgi slaydlarda — har birida 1 ta.
 Matn hajmi: 10 slayd = 6000+ belgi, 15 = 9000+, 25 = 15000+
@@ -8,15 +8,87 @@ import asyncio
 import json
 import re
 import os
-from config import AI_API_URL, AI_API_KEY, AI_TIMEOUT, AI_MODEL
+from dotenv import load_dotenv
+
+# .env faylni yuklash
+load_dotenv()
+
+from config import AI_API_URL, AI_MODEL, AI_TIMEOUT
 
 # === Holat ===
 LAST_ERROR = "hali sinanmadi"
 WORKING_URL = None
-PIXABAY_KEY = "57980675-db40c8e4d78300c2621fdfb50"
+PIXABAY_KEY = os.getenv("PIXABAY_KEY", "")
 
-# === Rasmli slaydlar indekslari (0-index): 1, 4, 7, oxirgi ===
+# === Rasmli slaydlar indekslari (0-index: 0, 3, 6, oxirgi) ===
 IMAGE_SLIDE_INDICES = [0, 3, 6]
+
+# === API ro'yxati — avtomatik almashish tizimi ===
+API_LIST = [
+    {
+        "name": "OpenRouter",
+        "base_url": "https://openrouter.ai/api/v1",
+        "api_key": os.getenv("OPENROUTER_KEY", ""),
+        "model": "openai/gpt-3.5-turbo",
+        "type": "openai"
+    },
+    {
+        "name": "Groq 1",
+        "base_url": "https://api.groq.com/openai/v1",
+        "api_key": os.getenv("GROQ_KEY_1", ""),
+        "model": "llama3-8b-8192",
+        "type": "openai"
+    },
+    {
+        "name": "Groq 2",
+        "base_url": "https://api.groq.com/openai/v1",
+        "api_key": os.getenv("GROQ_KEY_2", ""),
+        "model": "llama3-8b-8192",
+        "type": "openai"
+    },
+    {
+        "name": "Google AI 1",
+        "base_url": "https://generativelanguage.googleapis.com/v1beta",
+        "api_key": os.getenv("GOOGLE_KEY_1", ""),
+        "model": "gemini-pro",
+        "type": "google"
+    },
+    {
+        "name": "Google AI 2",
+        "base_url": "https://generativelanguage.googleapis.com/v1beta",
+        "api_key": os.getenv("GOOGLE_KEY_2", ""),
+        "model": "gemini-pro",
+        "type": "google"
+    },
+    {
+        "name": "Open Code",
+        "base_url": "https://api.openai.com/v1",
+        "api_key": os.getenv("OPENCODE_KEY", ""),
+        "model": "gpt-3.5-turbo",
+        "type": "openai"
+    },
+    {
+        "name": "Local FreeLLMAPI",
+        "base_url": AI_API_URL,
+        "api_key": os.getenv("LOCAL_API_KEY", ""),
+        "model": AI_MODEL,
+        "type": "openai"
+    }
+]
+
+CURRENT_API_INDEX = 0
+
+def get_current_api():
+    """Faol API ma'lumotini qaytaradi"""
+    return API_LIST[CURRENT_API_INDEX]
+
+def switch_to_next_api():
+    """Keyingi API ga o'tadi"""
+    global CURRENT_API_INDEX
+    CURRENT_API_INDEX = (CURRENT_API_INDEX + 1) % len(API_LIST)
+    api = get_current_api()
+    _log(f"⚠️ Avvalgi API ishlamadi! Keyingisiga o'tildi: {api['name']}")
+    return api
 
 # === Yordamchi funksiyalar ===
 def clean_ai_text(text):
@@ -51,7 +123,7 @@ ALL_LANGS = ("uz", "ru", "en", "tr", "de", "fr")
 def _lang_name(code):
     return LANG_NAMES.get(str(code).lower(), "o'zbek")
 
-# === Rasm qidiruv lug'ati (o'zbekcha -> inglizcha) ===
+# === Rasm qidiruv lug'ati ===
 SEARCH_MAP = {
     "alisher navoiy": "Alisher Navoi portrait historical poet",
     "navoiy": "Alisher Navoi writer historical",
@@ -132,38 +204,50 @@ PREDEFINED_SLIDES = {
     }
 }
 
-# === API sozlamalari ===
-HEADERS_OAI = {
-    "Authorization": f"Bearer {AI_API_KEY}",
-    "Content-Type": "application/json",
-    "ngrok-skip-browser-warning": "true",
-    "User-Agent": "OpenAI-Python/1.0.0"
-}
-
-ENDPOINTS_OAI = ["/chat/completions", "/v1/chat/completions", "/api/v1/chat/completions"]
-
-CANDIDATE_URLS = list(dict.fromkeys([
-    AI_API_URL, "http://127.0.0.1:31415", "http://localhost:31415",
-    "http://127.0.0.1:3000", "http://127.0.0.1:8080",
-]))
-
-SYSTEM_PROMPT = """Siz mutaxassis yordamchisiz. Barcha javoblar to'liq, batafsil, faktlarga asoslangan bo'lsin.
-Faqat tasdiqlangan ma'lumotlardan foydalaning. Hech qanday * # belgi ishlatmang."""
-
-CHAT_SYSTEM = """Siz do'stona, bilimdon AI yordamchisiz. Foydalanuvchi savollariga to'liq, batafsil javob bering.
-Faqat ishonchli ma'lumotlardan foydalaning. Hech qanday * # belgi ishlatmang."""
-
-async def _try_post(url, payload, headers):
+# === So'rov yuborish funksiyalari ===
+async def _try_post(api, payload):
+    """Tanlangan API ga so'rov yuboradi"""
     global LAST_ERROR
+    if not api["api_key"]:
+        LAST_ERROR = f"Kalit mavjud emas: {api['name']}"
+        return None, None, LAST_ERROR
+        
     try:
-        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=AI_TIMEOUT)) as session:
-            async with session.post(url, json=payload, headers=headers) as resp:
-                body = await resp.text()
-                if resp.status == 200:
-                    LAST_ERROR = None
-                    return 200, body, None
-                LAST_ERROR = f"HTTP {resp.status}: {body[:150]}"
-                return resp.status, None, LAST_ERROR
+        headers = {"Content-Type": "application/json"}
+        if api["type"] == "google":
+            url = f"{api['base_url']}/models/{api['model']}:generateContent?key={api['api_key']}"
+            data = {"contents": [{"parts": [{"text": payload["messages"][-1]["content"]}]}]}
+            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=AI_TIMEOUT)) as session:
+                async with session.post(url, json=data, timeout=AI_TIMEOUT) as resp:
+                    body = await resp.text()
+                    if resp.status == 200:
+                        LAST_ERROR = None
+                        try:
+                            data = json.loads(body)
+                            text = data["candidates"][0]["content"]["parts"][0]["text"]
+                            return 200, text, None
+                        except Exception as e:
+                            LAST_ERROR = f"Javobni tahlil qilib bo'lmadi: {e}"
+                            return resp.status, None, LAST_ERROR
+                    LAST_ERROR = f"HTTP {resp.status}: {body[:150]}"
+                    return resp.status, None, LAST_ERROR
+        else:
+            headers["Authorization"] = f"Bearer {api['api_key']}"
+            url = f"{api['base_url']}/chat/completions"
+            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=AI_TIMEOUT)) as session:
+                async with session.post(url, headers=headers, json=payload, timeout=AI_TIMEOUT) as resp:
+                    body = await resp.text()
+                    if resp.status == 200:
+                        LAST_ERROR = None
+                        try:
+                            data = json.loads(body)
+                            text = data["choices"][0]["message"]["content"]
+                            return 200, text, None
+                        except Exception as e:
+                            LAST_ERROR = f"Javobni tahlil qilib bo'lmadi: {e}"
+                            return resp.status, None, LAST_ERROR
+                    LAST_ERROR = f"HTTP {resp.status}: {body[:150]}"
+                    return resp.status, None, LAST_ERROR
     except aiohttp.ClientConnectorError as e:
         LAST_ERROR = f"Ulanib bo'lmadi: {e}"
         return None, None, LAST_ERROR
@@ -174,63 +258,40 @@ async def _try_post(url, payload, headers):
         LAST_ERROR = f"Xato: {type(e).__name__}: {e}"
         return None, None, LAST_ERROR
 
-async def test_api():
-    global WORKING_URL
-    lines = [f"Kalit: {AI_API_KEY[:15]}...", f"Model: {AI_MODEL}", ""]
-    for base in CANDIDATE_URLS:
-        try:
-            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=5)) as session:
-                async with session.get(base) as resp:
-                    lines.append(f"GET {base}/ → HTTP {resp.status}")
-        except Exception:
-            lines.append(f"GET {base}/ → ulanib bo'lmadi")
-            continue
-        payload = {"model": AI_MODEL, "messages": [{"role": "user", "content": "Salom"}], "max_tokens": 20}
-        for ep in ENDPOINTS_OAI:
-            status, body, err = await _try_post(f"{base}{ep}", payload, HEADERS_OAI)
-            if status == 200:
-                WORKING_URL = base
-                lines.append(f"POST {base}{ep} → ✅ 200 OK (ishlaydi!)")
-                lines.append(f"\n✅ Ishlaydigan manzil: {base}")
-                return "\n".join(lines)
-            lines.append(f"POST {base}{ep} → ❌ {err or status}")
-    lines.append("\n⚠️ Hech bir manzilda ishlaydigan AI server topilmadi.")
-    lines.append("Yechim: freellmapi dasturini ishga tushiring.")
-    return "\n".join(lines)
-
 async def _chat_complete(prompt, system=None, max_tokens=16000):
-    global WORKING_URL
+    """Asosiy funksiya — ishlaganicha API almashadi"""
+    global CURRENT_API_INDEX
     messages = [
-        {"role": "system", "content": system or SYSTEM_PROMPT},
+        {"role": "system", "content": system or "Siz mutaxassis yordamchisiz. Barcha javoblar to'liq, batafsil, faktlarga asoslangan bo'lsin. Hech qanday * # belgi ishlatmang."},
         {"role": "user", "content": prompt}
     ]
-    payload = {"model": AI_MODEL, "messages": messages, "temperature": 0.7, "max_tokens": max_tokens}
-    urls = ([WORKING_URL] if WORKING_URL else []) + [u for u in CANDIDATE_URLS if u != WORKING_URL]
-    for base in urls:
-        if not base:
+    payload = {"messages": messages, "temperature": 0.7, "max_tokens": max_tokens}
+    
+    for attempt in range(len(API_LIST)):
+        api = get_current_api()
+        if not api["api_key"]:
+            _log(f"O'tkazib yuborilmoqda: {api['name']} — kalit kiritilmagan")
+            switch_to_next_api()
             continue
-        _log(f"Sinab ko'rilmoqda: {base}")
-        for ep in ENDPOINTS_OAI:
-            status, body, err = await _try_post(f"{base}{ep}", payload, HEADERS_OAI)
-            if status == 200 and body:
-                try:
-                    data = json.loads(body)
-                    choices = data.get("choices", [{}])
-                    if choices:
-                        txt = choices[0].get("message", {}).get("content")
-                        if txt:
-                            txt = clean_ai_text(txt)
-                            txt = verify_facts(txt)
-                            WORKING_URL = base
-                            _log(f"✅ {base} orqali javob olindi ({len(txt)} belgi)")
-                            return txt.strip()
-                except Exception as e:
-                    _log(f"Javobni tahlil qilishda xato: {e}")
-    _log("⚠️ Hech bir manzil javob bermadi")
-    return None
+            
+        _log(f"Sinab ko'rilmoqda: {api['name']}")
+        status, text, err = await _try_post(api, payload)
+        
+        if status == 200 and text:
+            text = clean_ai_text(text)
+            text = verify_facts(text)
+            _log(f"✅ {api['name']} orqali javob olindi")
+            return text.strip()
+        
+        _log(f"❌ {api['name']} ishlamadi: {err}")
+        switch_to_next_api()
+        await asyncio.sleep(0.5)
+    
+    _log("⚠️ BARCHA API lar ishlashdan to'xtadi yoki kalitlar kiritilmagan!")
+    return "⚠️ Hozir barcha manbalar ishlashdan to'xtadi. Iltimos, .env faylni tekshiring va keyinroq urinib ko'ring."
 
 async def chat_answer(question):
-    return await _chat_complete(question, system=CHAT_SYSTEM)
+    return await _chat_complete(question, system="Siz do'stona, bilimdon AI yordamchisiz. Foydalanuvchi savollariga to'liq, batafsil javob bering. Hech qanday * # belgi ishlatmang.")
 
 async def generate(service, topic, options, lang="uz"):
     from services import SERVICES
@@ -238,25 +299,18 @@ async def generate(service, topic, options, lang="uz"):
     name = s.get("name", service)
     pages = int(options.get("pages", 10) or 10)
     ln = _lang_name(lang)
-    # Bob soni: sahifa soniga mos — 15 sahifa = 12+ bob
     bob_count = max(8, pages)
-    doc_chars = pages * 900  # har sahifa ~900 belgi
+    doc_chars = pages * 900
+    
     prompt = (
-        f"Topic: {topic}\nService: {name}\nLength: {pages} pages (minimum {doc_chars} characters total)\n\n"
-        f"⚠️ WRITE EVERYTHING STRICTLY IN {ln.upper()} LANGUAGE ONLY! Not a single word in another language.\n\n"
-        f"⚠️ MINIMUM {doc_chars} CHARACTERS TOTAL! At least {bob_count} sections (chapters). "
-        f"Each chapter at least {max(400, doc_chars//bob_count)} characters, detailed with facts, examples, statistics.\n\n"
-        f"REQUIRED STRUCTURE:\n"
-        f"1. Introduction (Kirish) — relevance, goals, objectives\n"
-        f"2. Main chapters (Asosiy qism) — {bob_count-4} detailed chapters with analysis, facts, statistics, historical context, real examples\n"
-        f"3. Analysis (Tahlil) — critical evaluation\n"
-        f"4. Conclusion (Xulosa) — key findings, summary\n"
-        f"5. References (Adabiyotlar)\n\n"
-        f"Each chapter must be thorough, detailed, with specific data, dates, numbers, and real examples. "
-        f"Do not use * or # symbols. Write long, informative paragraphs. The document must be comprehensive and academic."
+        f"Topic: {topic}\nService: {name}\nLength: {pages} sahifa (kamida {doc_chars} belgi)\n\n"
+        f"Faqat {ln} tilida yozing! Boshqa til aralashmasin.\n\n"
+        f"Kamida {bob_count} bo'limdan iborat bo'lsin: Kirish → Asosiy qism → Tahlil → Xulosa.\n"
+        f"Har bir bo'limda faktlar, sanalar, raqamlar va misollar bo'lsin."
     )
-    result = await _chat_complete(prompt, max_tokens=16000)
-    if result:
+    
+    result = await _chat_complete(prompt)
+    if result and "⚠️" not in result:
         return result, True
     await asyncio.sleep(1)
     return _fallback_text(service, topic, options, lang, bob_count), False
@@ -266,107 +320,68 @@ def _is_image_slide(idx, total):
     return idx in IMAGE_SLIDE_INDICES or idx == total - 1
 
 async def generate_slides_structured(topic, subject, lang, count):
-    """API dan to'liq kontent oladi — kerakli hajmdagi belgi, to'g'ri tuzilishda.
-    Struktura: Kirish → Asosiy qism (boblar) → Xulosa.
-    FAQAT API javob bermasa, fallback ishlatiladi."""
     ln = _lang_name(lang)
-    # To'g'ri belgi sonlari (foydalanuvchi talabi):
-    # 10→7000, 15→10000, 20→13000, 25→18000, 30→22000
     char_map = {5: 4000, 7: 5000, 10: 7000, 12: 8500, 15: 10000,
                 18: 11500, 20: 13000, 25: 18000, 30: 22000}
     target_chars = char_map.get(count, count * 750)
-    # Har bir slayd uchun taxminiy belgi (sarlavha + 8-10 gap)
-    per_slide = max(500, target_chars // count)
-
-    system = f"""You are an expert academic content writer. 
-Write EVERYTHING strictly in {ln.upper()} language ONLY! Not a single word in another language.
-Total output must be at least {target_chars} characters. 
-Each slide must have a clear title and 8-10 detailed, long, informative sentences with specific facts, dates, statistics, and examples.
-Structure the slides logically: Introduction (Kirish) → Main content (Asosiy qism, multiple detailed slides) → Conclusion (Xulosa).
-Be very thorough, detailed, and academic. Do NOT use markdown symbols (*, #, ```). Return ONLY valid JSON."""
-
-    prompt = f"""Create a detailed academic presentation on the topic below.
-
-TOPIC: {topic}
-SUBJECT: {subject}
-LANGUAGE: {ln.upper()} ONLY! Every single word must be in {ln.upper()}. Do NOT mix languages.
-NUMBER OF SLIDES: {count}
-MINIMUM TOTAL CHARACTERS: {target_chars} (at least {per_slide} characters per slide)
-
-REQUIRED STRUCTURE:
-- Slide 1: Title slide (topic name)
-- Slides 2-3: Introduction (Kirish) — relevance, goals, objectives
-- Slides 4 to {count-2}: Main content (Asosiy qism) — detailed analysis, facts, statistics, examples, historical context, each slide focused on one subtopic
-- Slide {count-1}: Analysis and discussion (Tahlil)
-- Slide {count}: Conclusion (Xulosa) — key findings, summary
-
-Each slide must have:
-- A clear, specific title (not generic)
-- 8-10 complete, long, detailed sentences with specific facts, numbers, dates, and real examples
-- No bullet points with 1-2 words — full sentences only
-
-Return ONLY a valid JSON array (no extra text, no markdown, no explanation):
-[{{"title":"Slide title here","content":["Sentence 1.","Sentence 2.","Sentence 3.","Sentence 4.","Sentence 5.","Sentence 6.","Sentence 7.","Sentence 8."]}}]
-
-IMPORTANT: Return exactly {count} slide objects. Total text must be at least {target_chars} characters!"""
-
-    # 2 urinish — birinchi urinish qisqa bo'lsa, yana so'raymiz
+    
+    system = f"""Siz akademik kontent yozish bo'yicha mutaxassissiz. 
+Hamma narsa faqat {ln} tilida yozilsin! Har bir slayd aniq sarlavha va 8-10 gapdan iborat bo'lsin.
+Belgi soni kamida {target_chars} ta bo'lsin. * # belgi ishlatmang. Faqat JSON qaytaring."""
+    
+    prompt = f"""{topic} mavzusida {count} ta slaydli taqdimot tayyorlang.
+Til: faqat {ln}.
+Har slayd: sarlavha + 8-10 gap, batafsil, faktlar bilan.
+JSON formatida qaytaring: [{{"title":"...","content":["gap1","gap2"]}}]"""
+    
     txt = None
     for attempt in range(2):
         txt = await _chat_complete(prompt, system=system, max_tokens=16000)
         if txt and len(txt) > target_chars * 0.5:
             break
-        _log(f"⚠️ Urinish {attempt+1}: {len(txt) if txt else 0} belgi (kerak: {target_chars}), qayta so'ralmoqda...")
         await asyncio.sleep(1)
-
+    
     slides = _extract_json(txt) if txt else None
     if slides and isinstance(slides, list) and len(slides) >= 3:
         out = []
-        # Agar kam slayd kelsa — takrorlab/kengaytiramiz
         while len(slides) < count:
             slides.append(slides[len(slides) % len(slides)])
         for i, s in enumerate(slides[:count]):
-            content_list = s.get("content", ["Preparing content..."])
+            content_list = s.get("content", ["Ma'lumot tayyorlanmoqda..."])
             if isinstance(content_list, str):
                 content_list = [p.strip() for p in content_list.split("\n") if p.strip()]
-            # Har bir slaydda kamida 5 gap bo'lsin (tilga mos, o'zbekcha aralashmasin)
-            PAD = {"uz": f"{topic} bo'yicha batafsil tahlil — faktlar, statistika va misollar bilan.",
-                   "ru": f"Подробный анализ темы «{topic}» — факты, статистика и примеры.",
-                   "en": f"Detailed analysis of {topic} — with facts, statistics and examples.",
-                   "tr": f"{topic} hakkında detaylı analiz — gerçekler, istatistikler ve örneklerle.",
-                   "de": f"Detaillierte Analyse von {topic} — mit Fakten, Statistiken und Beispielen.",
-                   "fr": f"Analyse détaillée de {topic} — faits, statistiques et exemples."}
-            pad_txt = PAD.get(str(lang).lower(), PAD["en"])
             while len(content_list) < 5:
-                content_list.append(pad_txt)
+                content_list.append(f"{topic} bo'yicha batafsil tahlil.")
             out.append({
                 "slide_number": i + 1,
-                "title": clean_ai_text(str(s.get("title", f"Part {i+1}"))),
+                "title": clean_ai_text(str(s.get("title", f"Bo'lim {i+1}"))),
                 "content": [clean_ai_text(str(c)) for c in content_list[:12]],
                 "has_image": _is_image_slide(i, count),
                 "image_prompt": _make_image_prompt(topic, i) if _is_image_slide(i, count) else None
             })
-        total = sum(len(" ".join(s["content"])) for s in out)
-        _log(f"✅ API dan tayyor: {len(out)} slayd | Jami {total} belgi (maqsad: {target_chars})")
+        _log(f"✅ Tayyor: {len(out)} slayd")
         return out, True
-
-    _log(f"⚠️ API javobi yaroqsiz ({len(txt) if txt else 0} belgi). Fallback ishlatilmoqda.")
-    await asyncio.sleep(1)
+    
+    _log("⚠️ API javobi yaroqsiz, zaxira versiya ishlatilmoqda")
     return _fallback_slides(topic, count, lang), False
 
-def _fallback_slides(topic, count, lang="uz"):
-    fb = _fb(lang)
-    out = []
-    for i in range(count):
-        sec = fb["slide_sections"][i % len(fb["slide_sections"])]
-        out.append({
-            "slide_number": i + 1,
-            "title": f"{topic}: {sec}" if i > 0 else topic,
-            "content": [b.format(topic=topic, sec=sec.lower()) for b in fb["slide_body"]],
-            "has_image": _is_image_slide(i, count),
-            "image_prompt": _make_image_prompt(topic, i) if _is_image_slide(i, count) else None
-        })
-    return out
+def _extract_json(text):
+    if not text:
+        return None
+    m = re.search(r"```(?:json)?\s*(\[.*?\])\s*```", text, re.DOTALL)
+    if m:
+        try:
+            return json.loads(m.group(1))
+        except Exception:
+            pass
+    start = text.find("[")
+    end = text.rfind("]")
+    if start != -1 and end > start:
+        try:
+            return json.loads(text[start:end+1])
+        except Exception:
+            pass
+    return None
 
 def _make_image_prompt(topic, idx):
     t = topic.lower()
@@ -384,14 +399,17 @@ def _make_image_prompt(topic, idx):
     else:
         return f"{base} legacy, starry sky or sunset, inspirational, cinematic, 8k"
 
+def _is_image_slide(idx, total):
+    return idx in IMAGE_SLIDE_INDICES or idx == total - 1
+
 async def search_images(query, count=5):
-    """Rasm qidiradi — FAQAT MOS KELGANLARINI qabul qiladi.
-    Agar mos rasm topilmasa, [] qaytaradi (dekorativ rasm ishlatiladi)."""
+    """Rasm qidiradi — FAQAT MOS KELGANLARINI qabul qiladi."""
     q = re.sub(r'[^\w\s\']', ' ', str(query)).strip()
     if len(q) < 3:
         _log(f"[RASM] So'z juda qisqa: '{q}'")
         return []
     q_en = q
+    
     for uz, en in SEARCH_MAP.items():
         if uz in q.lower():
             q_en = en
