@@ -40,19 +40,12 @@ API_LIST = [
             "openai/gpt-oss-20b"
         ]
     },
-    {
-        "name": "Cloudflare AI (zaxira)",
-        "base_url": "https://api.cloudflare.com/client/v4/accounts/283bb72354435f9cfd19a80c3edc93e0/ai/v1/chat/completions",
-        "account_id": "283bb72354435f9cfd19a80c3edc93e0",
-        "api_key": os.getenv("CLOUDFLARE_KEY", ""),
-        "type": "cloudflare",
-        "models": [
-            "@cf/meta/llama-3.3-70b-instruct",
-            "@cf/meta/llama-3.2-3b-instruct",
-            "@cf/mistral/mistral-7b-instruct-v0.2",
-            "@cf/google/gemma-2b-it-lora"
-        ]
-    },
+   {"name": "Cloudflare AI (zaxira)",
+     "base_url": "https://api.cloudflare.com/client/v4/accounts/{account_id}/ai/run",
+     "account_id": os.getenv("CLOUDFLARE_ACCOUNT_ID", ""),
+     "api_key": os.getenv("CLOUDFLARE_KEY", ""), "type": "cloudflare",
+     "models": ["@cf/meta/llama-3-8b-instruct", "@cf/meta/llama-3.1-8b-instruct",
+                "@cf/mistral/mistral-7b-instruct-v0.2", "@cf/google/gemma-7b-it-lora"]},
     {
         "name": "OpenRouter",
         "base_url": "https://openrouter.ai/api/v1",
