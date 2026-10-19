@@ -16,7 +16,7 @@ IMAGE_SLIDE_INDICES = [0, 3, 6]
 def _strip_html(text):
     return re.sub(r'<[^>]+>', '', str(text))
 
-# === API ro'yxati — AVVAL GROQ, keyin qolganlari ===
+# === API ro'yxati ===
 API_LIST = [
     {
         "name": "Groq 1 (asosiy)",
@@ -42,14 +42,15 @@ API_LIST = [
     },
     {
         "name": "Cloudflare AI (zaxira)",
-        "base_url": "https://api.cloudflare.com/client/v4/accounts/{account_id}/ai/v1",
-        "account_id": os.getenv("CLOUDFLARE_ACCOUNT_ID", ""),
+        "base_url": "https://api.cloudflare.com/client/v4/accounts/283bb72354435f9cfd19a80c3edc93e0/ai/v1/chat/completions",
+        "account_id": "283bb72354435f9cfd19a80c3edc93e0",
         "api_key": os.getenv("CLOUDFLARE_KEY", ""),
         "type": "cloudflare",
         "models": [
             "@cf/meta/llama-3.3-70b-instruct",
             "@cf/meta/llama-3.2-3b-instruct",
-            "@cf/mistral/mistral-7b-instruct-v0.2"
+            "@cf/mistral/mistral-7b-instruct-v0.2",
+            "@cf/google/gemma-2b-it-lora"
         ]
     },
     {
