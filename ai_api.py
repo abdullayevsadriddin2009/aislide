@@ -1,6 +1,4 @@
-"""AI API — avval Groq, limit tugasa Cloudflare va boshqalarga avtomatik o'tadi.
-Har bir API ichida bir nechta model. 6 til to'liq qo'llab-quvvatlanadi.
-"""
+"""AI API — avval Groq, limit tugasa Cloudflare va boshqalarga avtomatik o'tadi. Har bir API ichida bir nechta model. 6 til to'liq qo'llab-quvvatlanadi."""
 import aiohttp
 import asyncio
 import json
@@ -8,6 +6,7 @@ import re
 import os
 from dotenv import load_dotenv
 load_dotenv()
+
 from config import AI_API_URL, AI_MODEL, AI_TIMEOUT
 
 LAST_ERROR = "hali sinanmadi"
@@ -19,27 +18,69 @@ def _strip_html(text):
 
 # === API ro'yxati — AVVAL GROQ, keyin qolganlari ===
 API_LIST = [
-    {"name": "Groq 1 (asosiy)", "base_url": "https://api.groq.com/openai/v1",
-     "api_key": os.getenv("GROQ_KEY_1", ""), "type": "openai",
-     "models": ["llama-3.1-8b-instant", "llama-3.3-70b-versatile", "gpt-oss-120b", "gpt-oss-20b"]},
-    {"name": "Groq 2", "base_url": "https://api.groq.com/openai/v1",
-     "api_key": os.getenv("GROQ_KEY_2", ""), "type": "openai",
-     "models": ["llama-3.1-8b-instant", "llama-3.3-70b-versatile", "gpt-oss-120b", "gpt-oss-20b"]},
-    {"name": "Cloudflare AI (zaxira)",
-     "base_url": "https://api.cloudflare.com/client/v4/accounts/{account_id}/ai/run",
-     "account_id": os.getenv("CLOUDFLARE_ACCOUNT_ID", ""),
-     "api_key": os.getenv("CLOUDFLARE_KEY", ""), "type": "cloudflare",
-     "models": ["@cf/meta/llama-3-8b-instruct", "@cf/meta/llama-3.1-8b-instruct",
-                "@cf/mistral/mistral-7b-instruct-v0.2", "@cf/google/gemma-7b-it-lora"]},
-    {"name": "OpenRouter", "base_url": "https://openrouter.ai/api/v1",
-     "api_key": os.getenv("OPENROUTER_KEY", ""), "type": "openai",
-     "models": ["openai/gpt-3.5-turbo", "openai/gpt-4o-mini", "meta-llama/llama-3.1-8b-instruct"]},
-    {"name": "Google AI", "base_url": "https://generativelanguage.googleapis.com/v1beta",
-     "api_key": os.getenv("GOOGLE_KEY_1", ""), "type": "google",
-     "models": ["gemini-1.5-flash", "gemini-1.5-flash-8b", "gemini-1.5-pro"]},
-    {"name": "Local FreeLLMAPI", "base_url": AI_API_URL,
-     "api_key": os.getenv("AI_API_KEY", ""), "type": "openai",
-     "models": [AI_MODEL, "gpt-3.5-turbo", "llama3"]},
+    {
+        "name": "Groq 1 (asosiy)",
+        "base_url": "https://api.groq.com/openai/v1",
+        "api_key": os.getenv("GROQ_KEY_1", ""),
+        "type": "openai",
+        "models": [
+            "openai/gpt-oss-120b",       # ⭐ Eng kuchli, hozir ishlaydi
+            "openai/gpt-oss-20b",        # Zaxira, tezroq
+            "qwen/qwen3.8-27b"           # O'zbekcha yaxshi
+        ]
+    },
+    {
+        "name": "Groq 2",
+        "base_url": "https://api.groq.com/openai/v1",
+        "api_key": os.getenv("GROQ_KEY_2", ""),
+        "type": "openai",
+        "models": [
+            "openai/gpt-oss-120b",
+            "openai/gpt-oss-20b",
+            "qwen/qwen3.8-27b"
+        ]
+    },
+    {
+        "name": "Cloudflare AI (zaxira)",
+        "base_url": "https://api.cloudflare.com/client/v4/accounts/{account_id}/ai/v1",  # ✅ To'g'rilandi
+        "account_id": os.getenv("CLOUDFLARE_ACCOUNT_ID", ""),
+        "api_key": os.getenv("CLOUDFLARE_KEY", ""),
+        "type": "cloudflare",
+        "models": [
+            "@cf/meta/llama-3.3-70b-instruct",   # ⭐ Eng kuchli
+            "@cf/meta/llama-3.2-3b-instruct",    # Tezroq
+            "@cf/mistral/mistral-7b-instruct-v0.2"
+        ]
+    },
+    {
+        "name": "OpenRouter",
+        "base_url": "https://openrouter.ai/api/v1",
+        "api_key": os.getenv("OPENROUTER_KEY", ""),
+        "type": "openai",
+        "models": [
+            "openai/gpt-oss-120b",
+            "qwen/qwen3.8-27b",
+            "meta-llama/llama-3.2-3b-instruct"
+        ]
+    },
+    {
+        "name": "Google AI",
+        "base_url": "https://generativelanguage.googleapis.com/v1beta",
+        "api_key": os.getenv("GOOGLE_KEY_1", ""),
+        "type": "google",
+        "models": [
+            "gemini-2.0-flash-exp",
+            "gemini-1.5-flash",
+            "gemini-1.5-flash-8b"
+        ]
+    },
+    {
+        "name": "Local FreeLLMAPI",
+        "base_url": AI_API_URL,
+        "api_key": os.getenv("AI_API_KEY", ""),
+        "type": "openai",
+        "models": [AI_MODEL, "gpt-3.5-turbo", "llama3"]
+    },
 ]
 
 CURRENT_API_INDEX = 0
