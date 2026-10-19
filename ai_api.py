@@ -1,8 +1,10 @@
-"""AI API — Wikipediya asosida faktlar + 4 manbali rasm qidiruv + ko'p API almashish.
-Yangi:
-  1. generate_slides_structured avval Wikipediyadan (uz→ru→en) fakt oladi, AI ga manba beradi.
-  2. Rasm qidiruv: avval AI inglizcha kalit so'z yasaydi, keyin Wikipedia rasm + Pixabay + Pexels + Unsplash.
-  3. SEARCH_MAP kengaytirilgan (hujayra, fotosintez, atom, fizika, kimyo...).
+"""
+AI API — to'liq versiya
+========================
+✓ Barcha xizmatlar avval Wikipediyadan (uz→ru→en) fakt oladi
+✓ Rasm: Wikipedia rasmi + Pixabay + Pexels + Unsplash (4 manba)
+✓ Kalit so'zlarni AI avtomatik inglizchaga tarjima qiladi
+✓ Ko'p API + ko'p model avtomatik almashish
 """
 import aiohttp
 import asyncio
@@ -13,19 +15,17 @@ from dotenv import load_dotenv
 load_dotenv()
 from config import AI_API_URL, AI_MODEL, AI_TIMEOUT
 
-# === Holat ===
+# ===================== SOZLAMALAR =====================
 LAST_ERROR = "hali sinanmadi"
-PIXABAY_KEY = os.getenv("PIXABAY_KEY", "")
-PEXELS_KEY  = os.getenv("PEXELS_KEY", "")     # pexels.com/api — bepul
-UNSPLASH_KEY = os.getenv("UNSPLASH_KEY", "")  # unsplash.com/developers — bepul
+PIXABAY_KEY  = os.getenv("PIXABAY_KEY", "")
+PEXELS_KEY   = os.getenv("PEXELS_KEY", "")      # pexels.com/api — bepul
+UNSPLASH_KEY = os.getenv("UNSPLASH_KEY", "")    # unsplash.com/developers — bepul
 IMAGE_SLIDE_INDICES = [0, 3, 6]
-WIKI_LANGS = ["uz", "ru", "en"]               # qaysi tildan qidirish
+WIKI_LANGS = ["uz", "ru", "en"]                 # qidiruv tartibi
 USER_AGENT = "SlaydBot/1.0 (aloqa: admin@example.uz)"  # Wikipediya talab qiladi
+_KEYWORD_CACHE = {}                             # takror tarjima qilmaslik
 
-# === Kalit so'z keshi (takror tarjima qilmaslik uchun) ===
-_KEYWORD_CACHE = {}
-
-# === Har bir API uchun bir nechta model (eskisini saqladik) ===
+# ===================== API RO'YXATI =====================
 API_LIST = [
     {
         "name": "Groq 1 (asosiy)",
@@ -91,8 +91,7 @@ CURRENT_MODEL_INDEX = 0
 
 def get_current_api():  return API_LIST[CURRENT_API_INDEX]
 def get_current_model():
-    api = get_current_api()
-    return api["models"][CURRENT_MODEL_INDEX % len(api["models"])]
+    return get_current_api()["models"][CURRENT_MODEL_INDEX % len(get_current_api()["models"])]
 
 def switch_to_next_model() -> bool:
     global CURRENT_MODEL_INDEX
@@ -109,11 +108,10 @@ def switch_to_next_api():
     global CURRENT_API_INDEX, CURRENT_MODEL_INDEX
     CURRENT_API_INDEX = (CURRENT_API_INDEX + 1) % len(API_LIST)
     CURRENT_MODEL_INDEX = 0
-    api = get_current_api()
-    _log(f"⚠️ Avvalgi API ishlamadi! Keyingisiga o'tildi: {api['name']} | Model: {get_current_model()}")
-    return api
+    _log(f"⚠️ Keyingi API: {get_current_api()['name']} | Model: {get_current_model()}")
+    return get_current_api()
 
-# === Yordamchi ===
+# ===================== YORDAMCHI =====================
 def clean_ai_text(text):
     if not text: return ""
     text = re.sub(r'\*+', '', str(text))
@@ -137,127 +135,97 @@ LANG_NAMES = {"uz": "o'zbek", "ru": "rus", "en": "english", "tr": "turkish",
 ALL_LANGS = ("uz", "ru", "en", "tr", "de", "fr")
 def _lang_name(code): return LANG_NAMES.get(str(code).lower(), "o'zbek")
 
-# ============================================================
-# 1. WIKIPEDIYA — faktlar manbai (TOKEN KERAK EMAS)
-# ============================================================
-async def wikipedia_fetch(topic, max_chars=3500):
-    """Mavzuni Wikipediyada qidiradi: uz → ru → en. Fakt matn + sahifa rasmini qaytaradi."""
-    async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=15),
+# ===================== 1. WIKIPEDIYA =====================
+async def wikipedia_fetch(topic, max_chars=3500, full=False):
+    """Wikipediyadan fakt oladi: uz→ru→en. full=True → butun maqola (diplom/kurs uchun)."""
+    async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=20),
                                      headers={"User-Agent": USER_AGENT}) as session:
         for lang in WIKI_LANGS:
             try:
-                # 1-qadam: to'g'ri sahifa nomini topish (qidiruv)
                 search_url = (f"https://{lang}.wikipedia.org/w/api.php?action=query&list=search"
                               f"&srsearch={aiohttp.helpers.quote(topic)}&format=json&srlimit=1")
                 async with session.get(search_url) as resp:
                     if resp.status != 200: continue
-                    sdata = await resp.json()
-                    hits = sdata.get("query", {}).get("search", [])
+                    hits = (await resp.json()).get("query", {}).get("search", [])
                     if not hits: continue
                     title = hits[0]["title"]
 
-                # 2-qadam: sahifa matni + rasmni bir vaqtda olish
+                exintro = "" if full else "&exintro"
                 page_url = (f"https://{lang}.wikipedia.org/w/api.php?action=query&prop=extracts|pageimages"
-                            f"&exintro&explaintext&piprop=original&titles={aiohttp.helpers.quote(title)}"
+                            f"{exintro}&explaintext&piprop=original&titles={aiohttp.helpers.quote(title)}"
                             f"&format=json&redirects=1")
                 async with session.get(page_url) as resp:
                     if resp.status != 200: continue
-                    pdata = await resp.json()
-                    pages = pdata.get("query", {}).get("pages", {})
+                    pages = (await resp.json()).get("query", {}).get("pages", {})
                     page = next(iter(pages.values()), {})
                     extract = page.get("extract", "")
                     image = page.get("original", {}).get("source", "")
                     if extract and len(extract) > 100:
-                        _log(f"📚 Wikipedia ({lang}): '{title}' → {len(extract)} belgi, rasm: {'ha' if image else 'yoq'}")
-                        return {
-                            "found": True, "lang": lang, "title": title,
-                            "text": extract[:max_chars],
-                            "image": image,
-                            "url": f"https://{lang}.wikipedia.org/wiki/{title.replace(' ', '_')}"
-                        }
+                        _log(f"📚 Wikipedia ({lang}){' [to‘liq]' if full else ''}: '{title}' → {len(extract)} belgi")
+                        return {"found": True, "lang": lang, "title": title,
+                                "text": extract[:max_chars], "image": image,
+                                "url": f"https://{lang}.wikipedia.org/wiki/{title.replace(' ', '_')}"}
             except Exception as e:
-                _log(f"[WIKI {lang}] xato: {e}")
-                continue
-    _log(f"[WIKI] '{topic}' uchun hech qaysi tilda maqola topilmadi")
+                _log(f"[WIKI {lang}] xato: {e}"); continue
+    _log(f"[WIKI] '{topic}' topilmadi")
     return {"found": False, "text": "", "image": "", "url": "", "title": "", "lang": ""}
 
-# ============================================================
-# 2. RASM QIDIRUV — kalit so'zlarni AI yasaydi + 4 manba
-# ============================================================
+def wiki_block(wiki):
+    """Wiki natijasidan prompt uchun blok yasaydi (barcha xizmatlarda ishlatiladi)."""
+    if not wiki.get("found"): return ""
+    return (f"\n\n=== WIKIPEDIYA MANBASI ({wiki['lang'].upper()}) ===\n"
+            f"Sarlavha: {wiki['title']}\n"
+            f"Quyidagi faktlarni asos qilib yoz, xayoliy ma'lumot qo'shma, "
+            f"sanalar va raqamlarni aynan shunday qoldir:\n{wiki['text']}\n"
+            f"Manba: {wiki['url']}")
+
+# ===================== 2. RASM QIDIRUV =====================
 SEARCH_MAP = {
     # shaxslar
-    "alisher navoiy": "Alisher Navoi portrait poet",
-    "navoiy": "Alisher Navoi writer poet",
-    "amir temur": "Amir Timur Tamerlane conqueror",
-    "temur": "Timur Tamerlane empire",
+    "alisher navoiy": "Alisher Navoi portrait poet", "navoiy": "Alisher Navoi writer poet",
+    "amir temur": "Amir Timur Tamerlane conqueror", "temur": "Timur Tamerlane empire",
     "jaloliddin manguberdi": "Jalal ad-Din Manguberdi Khwarazmshah warrior",
     "manguberdi": "Jalal ad-Din Manguberdi hero",
-    "mirzo ulugbek": "Ulugh Beg astronomer Samarkand observatory",
-    "ulugbek": "Ulugh Beg Timurid scholar",
+    "mirzo ulugbek": "Ulugh Beg astronomer Samarkand observatory", "ulugbek": "Ulugh Beg Timurid scholar",
     "ibn sino": "Avicenna Ibn Sina physician philosopher",
-    "alisher navoi": "Alisher Navoi portrait poet",
     "islom karimov": "Islam Karimov president Uzbekistan",
-    "amir temur": "Amir Timur historical",
     # shaharlar
-    "toshkent": "Tashkent city Uzbekistan",
-    "samarqand": "Samarkand Registan square",
-    "buxoro": "Bukhara old city Uzbekistan",
-    "xorazm": "Khiva Khwarezm fortress",
-    "farg'ona": "Fergana valley Uzbekistan",
-    "andijon": "Andijan city Uzbekistan",
-    "qoraqalpog'iston": "Karakalpakstan Aral sea",
-    "uzbekiston": "Uzbekistan landmark culture",
-    # fanlar / maktab mavzulari (yangi)
-    "hujayra": "biological cell structure microscope",
-    "fotosintez": "photosynthesis plant leaf chlorophyll",
-    "atom": "atom structure nucleus electrons",
-    "molekula": "molecule chemistry 3d structure",
-    "dnk": "DNA double helix genetics",
-    "genetika": "genetics DNA chromosome",
-    "evolyutsiya": "evolution biology darwin",
-    "fizika": "physics laboratory experiment",
-    "kimyo": "chemistry laboratory flask",
-    "biologiya": "biology science laboratory",
-    "matematika": "mathematics formulas numbers",
-    "geografiya": "geography globe map world",
-    "tarix": "history ancient civilization",
-    "adabiyot": "literature books library",
-    "informatika": "computer science coding programming",
-    "iqtisod": "economy finance business chart",
-    "huquq": "law justice scale court",
-    "botanika": "botany plants flowers",
-    "zoologiya": "zoology animals wildlife",
-    "anatomiya": "human anatomy body medical",
-    "geologiya": "geology rocks earth layers",
-    "astronomiya": "astronomy stars galaxy telescope",
+    "toshkent": "Tashkent city Uzbekistan", "samarqand": "Samarkand Registan square",
+    "buxoro": "Bukhara old city Uzbekistan", "xorazm": "Khiva Khwarezm fortress",
+    "farg'ona": "Fergana valley Uzbekistan", "andijon": "Andijan city Uzbekistan",
+    "qoraqalpog'iston": "Karakalpakstan Aral sea", "uzbekiston": "Uzbekistan landmark culture",
+    # fanlar
+    "hujayra": "biological cell structure microscope", "fotosintez": "photosynthesis plant leaf chlorophyll",
+    "atom": "atom structure nucleus electrons", "molekula": "molecule chemistry 3d structure",
+    "dnk": "DNA double helix genetics", "genetika": "genetics DNA chromosome",
+    "evolyutsiya": "evolution biology darwin", "fizika": "physics laboratory experiment",
+    "kimyo": "chemistry laboratory flask", "biologiya": "biology science laboratory",
+    "matematika": "mathematics formulas numbers", "geografiya": "geography globe map world",
+    "tarix": "history ancient civilization", "adabiyot": "literature books library",
+    "informatika": "computer science coding programming", "iqtisod": "economy finance business chart",
+    "huquq": "law justice scale court", "botanika": "botany plants flowers",
+    "zoologiya": "zoology animals wildlife", "anatomiya": "human anatomy body medical",
+    "geologiya": "geology rocks earth layers", "astronomiya": "astronomy stars galaxy telescope",
 }
 
 STOP_WORDS = {"portrait", "historical", "hero", "leader", "conqueror", "poet", "writer",
     "scholar", "astronomer", "city", "architecture", "culture", "landmark", "warrior",
     "prince", "scientist", "figure", "realistic", "8k", "photo", "ancient", "epic",
     "scene", "heritage", "monument", "legacy", "starry", "sky", "sunset", "inspirational",
-    "cinematic", "dignified", "pose", "detailed", "photorealistic", "structure", "laboratory"}
+    "cinematic", "dignified", "pose", "detailed", "photorealistic", "structure", "laboratory",
+    "educational", "illustration", "microscope", "nucleus", "electrons", "double", "helix"}
 
 async def topic_to_english_keywords(topic):
-    """Mavzudan rasm qidirish uchun inglizcha kalit so'zlar. Avval SEARCH_MAP, keyin AI."""
+    """Rasm qidirish uchun inglizcha kalit so'z: SEARCH_MAP → AI → to'g'ridan-to'g'ri."""
     key = topic.lower().strip()
-    if key in _KEYWORD_CACHE:
-        return _KEYWORD_CACHE[key]
-
-    # 1. Qo'lda yozilgan lug'atdan
+    if key in _KEYWORD_CACHE: return _KEYWORD_CACHE[key]
     for uz, en in SEARCH_MAP.items():
         if uz in key:
-            _KEYWORD_CACHE[key] = en
-            return en
-
-    # 2. AI dan so'rash (tez, kam token)
+            _KEYWORD_CACHE[key] = en; return en
     try:
-        prompt = (f"Quyidagi mavzu uchun rasm qidirish (stock photo search) uchun "
-                  f"inglizcha 3-5 ta kalit so'z yoz. Faqat so'zlarni vergul bilan yoz, "
-                  f"hech qanday izoh berma: {topic}")
-        txt = await _chat_complete(prompt,
-            system="You generate stock-photo search keywords in English. Reply with keywords only.",
-            max_tokens=60)
+        txt = await _chat_complete(
+            f"Rasm qidirish (stock photo) uchun inglizcha 3-5 kalit so'z yoz. Faqat so'zlar, vergul bilan: {topic}",
+            system="You generate stock-photo search keywords in English. Keywords only.", max_tokens=60)
         if txt and 3 < len(txt) < 150:
             kw = re.sub(r'[^a-zA-Z\s,]', '', txt).strip()
             if kw:
@@ -265,35 +233,30 @@ async def topic_to_english_keywords(topic):
                 _log(f"🔤 AI kalit so'z: '{topic}' → '{kw}'")
                 return kw
     except Exception as e:
-        _log(f"[KEYWORD] AI ishlamadi: {e}")
-
-    # 3. Zaxira: to'g'ridan-to'g'ri mavzu
+        _log(f"[KEYWORD] xato: {e}")
     _KEYWORD_CACHE[key] = topic
     return topic
 
 async def _wiki_image(topic):
-    """Wikipediyadan sahifa rasmini oladi — eng aniq manba (token-free)."""
     try:
         wiki = await wikipedia_fetch(topic, max_chars=200)
         if wiki.get("image"):
             return [{"url": wiki["image"], "tags": wiki["title"].lower(), "src": "wikipedia"}]
-    except Exception:
-        pass
+    except Exception: pass
     return []
 
 async def _pixabay_images(query):
     if not PIXABAY_KEY: return []
-    url = (f"https://pixabay.com/api/?key={PIXABAY_KEY}"
-           f"&q={aiohttp.helpers.quote(query)}&image_type=photo"
-           f"&orientation=horizontal&per_page=40&safesearch=true&lang=en")
+    url = (f"https://pixabay.com/api/?key={PIXABAY_KEY}&q={aiohttp.helpers.quote(query)}"
+           f"&image_type=photo&orientation=horizontal&per_page=40&safesearch=true&lang=en")
     try:
         async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=12)) as s:
             async with s.get(url) as r:
                 if r.status != 200: return []
                 data = await r.json()
         return [{"url": h.get("webformatURL"),
-                 "tags": (h.get("tags", "") + " " + str(h.get("user", ""))).lower(),
-                 "src": "pixabay"} for h in data.get("hits", []) if h.get("webformatURL")]
+                 "tags": (h.get("tags", "") + " " + str(h.get("user", ""))).lower(), "src": "pixabay"}
+                for h in data.get("hits", []) if h.get("webformatURL")]
     except Exception as e:
         _log(f"[PIXABAY] xato: {e}"); return []
 
@@ -308,8 +271,8 @@ async def _pexels_images(query):
                 if r.status != 200: return []
                 data = await r.json()
         return [{"url": p.get("src", {}).get("large"),
-                 "tags": (str(p.get("alt", "")) + " " + str(p.get("photographer", ""))).lower(),
-                 "src": "pexels"} for p in data.get("photos", []) if p.get("src", {}).get("large")]
+                 "tags": (str(p.get("alt", "")) + " " + str(p.get("photographer", ""))).lower(), "src": "pexels"}
+                for p in data.get("photos", []) if p.get("src", {}).get("large")]
     except Exception as e:
         _log(f"[PEXELS] xato: {e}"); return []
 
@@ -324,46 +287,33 @@ async def _unsplash_images(query):
                 if r.status != 200: return []
                 data = await r.json()
         return [{"url": p.get("urls", {}).get("regular"),
-                 "tags": (str(p.get("alt_description", "")) + " " + str(p.get("description", ""))).lower(),
-                 "src": "unsplash"} for p in data.get("results", []) if p.get("urls", {}).get("regular")]
+                 "tags": (str(p.get("alt_description", "")) + " " + str(p.get("description", ""))).lower(), "src": "unsplash"}
+                for p in data.get("results", []) if p.get("urls", {}).get("regular")]
     except Exception as e:
         _log(f"[UNSPLASH] xato: {e}"); return []
 
 async def search_images(query, count=5):
-    """Birlashtirilgan rasm qidiruv: Wikipedia → Pixabay → Pexels → Unsplash, relevans bo'yicha saralash."""
+    """4 manbadan rasm: Wikipedia(eng aniq) + Pixabay + Pexels + Unsplash. Relevans bo'yicha saralash."""
     q = re.sub(r'[^\w\s\']', ' ', str(query)).strip()
     if len(q) < 3:
-        _log(f"[RASM] so'z juda qisqa: '{q}'"); return []
-
+        _log(f"[RASM] so'z qisqa: '{q}'"); return []
     keywords = await topic_to_english_keywords(q)
-    kw_list = [w for w in keywords.lower().split()
-               if len(w) > 2 and w not in STOP_WORDS]
+    kw_list = [w for w in keywords.lower().split() if len(w) > 2 and w not in STOP_WORDS]
 
-    # 4 manbadan parallel yig'ish
-    tasks = [_wiki_image(q), _pixabay_images(keywords),
-             _pexels_images(keywords), _unsplash_images(keywords)]
-    results = await asyncio.gather(*tasks)
-
-    candidates = []
-    seen = set()
+    results = await asyncio.gather(_wiki_image(q), _pixabay_images(keywords),
+                                   _pexels_images(keywords), _unsplash_images(keywords))
+    candidates, seen = [], set()
     for group in results:
         for c in group:
             u = c["url"]
             if not u or u in seen: continue
             seen.add(u)
-            # relevans: kalit so'zlardan nechtasi tags da bor
             mos = sum(1 for kw in kw_list if kw in c["tags"]) if kw_list else 1
-            # Wikipedia rasmi har doim birinchi (eng aniq)
-            if c["src"] == "wikipedia": mos += 10
+            if c["src"] == "wikipedia": mos += 10  # eng aniq manba — birinchi
             candidates.append((mos, u))
-
     candidates.sort(key=lambda x: -x[0])
     urls = [u for mos, u in candidates if mos > 0][:count]
-
-    if not urls:
-        _log(f"⚠️ '{q}' uchun rasm topilmadi")
-    else:
-        _log(f"📸 '{q}' → {len(urls)} rasm (kalit: '{keywords}')")
+    _log(f"📸 '{q}' → {len(urls)} rasm (kalit: '{keywords}')" if urls else f"⚠️ '{q}' rasm topilmadi")
     return urls
 
 async def download_image(url, save_path):
@@ -371,28 +321,22 @@ async def download_image(url, save_path):
         async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=20)) as session:
             async with session.get(url) as resp:
                 if resp.status == 200:
-                    data = await resp.read()
                     with open(save_path, "wb") as f:
-                        f.write(data)
+                        f.write(await resp.read())
                     try:
                         from PIL import Image
-                        with Image.open(save_path) as img:
-                            img.verify()
-                    except Exception:
-                        pass
+                        with Image.open(save_path) as img: img.verify()
+                    except Exception: pass
                     return True
     except Exception as e:
-        _log(f"[RASM] yuklash xatosi: {e}")
+        _log(f"[RASM] yuklash xato: {e}")
     return False
 
-# ============================================================
-# 3. AI SO'ROV — eskisi saqlandi
-# ============================================================
+# ===================== 3. AI SO'ROV =====================
 async def _try_post(api, model, payload):
     global LAST_ERROR
     if not api["api_key"]:
-        LAST_ERROR = f"Kalit mavjud emas: {api['name']}"
-        return None, None, LAST_ERROR
+        LAST_ERROR = f"Kalit mavjud emas: {api['name']}"; return None, None, LAST_ERROR
     try:
         if api["type"] == "google":
             url = f"{api['base_url']}/models/{model}:generateContent?key={api['api_key']}"
@@ -403,31 +347,24 @@ async def _try_post(api, model, payload):
                     if resp.status == 200:
                         LAST_ERROR = None
                         try:
-                            text = json.loads(body)["candidates"][0]["content"]["parts"][0]["text"]
-                            return 200, text, None
+                            return 200, json.loads(body)["candidates"][0]["content"]["parts"][0]["text"], None
                         except Exception as e:
-                            LAST_ERROR = f"Javobni tahlil qilib bo'lmadi: {e}"
-                            return resp.status, None, LAST_ERROR
-                    LAST_ERROR = f"HTTP {resp.status}: {body[:150]}"
-                    return resp.status, None, LAST_ERROR
+                            LAST_ERROR = f"Javob tahlil xato: {e}"; return resp.status, None, LAST_ERROR
+                    LAST_ERROR = f"HTTP {resp.status}: {body[:150]}"; return resp.status, None, LAST_ERROR
         else:
-            headers = {"Content-Type": "application/json",
-                       "Authorization": f"Bearer {api['api_key']}"}
+            headers = {"Content-Type": "application/json", "Authorization": f"Bearer {api['api_key']}"}
             url = f"{api['base_url']}/chat/completions"
-            payload_with_model = dict(payload); payload_with_model["model"] = model
+            p = dict(payload); p["model"] = model
             async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=AI_TIMEOUT)) as session:
-                async with session.post(url, headers=headers, json=payload_with_model, timeout=AI_TIMEOUT) as resp:
+                async with session.post(url, headers=headers, json=p, timeout=AI_TIMEOUT) as resp:
                     body = await resp.text()
                     if resp.status == 200:
                         LAST_ERROR = None
                         try:
-                            text = json.loads(body)["choices"][0]["message"]["content"]
-                            return 200, text, None
+                            return 200, json.loads(body)["choices"][0]["message"]["content"], None
                         except Exception as e:
-                            LAST_ERROR = f"Javobni tahlil qilib bo'lmadi: {e}"
-                            return resp.status, None, LAST_ERROR
-                    LAST_ERROR = f"HTTP {resp.status}: {body[:150]}"
-                    return resp.status, None, LAST_ERROR
+                            LAST_ERROR = f"Javob tahlil xato: {e}"; return resp.status, None, LAST_ERROR
+                    LAST_ERROR = f"HTTP {resp.status}: {body[:150]}"; return resp.status, None, LAST_ERROR
     except aiohttp.ClientConnectorError as e:
         LAST_ERROR = f"Ulanib bo'lmadi: {e}"; return None, None, LAST_ERROR
     except asyncio.TimeoutError:
@@ -437,50 +374,43 @@ async def _try_post(api, model, payload):
 
 async def _chat_complete(prompt, system=None, max_tokens=16000):
     messages = [
-        {"role": "system", "content": system or "Siz mutaxassis yordamchisiz. Barcha javoblar to'liq, batafsil, faktlarga asoslangan bo'lsin. Hech qanday * # belgi ishlatmang."},
-        {"role": "user", "content": prompt}
-    ]
+        {"role": "system", "content": system or "Siz mutaxassis yordamchisiz. Javoblar faktlarga asoslangan bo'lsin. Hech qanday * # belgi ishlatmang."},
+        {"role": "user", "content": prompt}]
     payload = {"messages": messages, "temperature": 0.7, "max_tokens": max_tokens}
-    start_api_index = CURRENT_API_INDEX
+    start = CURRENT_API_INDEX
     while True:
         api = get_current_api(); model = get_current_model()
         if not api["api_key"]:
-            _log(f"O'tkazib yuborilmoqda: {api['name']} — kalit kiritilmagan")
             switch_to_next_api()
-            if CURRENT_API_INDEX == start_api_index: break
+            if CURRENT_API_INDEX == start: break
             continue
         _log(f"Sinab ko'rilmoqda: {api['name']} | Model: {model}")
         status, text, err = await _try_post(api, model, payload)
         if status == 200 and text:
-            text = clean_ai_text(text); text = verify_facts(text)
-            _log(f"✅ {api['name']} | {model} orqali javob olindi")
+            text = verify_facts(clean_ai_text(text))
+            _log(f"✅ {api['name']} | {model}")
             return text.strip()
-        _log(f"❌ {api['name']} | {model} ishlamadi: {err}")
-        if not switch_to_next_model():
-            if CURRENT_API_INDEX == start_api_index: break
+        _log(f"❌ {api['name']} | {model}: {err}")
+        if not switch_to_next_model() and CURRENT_API_INDEX == start: break
         await asyncio.sleep(0.3)
-    _log("⚠️ BARCHA API va modellar ishlamadi!")
-    return "⚠️ Hozir barcha manbalar ishlashdan to'xtadi. Iltimos, kalitlarni tekshiring va keyinroq urinib ko'ring."
+    _log("⚠️ BARCHA API ishlamadi!")
+    return "⚠️ Hozir barcha manbalar ishlashdan to'xtadi. Iltimos, keyinroq urinib ko'ring."
 
 async def chat_answer(question):
-    return await _chat_complete(question, system="Siz do'stona, bilimdon AI yordamchisiz. Foydalanuvchi savollariga to'liq, batafsil javob bering. Hech qanday * # belgi ishlatmang.")
+    return await _chat_complete(question, system="Siz do'stona, bilimdon AI yordamchisiz. To'liq javob bering. * # belgi ishlatmang.")
 
-# ============================================================
-# 4. SLAYD GENERATSIYA — avval Wikipediya, keyin AI
-# ============================================================
+# ===================== 4. SLAYD (Taqdimot) =====================
 def _is_image_slide(idx, total):
     return idx in IMAGE_SLIDE_INDICES or idx == total - 1
 
 def _make_image_prompt(topic, idx):
-    t = topic.lower()
-    base = "educational illustration, realistic, 8k"
+    base = "educational illustration, realistic"
     for uz, en in SEARCH_MAP.items():
-        if uz in t:
-            base = en; break
-    if idx == 0:   return f"portrait of {base}, photorealistic, 8k"
-    elif idx == 3: return f"{base}, educational scene, 8k"
-    elif idx == 6: return f"{base}, architecture or monument, 8k"
-    else:          return f"{base}, inspirational, cinematic, 8k"
+        if uz in topic.lower(): base = en; break
+    if idx == 0:   return f"portrait of {base}, photorealistic"
+    elif idx == 3: return f"{base}, educational scene"
+    elif idx == 6: return f"{base}, architecture or monument"
+    return f"{base}, inspirational, cinematic"
 
 async def generate_slides_structured(topic, subject, lang, count):
     ln = _lang_name(lang)
@@ -488,30 +418,18 @@ async def generate_slides_structured(topic, subject, lang, count):
                 18: 11500, 20: 13000, 25: 18000, 30: 22000}
     target_chars = char_map.get(count, count * 750)
 
-    # ===== YANGI: avval Wikipediyadan faktlarni olamiz =====
-    wiki = await wikipedia_fetch(topic)
-    wiki_block = ""
-    if wiki["found"]:
-        wiki_block = (f"\n\n=== WIKIPEDIYA MANBASI ({wiki['lang'].upper()}) ===\n"
-                      f"Sarlavha: {wiki['title']}\n"
-                      f"Quyidagi faktlarni asos qilib yoz, xayoliy ma'lumot qo'shma:\n{wiki['text']}\n"
-                      f"Manba: {wiki['url']}")
-        _log(f"📚 Wiki faktlari ulandi: {wiki['title']}")
-    else:
-        _log("📚 Wiki topilmadi, AI o'z bilimidan yozadi")
+    wiki = await wikipedia_fetch(topic, max_chars=4000)
+    wb = wiki_block(wiki)
+    if wiki["found"]: _log(f"📚 [Taqdimot] Wiki ulandi: {wiki['title']}")
 
-    system = f"""Siz akademik kontent yozish bo'yicha mutaxassissiz. 
-Hamma narsa faqat {ln} tilida yozilsin! Har bir slayd aniq sarlavha va 8-10 gapdan iborat bo'lsin.
-Belgi soni kamida {target_chars} ta bo'lsin. * # belgi ishlatmang. Faqat JSON qaytaring.
-Agar manba berilgan bo'lsa, faktlarni o'sha manbadan ol, o'zgartirma."""
-
-    prompt = f"""{topic} mavzusida {count} ta slaydli taqdimot tayyorlang.
-Til: faqat {ln}.{wiki_block}
-Har slayd: sarlavha + 8-10 gap, batafsil, faktlar bilan.
-JSON formatida qaytaring: [{{"title":"...","content":["gap1","gap2"]}}]"""
+    system = f"""Siz akademik kontent mutaxassissiz. Hammasi faqat {ln} tilida! 
+Har slayd: sarlavha + 8-10 gap, faktlar bilan. Belgilar: kamida {target_chars}. 
+* # belgi ishlatmang. Faqat JSON qaytaring. Manba berilgan bo'lsa, faktlarni o'shandan ol."""
+    prompt = f"""{topic} mavzusida {count} slaydli taqdimot. Til: faqat {ln}.{wb}
+JSON: [{{"title":"...","content":["gap1","gap2"]}}]"""
 
     txt = None
-    for attempt in range(2):
+    for _ in range(2):
         txt = await _chat_complete(prompt, system=system, max_tokens=16000)
         if txt and len(txt) > target_chars * 0.5: break
         await asyncio.sleep(1)
@@ -519,27 +437,24 @@ JSON formatida qaytaring: [{{"title":"...","content":["gap1","gap2"]}}]"""
     slides = _extract_json(txt) if txt else None
     if slides and isinstance(slides, list) and len(slides) >= 3:
         out = []
-        while len(slides) < count:
-            slides.append(slides[len(slides) % len(slides)])
+        while len(slides) < count: slides.append(slides[len(slides) % len(slides)])
         for i, s in enumerate(slides[:count]):
-            content_list = s.get("content", ["Ma'lumot tayyorlanmoqda..."])
-            if isinstance(content_list, str):
-                content_list = [p.strip() for p in content_list.split("\n") if p.strip()]
-            while len(content_list) < 5:
-                content_list.append(f"{topic} bo'yicha batafsil tahlil.")
-            out.append({
-                "slide_number": i + 1,
-                "title": clean_ai_text(str(s.get("title", f"Bo'lim {i+1}"))),
-                "content": [clean_ai_text(str(c)) for c in content_list[:12]],
-                "has_image": _is_image_slide(i, count),
-                "image_prompt": _make_image_prompt(topic, i) if _is_image_slide(i, count) else None,
-                "wiki_source": wiki["url"] if wiki["found"] else None
-            })
-        _log(f"✅ Tayyor: {len(out)} slayd" + (f" (Wiki: {wiki['title']})" if wiki["found"] else ""))
+            cl = s.get("content", ["Ma'lumot tayyorlanmoqda..."])
+            if isinstance(cl, str): cl = [p.strip() for p in cl.split("\n") if p.strip()]
+            while len(cl) < 5: cl.append(f"{topic} bo'yicha batafsil tahlil.")
+            out.append({"slide_number": i+1,
+                        "title": clean_ai_text(str(s.get("title", f"Bo'lim {i+1}"))),
+                        "content": [clean_ai_text(str(c)) for c in cl[:12]],
+                        "has_image": _is_image_slide(i, count),
+                        "image_prompt": _make_image_prompt(topic, i) if _is_image_slide(i, count) else None,
+                        "wiki_source": wiki["url"] if wiki["found"] else None})
+        _log(f"✅ Tayyor: {len(out)} slayd")
         return out, True
-
-    _log("⚠️ API javobi yaroqsiz, zaxira versiya ishlatilmoqda")
+    _log("⚠️ Zaxira slayd ishlatilmoqda")
     return _fallback_slides(topic, count, lang), False
+
+# ===================== 5. HUJJAT XIZMATLARI (Referat, Kurs, Diplom, Maqola, Tezis, Insho, Mustaqil ish) =====================
+LONG_SERVICES = ("diplom", "diplom_ishi", "kurs", "kurs_ishi", "referat", "maqola", "tezis")
 
 async def generate(service, topic, options, lang="uz"):
     from services import SERVICES
@@ -550,21 +465,56 @@ async def generate(service, topic, options, lang="uz"):
     bob_count = max(8, pages)
     doc_chars = pages * 900
 
-    wiki = await wikipedia_fetch(topic)
-    wiki_block = f"\n\nManba (Wikipedia): {wiki['text']}" if wiki["found"] else ""
+    # Wikipediya — uzun hujjatga to'liq maqola
+    long_doc = service in LONG_SERVICES or pages >= 15
+    wiki = await wikipedia_fetch(topic, max_chars=10000 if long_doc else 4000, full=long_doc)
+    wb = wiki_block(wiki)
+    if wiki["found"]:
+        _log(f"📚 [{name}] Wiki ulandi: {wiki['title']} ({len(wiki['text'])} belgi)")
+    else:
+        _log(f"📚 [{name}] Wiki topilmadi")
 
-    prompt = (
-        f"Topic: {topic}\nService: {name}\nLength: {pages} sahifa (kamida {doc_chars} belgi)\n\n"
-        f"Faqat {ln} tilida yozing! Boshqa til aralashmasin.\n{wiki_block}\n\n"
-        f"Kamida {bob_count} bo'limdan iborat bo'lsin: Kirish → Asosiy qism → Tahlil → Xulosa.\n"
-        f"Har bir bo'limda faktlar, sanalar, raqamlar va misollar bo'lsin."
-    )
+    prompt = (f"Topic: {topic}\nService: {name}\nLength: {pages} sahifa (kamida {doc_chars} belgi)\n\n"
+              f"Faqat {ln} tilida yoz! Boshqa til aralashmasin.{wb}\n\n"
+              f"Kamida {bob_count} bo'lim: Kirish → Asosiy qism → Tahlil → Xulosa. "
+              f"Har bo'limda faktlar, sanalar, raqamlar, misollar bo'lsin.")
     result = await _chat_complete(prompt)
     if result and "⚠️" not in result:
         return result, True
     await asyncio.sleep(1)
     return _fallback_text(service, topic, options, lang, bob_count), False
 
+# ===================== 6. QUIZ / TEST =====================
+async def generate_quiz(topic, count=10, lang="uz"):
+    """Quiz/Test — Wikipediya faktlariga asoslangan savollar."""
+    ln = _lang_name(lang)
+    wiki = await wikipedia_fetch(topic, max_chars=5000)
+    wb = wiki_block(wiki)
+    if wiki["found"]: _log(f"📚 [Quiz] Wiki ulandi: {wiki['title']}")
+
+    system = (f"Siz test savollari yaratuvchi mutaxassissiz. Hammasi faqat {ln} tilida! "
+              f"Har bir savolda 4 ta javob variantidan bittasi to'g'ri. JSON qaytaring. * # belgi ishlatmang.")
+    prompt = f"""{topic} bo'yicha {count} ta test savoli yasang. Til: faqat {ln}.{wb}
+JSON format: [{{"question":"...","options":["a","b","c","d"],"correct":0}}]
+correct — to'g'ri javob indeksi (0-3). Savollar faktlarga asoslangan bo'lsin."""
+
+    txt = await _chat_complete(prompt, system=system, max_tokens=4000)
+    questions = _extract_json(txt) if txt else None
+    if questions and isinstance(questions, list) and len(questions) >= 3:
+        _log(f"✅ Quiz tayyor: {len(questions)} savol")
+        return questions, True
+    _log("⚠️ Quiz zaxirasi ishlatilmoqda")
+    return _fallback_quiz(topic, count, lang), False
+
+def _fallback_quiz(topic, count, lang):
+    out = []
+    for i in range(count):
+        out.append({"question": f"{topic} bo'yicha {i+1}-savol: umumiy bilim?",
+                    "options": ["Variant A", "Variant B", "Variant C", "Variant D"],
+                    "correct": 0})
+    return out
+
+# ===================== YORDAMCHI: JSON ajratish =====================
 def _extract_json(text):
     if not text: return None
     m = re.search(r"```(?:json)?\s*(\[.*?\])\s*```", text, flags=re.DOTALL)
@@ -577,64 +527,54 @@ def _extract_json(text):
         except Exception: pass
     return None
 
-# ===== Zaxira matn tizimi (eskisi saqlandi) =====
+# ===================== ZAXIRA MATN TIZIMI =====================
 FB = {
     "uz": {"sections": ["Kirish", "Tarixiy kelib chiqishi", "Nazariy asoslari", "Asosiy qism 1",
             "Asosiy qism 2", "Asosiy qism 3", "Tahlil", "Muammolar va yechimlar", "Xulosa", "Foydalanilgan adabiyotlar"],
         "extra": "Qo'shimcha bob",
-        "body": "{topic} bo'yicha {sec} — batafsil ma'lumotlar, faktlar, misollar va tahlillar. Ushbu bob mavzuning muhim qismlaridan birini o'z ichiga oladi. Har bir gap to'liq, mazmunli va batafsil yozilgan.",
+        "body": "{topic} bo'yicha {sec} — batafsil ma'lumotlar, faktlar, misollar va tahlillar. Har bir gap to'liq, mazmunli va batafsil yozilgan.",
         "slide_sections": ["Kirish va dolzarblik", "Tarixiy kelib chiqishi", "Yoshlik va ta'lim", "Faoliyat bosqichlari",
             "Asosiy yutuqlar", "Ilm-fan va madaniyatga hissasi", "Bunyodkorlik va xayriya", "So'nggi yillari",
             "Merosi va zamonaviy ahamiyati", "Xulosa"],
-        "slide_body": ["{topic} ning {sec} jihati mavzuning eng muhim qismlaridan biridir",
-            "Ushbu davrda shaxsning shakllanishi, dunyoqarashi va faoliyati shakllangan",
-            "Bu davrda olgan bilim va tajribalari keyingi barcha ishlariga asos bo'lgan",
-            "Uning faoliyati davrida ko'plab o'zgarishlar va yangiliklar amalga oshirilgan",
-            "Bugungi kunda bu mavzu keng o'rganilmoqda va avlodlarga saboq bo'lib xizmat qilmoqda",
-            "Uning merosi kelajak avlodlar uchun ham yo'l ko'rsatuvchi yulduz bo'lib qoladi"]},
+        "slide_body": ["{topic} ning {sec} jihati eng muhim qismlardan biridir",
+            "Ushbu davrda shaxs va dunyoqarasi shakllangan",
+            "Olingan bilim va tajriba keyingi ishlariga asos bo'lgan",
+            "Faoliyati davrida ko'plab o'zgarishlar amalga oshirilgan",
+            "Bugungi kunda bu mavzu keng o'rganilmoqda",
+            "Uning merosi kelajak avlodlar uchun yo'l ko'rsatadi"]},
     "ru": {"sections": ["Введение", "Историческое происхождение", "Теоретические основы", "Основная часть 1",
             "Основная часть 2", "Основная часть 3", "Анализ", "Проблемы и решения", "Заключение", "Список литературы"],
         "extra": "Дополнительная глава",
-        "body": "По теме «{topic}» раздел «{sec}» — подробные сведения, факты, примеры и анализ. Данная глава раскрывает один из важнейших аспектов темы.",
+        "body": "По теме «{topic}» раздел «{sec}» — подробные сведения, факты, примеры и анализ.",
         "slide_sections": ["Введение и актуальность", "Историческое происхождение", "Молодость и обучение", "Этапы деятельности",
             "Основные достижения", "Вклад в науку и культуру", "Созидание и благотворительность", "Последние годы",
             "Наследие и современное значение", "Заключение"],
-        "slide_body": ["Аспект «{sec}» темы «{topic}» является одним из важнейших",
-            "В этот период формировалась личность, мировоззрение и деятельность",
-            "Знания и опыт, полученные в этот период, стали основой всех последующих работ",
-            "В период его деятельности произошло множество изменений и нововведений",
-            "Сегодня эта тема широко изучается и служит уроком для будущих поколений",
-            "Его наследие останется путеводной звездой и для будущих поколений"]},
+        "slide_body": ["Аспект «{sec}» темы «{topic}» важен", "В этот период формировалась личность",
+            "Знания стали основой последующих работ", "Произошло множество изменений",
+            "Сегодня тема широко изучается", "Наследие останется в истории"]},
     "en": {"sections": ["Introduction", "Historical background", "Theoretical foundations", "Main part 1",
             "Main part 2", "Main part 3", "Analysis", "Problems and solutions", "Conclusion", "References"],
         "extra": "Additional chapter",
-        "body": "On the topic «{topic}», the section «{sec}» provides detailed information, facts, examples and analysis.",
+        "body": "On «{topic}», section «{sec}» provides detailed facts, examples and analysis.",
         "slide_sections": ["Introduction and relevance", "Historical background", "Youth and education", "Stages of activity",
             "Main achievements", "Contribution to science and culture", "Creation and charity", "Later years",
             "Legacy and modern significance", "Conclusion"],
-        "slide_body": ["The «{sec}» aspect of «{topic}» is one of the most important parts",
-            "During this period the personality, worldview and activity were formed",
-            "The knowledge and experience gained became the foundation for all later work",
-            "Many changes and innovations took place during the period of activity",
-            "Today this topic is widely studied and serves as a lesson for future generations",
-            "The legacy will remain a guiding star for future generations as well"]},
+        "slide_body": ["The «{sec}» aspect of «{topic}» is important", "Personality was formed in this period",
+            "Knowledge became the foundation", "Many changes took place",
+            "Today this topic is widely studied", "The legacy will remain"]},
 }
 def _fb(lang): return FB.get(str(lang).lower(), FB["uz"])
 
 def _fallback_text(service, topic, options, lang, bob_count=10):
-    pages = int(options.get("pages", 10) or 10)
     fb = _fb(lang); sections = list(fb["sections"])
     while len(sections) < bob_count:
         sections.insert(len(sections)-2, f"{fb['extra']} {len(sections)-3}")
-    parts = []
-    for sec in sections[:bob_count]:
-        body = fb["body"].format(topic=topic, sec=sec.lower())
-        parts.append(f"{sec}\n{body}\n{body}")
+    parts = [f"{sec}\n{fb['body'].format(topic=topic, sec=sec.lower())}\n{fb['body'].format(topic=topic, sec=sec.lower())}"
+             for sec in sections[:bob_count]]
     return f"{topic}\n\n" + "\n\n".join(parts)
 
 def _fallback_slides(topic, count, lang):
-    fb = _fb(lang); secs = fb["slide_sections"]; bodies = fb["slide_body"]
-    out = []
+    fb = _fb(lang); secs = fb["slide_sections"]; bodies = fb["slide_body"]; out = []
     for i in range(count):
         sec = secs[i % len(secs)]
         b = bodies[i % len(bodies)].format(topic=topic, sec=sec.lower())
