@@ -14,16 +14,17 @@ LAST_ERROR = "hali sinanmadi"
 PIXABAY_KEY = os.getenv("PIXABAY_KEY", "")
 IMAGE_SLIDE_INDICES = [0, 3, 6]
 
+def _strip_html(text):
+    return re.sub(r'<[^>]+>', '', str(text))
+
 # === API ro'yxati — AVVAL GROQ, keyin qolganlari ===
 API_LIST = [
     {"name": "Groq 1 (asosiy)", "base_url": "https://api.groq.com/openai/v1",
      "api_key": os.getenv("GROQ_KEY_1", ""), "type": "openai",
-     "models": ["llama-3-8b-8192", "llama-3-70b-8192", "llama-3.1-8b-instruct",
-                "llama-3.1-70b-instruct", "mixtral-8x7b-32768", "gemma2-9b-it"]},
+     "models": ["llama-3.1-8b-instant", "llama-3.3-70b-versatile", "gpt-oss-120b", "gpt-oss-20b"]},
     {"name": "Groq 2", "base_url": "https://api.groq.com/openai/v1",
      "api_key": os.getenv("GROQ_KEY_2", ""), "type": "openai",
-     "models": ["llama-3-8b-8192", "llama-3-70b-8192", "llama-3.1-8b-instruct",
-                "llama-3.1-70b-instruct", "mixtral-8x7b-32768", "gemma2-9b-it"]},
+     "models": ["llama-3.1-8b-instant", "llama-3.3-70b-versatile", "gpt-oss-120b", "gpt-oss-20b"]},
     {"name": "Cloudflare AI (zaxira)",
      "base_url": "https://api.cloudflare.com/client/v4/accounts/{account_id}/ai/run",
      "account_id": os.getenv("CLOUDFLARE_ACCOUNT_ID", ""),
@@ -136,7 +137,7 @@ async def _try_post(api, model, payload):
                     except Exception as e:
                         LAST_ERROR = f"Javobni tahlil qilib bo'lmadi: {e}"
                         return resp.status, None, LAST_ERROR
-                LAST_ERROR = f"HTTP {resp.status}: {body[:200]}"
+                LAST_ERROR = f"HTTP {resp.status}: {_strip_html(body)[:200]}"
                 return resp.status, None, LAST_ERROR
     except Exception as e:
         LAST_ERROR = f"Xato: {type(e).__name__}: {e}"
@@ -297,7 +298,7 @@ async def test_api():
             if status == 200 and text:
                 ok = True; err_msg = f"✅ ishladi ({model})"; break
             else:
-                err_msg = str(err)[:80] if err else "noma'lum xato"
+                err_msg = _strip_html(str(err))[:80] if err else "noma'lum xato"
         results.append(f"{'✅' if ok else '❌'} {api['name']}: {err_msg}")
         await asyncio.sleep(0.3)
     return "\n".join(results)
