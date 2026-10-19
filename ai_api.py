@@ -24,9 +24,9 @@ API_LIST = [
         "api_key": os.getenv("GROQ_KEY_1", ""),
         "type": "openai",
         "models": [
-            "openai/gpt-oss-120b",       # ⭐ Eng kuchli, hozir ishlaydi
-            "openai/gpt-oss-20b",        # Zaxira, tezroq
-            "qwen/qwen3.8-27b"           # O'zbekcha yaxshi
+            "qwen/qwen3.8-27b",
+            "openai/gpt-oss-120b",
+            "openai/gpt-oss-20b"
         ]
     },
     {
@@ -35,20 +35,20 @@ API_LIST = [
         "api_key": os.getenv("GROQ_KEY_2", ""),
         "type": "openai",
         "models": [
+            "qwen/qwen3.8-27b",
             "openai/gpt-oss-120b",
-            "openai/gpt-oss-20b",
-            "qwen/qwen3.8-27b"
+            "openai/gpt-oss-20b"
         ]
     },
     {
         "name": "Cloudflare AI (zaxira)",
-        "base_url": "https://api.cloudflare.com/client/v4/accounts/{account_id}/ai/v1",  # ✅ To'g'rilandi
+        "base_url": "https://api.cloudflare.com/client/v4/accounts/{account_id}/ai/v1",
         "account_id": os.getenv("CLOUDFLARE_ACCOUNT_ID", ""),
         "api_key": os.getenv("CLOUDFLARE_KEY", ""),
         "type": "cloudflare",
         "models": [
-            "@cf/meta/llama-3.3-70b-instruct",   # ⭐ Eng kuchli
-            "@cf/meta/llama-3.2-3b-instruct",    # Tezroq
+            "@cf/meta/llama-3.3-70b-instruct",
+            "@cf/meta/llama-3.2-3b-instruct",
             "@cf/mistral/mistral-7b-instruct-v0.2"
         ]
     },
@@ -58,8 +58,8 @@ API_LIST = [
         "api_key": os.getenv("OPENROUTER_KEY", ""),
         "type": "openai",
         "models": [
-            "openai/gpt-oss-120b",
             "qwen/qwen3.8-27b",
+            "openai/gpt-oss-120b",
             "meta-llama/llama-3.2-3b-instruct"
         ]
     },
