@@ -21,8 +21,14 @@ PIXABAY_KEY  = os.getenv("PIXABAY_KEY", "")
 PEXELS_KEY   = os.getenv("PEXELS_KEY", "")
 UNSPLASH_KEY = os.getenv("UNSPLASH_KEY", "")
 IMAGE_SLIDE_INDICES = [0, 3, 6]
-WIKI_LANGS = ["uz", "ru", "en"]
 USER_AGENT = "SlaydBot/1.0 (aloqa: admin@example.uz)"
+
+def wiki_langs_for(gen_lang):
+    """Generatsiya tiliga ko'ra Wikipediya qidiruv tartibi — AVVAL o'sha tilda qidiradi.
+    Mavzu inglizcha bo'lsa → en.wikipedia birinchi; ruscha bo'lsa → ru.wikipedia birinchi."""
+    order = {"uz": ["uz","ru","en"], "ru": ["ru","en","uz"], "en": ["en","ru","uz"],
+             "tr": ["en","tr","ru","uz"], "de": ["en","de","ru","uz"], "fr": ["en","fr","ru","uz"]}
+    return order.get(str(gen_lang).lower(), ["en","ru","uz"])
 _KEYWORD_CACHE = {}
 CHARS_PER_PAGE = 900
 MAX_CHUNK_PAGES = 3
@@ -155,10 +161,10 @@ def _pure_language_system(lang_code):
             f"Agar biror atama {lf} da bo'lmasa, uni tarjima qilib yozing. "
             f"* # belgi ishlatmang. Faktlarga asoslaning, xayoliy ma'lumot qo'shmang.")
 
-async def wikipedia_fetch(topic, max_chars=4000, full=False):
+async def wikipedia_fetch(topic, max_chars=4000, full=False, gen_lang="uz"):
     async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=20),
                                      headers={"User-Agent": USER_AGENT}) as session:
-        for lang in WIKI_LANGS:
+        for lang in wiki_langs_for(gen_lang):
             try:
                 search_url = (f"https://{lang}.wikipedia.org/w/api.php?action=query&list=search"
                               f"&srsearch={aiohttp.helpers.quote(topic)}&format=json&srlimit=1")
@@ -194,66 +200,67 @@ def wiki_block(wiki):
             f"Manba: {wiki['url']}")
 
 SERVICE_TEMPLATES = {
-    "referat": {"style": "ilmiy-nazariy, rasmiy uslub", "sections": [
-        ("TITULLIK BET", "Mavzu, OTM nomi, guruh, muallif, yil — bitta betda"),
-        ("MUNDARIJA", "Barcha bo'limlar ro'yxati, sahifa raqamlari bilan"),
-        ("KIRISH", "Mavzuning dolzarbligi, maqsadi va vazifalari — to'liq 1 bet"),
-        ("ASOSIY QISM — 1-BOB", "Birinchi reja bo'yicha nazariy ma'lumotlar, batafsil"),
+    "referat": {"style": "ilmiy-nazariy, rasmiy uslub. HAJMI: 10-15 bet.", "sections": [
+        ("TITULLIK BET", "Mavzu, OTM nomi, guruh, muallif, yil — bitta betda, to'liq"),
+        ("MUNDARIJA", "Kirish, 2-3 ta reja (bob), Xulosa, Adabiyotlar — sahifa raqamlari bilan"),
+        ("KIRISH", "Mavzuning dolzarbligi, maqsadi va vazifalari — TO'LIQ 1 bet"),
+        ("ASOSIY QISM — 1-BOB", "Birinchi reja bo'yicha nazariy ma'lumotlar, batafsil, faktlar bilan"),
         ("ASOSIY QISM — 2-BOB", "Ikkinchi reja bo'yicha nazariy ma'lumotlar, batafsil"),
         ("ASOSIY QISM — 3-BOB", "Uchinchi reja bo'yicha tahlil va misollar"),
-        ("XULOSA", "Mavzu bo'yicha umumiy xulosalar — to'liq 1 bet"),
-        ("FOYDALANILGAN ADABIYOTLAR", "5-10 ta manba, to'liq bibliografik ma'lumot bilan")]},
-    "mustaqil": {"style": "akademik, mantiqiy, savol-javob shaklida", "sections": [
-        ("TITULLIK BET", "Mavzu, fan, guruh, muallif"),
+        ("XULOSA", "Mavzu bo'yicha umumiy xulosalar — TO'LIQ 1 bet"),
+        ("FOYDALANILGAN ADABIYOTLAR", "5-10 ta manba, to'liq bibliografik ma'lumot bilan (muallif, nomi, yil, sahifa)")]},
+    "mustaqil": {"style": "akademik, mantiqiy, savol-javob shaklida. HAJMI: 5-10 bet.", "sections": [
+        ("TITULLIK BET", "Mavzu, fan, guruh, muallif, yil"),
         ("REJA", "2-3 ta savol yoki masala ro'yxati"),
-        ("KIRISH", "Qisqa kirish (0.5 bet)"),
-        ("1-SAVOLGA JAVOB", "Birinchi savolga batafsil, mantiqiy javob — 2-3 bet"),
+        ("KIRISH", "Qisqa kirish — 0.5 bet, mavzuga kirish"),
+        ("1-SAVOLGA JAVOB", "Birinchi savolga batafsil, mantiqiy javob — 2-3 bet, faktlar bilan"),
         ("2-SAVOLGA JAVOB", "Ikkinchi savolga batafsil javob — 2-3 bet"),
         ("3-SAVOLGA JAVOB", "Uchinchi savolga batafsil javob — 2-3 bet"),
         ("XULOSA", "Qisqa yakuniy xulosa"),
-        ("ADABIYOTLAR", "5 ta manba")]},
-    "kurs": {"style": "ilmiy-tadqiqot, rasmiy, statistikalar bilan", "sections": [
-        ("TITULLIK BET", "To'liq titullik bet"),
-        ("MUNDARIJA", "Barcha boblar va paragraflar"),
-        ("KIRISH", "Dolzarblik, obyekt, predmet, maqsad, vazifalar — 2 bet"),
-        ("I-BOB. NAZARIY ASOSLAR", "Mavzuning nazariy, huquqiy yoki tarixiy asoslari — 8-10 bet"),
-        ("II-BOB. AMALIY TAHLIL", "Muammo tahlili, statistikalar, jadvallar, misollar — 8-10 bet"),
-        ("XULOSA VA TAKLIFLAR", "Umumiy xulosa va amaliy takliflar — 2 bet"),
-        ("FOYDALANILGAN ADABIYOTLAR", "15-20 ta manba"),
-        ("QO'SHIMCHALAR", "Jadvallar va diagrammalar")]},
-    "diplom": {"style": "ilmiy-tadqiqot, BMI darajasida, chuqur tahlil", "sections": [
-        ("ANNOTATSIYA", "O'zbek, rus va ingliz tillarida qisqa mazmun"),
-        ("MUNDARIJA", "To'liq mundarija"),
-        ("KIRISH", "Dolzarblik, obyekt, predmet, maqsad, vazifalar, tadqiqot metodlari — 3-4 bet"),
+        ("ADABIYOTLAR", "5 ta manba, to'liq ma'lumot bilan")]},
+    "kurs": {"style": "ilmiy-tadqiqot, rasmiy, statistikalar bilan. HAJMI: 25-35 bet.", "sections": [
+        ("TITULLIK BET", "To'liq titullik bet (OTM, kafedra, mavzu, muallif, rahbar, yil, shahar)"),
+        ("MUNDARIJA", "Barcha boblar, paragraflar, kirish, xulosa, adabiyotlar — sahifa raqamlari bilan"),
+        ("KIRISH", "Dolzarbligi, obyekti, predmeti, maqsadi, vazifalari — TO'LIQ 2 bet"),
+        ("I-BOB. NAZARIY QISM", "Mavzuning nazariy va huquqiy/tarixiy asoslari — 8-10 bet, paragraf bilan"),
+        ("II-BOB. AMALIY/TAHLILIY QISM", "Muammo tahlili, statistikalar, jadvallar, misollar — 8-10 bet"),
+        ("XULOSA VA TAKLIFLAR", "Umumiy xulosa va AMALIY takliflar — 2 bet"),
+        ("FOYDALANILGAN ADABIYOTLAR", "15-20 ta manba, to'liq bibliografik ma'lumot bilan"),
+        ("QO'SHIMCHALAR", "Jadvallar, diagrammalar, namunaviy hujjatlar")]},
+    "diplom": {"style": "ilmiy-tadqiqot, BMI darajasida, chuqur tahlil. HAJMI: 50-70 bet (bo'lakma yoziladi).", "sections": [
+        ("ANNOTATSIYA", "O'zbek, rus va ingliz tillarida qisqa mazmun (har biri 150-200 so'z)"),
+        ("MUNDARIJA", "To'liq mundarija, barcha boblar va paragraflar"),
+        ("KIRISH", "Dolzarbligi, obyekti, predmeti, maqsadi, vazifalari, tadqiqot metodlari — 3-4 bet"),
         ("I-BOB. NAZARIY ASOSLAR", "Tadqiqot mavzusining nazariy asoslari — 12-15 bet"),
         ("II-BOB. TAHLIL QISMI", "Muammo tahlili, statistika, amaliy ma'lumotlar — 12-15 bet"),
-        ("III-BOB. TAKLIFLAR VA ISTIQBOLLAR", "Takliflar, loyihalar, samaradorlik — 10-12 bet"),
+        ("III-BOB. TAKLIFLAR VA ISTIQBOLLAR", "Takliflar, loyihalar, iqtisodiy samaradorlik — 10-12 bet"),
         ("XULOSA", "Umumiy xulosa va takliflar — 3 bet"),
-        ("ADABIYOTLAR RO'YXATI", "30+ manba"),
-        ("QO'SHIMCHALAR", "Jadvallar, diagrammalar, namunaviy hujjatlar")]},
-    "insho": {"style": "erkin, badiiy yoki publitsistik, shaxsiy fikrlar bilan", "sections": [
-        ("KIRISH (TEZIS)", "Mavzuga kirish va muallifning asosiy fikri — 1 bet"),
-        ("ASOSIY QISM — 1-DALIL", "Birinchi argument, hayotiy yoki fanniy misol bilan"),
-        ("ASOSIY QISM — 2-DALIL", "Ikkinchi argument, misol bilan"),
-        ("ASOSIY QISM — 3-DALIL", "Uchinchi argument, qarama-qarshi fikrni rad etish"),
-        ("XULOSA", "Shaxsiy yakuniy xulosa — 1 bet")]},
-    "test": {"style": "qisqa, aniq savollar, har birida bitta to'g'ri javob", "sections": [
-        ("TEST SAVOLLARI", "Har bir savol: raqam, savol matni, A/B/C/D variantlari. To'g'ri javob belgilangan"),
-        ("JAVOBLAR KALITI", "Oxirida barcha to'g'ri javoblar ro'yxati")]},
-    "maqola": {"style": "ilmiy, IMRAD standarti, rasmiy", "sections": [
-        ("SARLAVHA VA MUALlif", "Maqola sarlavhasi, muallif, ilmiy daraja, muassasa"),
-        ("ANNOTATSIYA VA KALIT SO'ZLAR", "O'zbek, rus, ingliz tillarida annotatsiya va kalit so'zlar"),
-        ("KIRISH (Introduction)", "Muammo, dolzarblik, tadqiqot maqsadi"),
-        ("METODOLOGIYA (Methods)", "Izlanish usullari, materiallar"),
-        ("NATIJALAR VA MUHOKAMA", "Tahlillar, jadvallar, grafiklar, muhokama"),
-        ("XULOSA (Conclusion)", "Asosiy xulosalar"),
-        ("ADABIYOTLAR", "APA yoki GOST formatida 10-15 manba")]},
-    "tezis": {"style": "juda ixcham, konkret raqam va faktlar, suvli gaplarsiz", "sections": [
-        ("SARLAVHA VA MUALlif", "Sarlavha, muallif, muassasa"),
-        ("QISQA KIRISH", "2-3 jumla, muammo va maqsad"),
-        ("ASOSIY ILMIY G'OYA", "Konkret tahlil, raqamlar, faktlar — suvli gaplarsiz"),
-        ("QISQA XULOSA", "Asosiy natija va xulosa")]},
+        ("ADABIYOTLAR RO'YXATI", "30+ manba, to'liq bibliografik ma'lumot bilan"),
+        ("QO'SHIMCHALAR", "Jadvallar, diagrammalar, namunaviy hujjatlar, anketa matnlari")]},
+    "insho": {"style": "erkin, badiiy yoki publitsistik, shaxsiy fikrlar bilan. HAJMI: 2-5 bet (500-1500 so'z).", "sections": [
+        ("KIRISH / TEZIS", "Mavzuga kirish va muallifning ASOSIY fikri (tezis) — 1 bet"),
+        ("ASOSIY QISM — 1-DALIL", "Birinchi argument, hayotiy yoki fanniy misol bilan — 1-2 bet"),
+        ("ASOSIY QISM — 2-DALIL", "Ikkinchi argument, misol bilan — 1-2 bet"),
+        ("ASOSIY QISM — 3-DALIL", "Uchinchi argument, qarama-qarshi fikrni rad etish — 1 bet"),
+        ("XULOSA", "Shaxsiy yakuniy xulosa, asosiy g'oyani takrorlash — 1 bet")]},
+    "test": {"style": "qisqa, aniq savollar, har birida BITTAGINA to'g'ri javob. Format: savol + A/B/C/D + javob kaliti.", "sections": [
+        ("TEST SAVOLLARI", "Har bir savol: raqam, savol matni, A) B) C) D) variantlari. To'g'ri javob (TO'G'RI) belgilangan"),
+        ("JAVOBLAR KALITI", "Oxirida barcha to'g'ri javoblar ro'yxati (1-B, 2-A, ...) + har biriga qisqa izoh")]},
+    "maqola": {"style": "ilmiy, IMRAD standarti, rasmiy. HAJMI: 3-7 bet.", "sections": [
+        ("SARLAVHA VA MUALlif", "Maqola sarlavhasi, muallif FIO, ilmiy daraja, muassasa nomi"),
+        ("ANNOTATSIYA VA KALIT SO'ZLAR", "O'zbek, rus, ingliz tillarida annotatsiya (har biri 150 so'z) va 5-7 kalit so'z"),
+        ("KIRISH (Introduction)", "Muammo, dolzarblik, tadqiqot maqsadi — 1 bet"),
+        ("METODOLOGIYA (Methods)", "Izlanish usullari, materiallar, tadqiqot bazasi — 1 bet"),
+        ("NATIJALAR VA MUHOKAMA (Results & Discussion)", "Tahlillar, jadvallar, grafiklar, natijalar muhokamasi — 2-3 bet"),
+        ("XULOSA (Conclusion)", "Asosiy xulosalar, qisqa — 0.5 bet"),
+        ("ADABIYOTLAR", "APA yoki GOST formatida 10-15 manba, to'liq ma'lumot bilan")]},
+    "tezis": {"style": "juda ixcham, konkret raqam va faktlar, SUVLI GAPLARSIZ. HAJMI: 1-3 bet.", "sections": [
+        ("SARLAVHA VA MUALlif", "Sarlavha, muallif FIO, muassasa, shahar"),
+        ("QISQA KIRISH", "2-3 jumla, muammo va tadqiqot maqsadi"),
+        ("ASOSIY ILMIY G'OYA / TAHLIL", "Konkret tahlil, raqamlar, faktlar, natijalar — SUVLI GAPLARSIZ, asosiy qism"),
+        ("QISQA XULOSA", "Asosiy natija va xulosa, 2-3 jumla")]},
 }
+
 
 async def _generate_outline(service, topic, pages, lang, wiki):
     tmpl = SERVICE_TEMPLATES.get(service)
@@ -290,10 +297,17 @@ async def _generate_section(service, topic, sec_title, sec_pages, sec_desc, lang
         txt = await _chat_complete(prompt, system=_pure_language_system(lang), max_tokens=8000)
         if not txt or "⚠️" in txt:
             txt = f"{sec_title} bo'yicha batafsil ma'lumot. {topic} mavzusida chuqur tahlil."
-        if lang != "en" and _english_ratio(txt) > 0.10:
-            _log(f"⚠️ Til aralashgan ({sec_title}), qayta generatsiya...")
+        # TIL TOZALIGI TEKSHIRUVI: boshqa til aralashgan bo'lsa — qayta generatsiya
+        enr = _english_ratio(txt)
+        cyr_ratio = len(re.findall(r'[А-Яа-яЁё]', txt)) / max(1, len(txt))
+        mixed = False
+        if lang != "en" and enr > 0.08: mixed = True
+        if lang == "ru" and cyr_ratio < 0.25: mixed = True   # ruscha bo'lishi kerak, lotin ko'p bo'lsa
+        if lang in ("uz","tr","de","fr") and cyr_ratio > 0.15: mixed = True  # lotin tillarida kirillcha bo'lmasin
+        if mixed:
+            _log(f"⚠️ Til aralashgan ({sec_title}, en={enr:.0%}, kir={cyr_ratio:.0%}), qayta generatsiya...")
             txt2 = await _chat_complete(
-                prompt + "\n\nDIQQAT: Oldingi javobda boshqa til so'zlari aralashgan! FAQAT so'ralgan tilda yoz!",
+                prompt + "\n\nDIQQAT: Oldingi javobda BOSHQA TIL so'zlari aralashgan! FAQAT so'ralgan tilda yoz, boshqa til so'zlarini mutlaqo ishlatma!",
                 system=_pure_language_system(lang), max_tokens=8000)
             if txt2 and "⚠️" not in txt2: txt = txt2
         parts.append(txt); local_prev = txt[:600]
@@ -307,7 +321,7 @@ async def generate(service, topic, options, lang="uz"):
     if service == "test":
         return await _generate_test(service, topic, options, lang)
     wiki = await wikipedia_fetch(topic, max_chars=10000 if service in LONG_SERVICES else 4000,
-                                 full=(service in LONG_SERVICES))
+                                 full=(service in LONG_SERVICES), gen_lang=lang)
     outline = await _generate_outline(service, topic, pages, lang, wiki)
     _log(f"📋 Reja: {len(outline)} bo'lim, jami {pages} bet | Wiki: {'ha' if wiki['found'] else 'yoq'}")
     full_text_parts, prev_summary = [], ""
@@ -325,7 +339,7 @@ async def generate(service, topic, options, lang="uz"):
 
 async def _generate_test(service, topic, options, lang):
     count = int(options.get("questions", options.get("pages", 15)) or 15)
-    wiki = await wikipedia_fetch(topic, max_chars=5000)
+    wiki = await wikipedia_fetch(topic, max_chars=5000, gen_lang=lang)
     all_questions, chunk_size = [], 10
     for start in range(1, count + 1, chunk_size):
         end = min(count, start + chunk_size - 1)
@@ -355,7 +369,7 @@ def _make_image_prompt(topic, idx):
 async def generate_slides_structured(topic, subject, lang, count):
     ln = _lang_name(lang)
     target_chars = count * 750
-    wiki = await wikipedia_fetch(topic, max_chars=4000)
+    wiki = await wikipedia_fetch(topic, max_chars=4000, gen_lang=lang)
     wb = wiki_block(wiki)
     system = (_pure_language_system(lang) +
               f" Slayd tuzilishi: 1) Sarlavha; 2) Reja; 3) Kirish; 4-{count-1}) Asosiy qism (faktlar, sanalar); "
