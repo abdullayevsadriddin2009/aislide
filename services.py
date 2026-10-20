@@ -16,7 +16,7 @@ SERVICES = {
     "diplom":   {"emoji": "🎓", "option_type": "pages",     "price": 0,
                  "name_uz": "Diplom ishi", "name_ru": "Дипломная работа", "name_en": "Thesis / Diploma",
                  "name_tr": "Mezuniyet tezi", "name_de": "Abschlussarbeit", "name_fr": "Mémoire de fin d'études"},
-    "insho":    {"emoji": "✍️", "option_type": "pages",     "price": 0,
+    "insho":    {"emoji": "✍️", "option_type": "words",     "price": 0,
                  "name_uz": "Insho / Essey", "name_ru": "Сочинение / Эссе", "name_en": "Composition / Essay",
                  "name_tr": "Kompozisyon / Deneme", "name_de": "Aufsatz / Essay", "name_fr": "Dissertation / Essai"},
     "test":     {"emoji": "✅", "option_type": "questions", "price": 0,
