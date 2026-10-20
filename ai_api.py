@@ -101,16 +101,8 @@ API_LIST = [
         "type": "openai",
         "models": [AI_MODEL, "gpt-3.5-turbo", "llama3"]
     }
-    {"name": "OpenRouter", "base_url": "https://openrouter.ai/api/v1",
-     "api_key": os.getenv("OPENROUTER_KEY", ""), "type": "openai",
-     "models": ["meta-llama/llama-3.1-70b-instruct", "qwen/qwen-2.5-72b-instruct", "meta-llama/llama-3.2-3b-instruct"]},
-    {"name": "Google AI", "base_url": "https://generativelanguage.googleapis.com/v1beta",
-     "api_key": os.getenv("GOOGLE_KEY_1", ""), "type": "google",
-     "models": ["gemini-1.5-flash", "gemini-1.5-flash-8b", "gemini-1.5-pro-latest"]},
-    {"name": "Local FreeLLMAPI", "base_url": AI_API_URL,
-     "api_key": os.getenv("AI_API_KEY", ""), "type": "openai",
-     "models": [AI_MODEL, "gpt-3.5-turbo", "llama3"]},
 ]
+
 CURRENT_API_INDEX = 0
 CURRENT_MODEL_INDEX = 0
 
