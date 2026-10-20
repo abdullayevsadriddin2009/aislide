@@ -10,6 +10,7 @@ async def get_db():
     global _db
     if _db is None:
         _db = await aiosqlite.connect(DB_PATH)
+        await _db.execute("PRAGMA journal_mode=WAL;")
         _db.row_factory = aiosqlite.Row
         await _init()
     return _db
@@ -237,3 +238,4 @@ async def get_referral_bonus():
 
 async def set_referral_bonus(amount):
     await set_setting("referral_bonus", str(amount))
+    
