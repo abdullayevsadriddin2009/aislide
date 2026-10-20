@@ -142,6 +142,42 @@ LANG_FULL = {"uz": "o'zbekcha", "ru": "ruscha", "en": "inglizcha", "tr": "turkch
 ALL_LANGS = ("uz", "ru", "en", "tr", "de", "fr")
 def _lang_name(code): return LANG_NAMES.get(str(code).lower(), "o'zbek")
 
+# ===== Tizim prompti — HAR BIR TILDA o'z tilda (modelga aniq ko'rsatish uchun) =====
+SYSTEM_PROMPTS = {
+    "uz": "Siz akademik matn yozish bo'yicha mutaxassissiz. ABSOLYUT HAMMA NARSANI faqat o'zbekcha yozing! Hech qanday boshqa til so'zi, atamasi yoki iborasi aralashmasin. Har bir sarlavha, har bir gap, har bir raqam izohi — hammasi o'zbekcha bo'lsin. Agar biror atama o'zbekchada bo'lmasa, uni tarjima qilib yozing. * yoki # belgi ishlatmang. Faktlarga asoslaning, xayoliy ma'lumot qo'shmang. Berilgan manbadagi (Wikipedia) faktlar, sanalar va raqamlarni aynan shunday qoldiring.",
+    "ru": "Вы специалист по написанию академических текстов. ПИШИТЕ АБСОЛЮТНО ВСЁ только на русском языке! Никаких слов, терминов или выражений на других языках. Каждый заголовок, каждое предложение, каждая сноска — всё на русском. Если термина нет в русском, переведите его. Не используйте * и #. Опирайтесь на факты, не добавляйте вымышленные данные. Факты, даты и цифры из источника (Википедии) сохраняйте точно.",
+    "en": "You are an expert academic writer. Write ABSOLUTELY EVERYTHING in English only! No words, terms or phrases from any other language. Every heading, every sentence, every figure note — all in English. If a term has no English equivalent, translate it. Do not use * or #. Base everything on facts, never invent data. Keep facts, dates and numbers from the source (Wikipedia) exactly as given.",
+    "tr": "Sen akademik metin yazma uzmanısın. MUTLAKA HER ŞEYİ sadece Türkçe yaz! Başka hiçbir dilin kelimesi, terimi veya ifadesi karışmasın. Her başlık, her cümle, her rakam notu — hepsi Türkçe olsun. Eğer bir terimin Türkçesi yoksa çevir. * ve # kullanma. Gerçeklere dayan, uydurma veri ekleme. Kaynaktaki (Vikipedi) gerçekleri, tarihleri ve sayıları aynen koru.",
+    "de": "Sie sind Experte für akademisches Schreiben. Schreiben Sie ABSOLUT ALLES nur auf Deutsch! Keine Wörter, Begriffe oder Ausdrücke aus anderen Sprachen. Jede Überschrift, jeder Satz, jede Zahlenanmerkung — alles auf Deutsch. Wenn ein Begriff kein Deutsch hat, übersetzen Sie ihn. Verwenden Sie kein * oder #. Bleiben Sie bei Fakten, erfinden Sie keine Daten. Übernehmen Sie Fakten, Daten und Zahlen aus der Quelle (Wikipedia) genau.",
+    "fr": "Vous êtes un expert en rédaction académique. Écrivez ABSOLUMENT TOUT en français uniquement ! Aucun mot, terme ou expression d'une autre langue. Chaque titre, chaque phrase, chaque note de chiffre — tout en français. Si un terme n'existe pas en français, traduisez-le. N'utilisez pas * ni #. Appuyez-vous sur les faits, n'inventez pas de données. Conservez exactement les faits, dates et chiffres de la source (Wikipédia).",
+}
+
+def detect_topic_lang(topic):
+    """Mavzu tilini aniqlash — Wikipedia qidiruv uchun."""
+    t = str(topic or "")
+    if len(re.findall(r'[А-Яа-яЁё]', t)) >= 2: return "ru"
+    low = t.lower()
+    if re.search(r'[ğşıİ]', low): return "tr"
+    if re.search(r'[ß]', low): return "de"
+    if re.search(r'[àâéèêëîïôùûÿçœæ]', low): return "fr"
+    if re.search(r'[äöü]', low): return "de"
+    if re.search(r'[ığüşöç]', low): return "tr"
+    if re.search(r"o['’]z|g['’]|ʻ|ʼ|‘|’", low): return "uz"
+    return "en"
+
+def wiki_langs_for_topic(topic, gen_lang):
+    """AVVAL mavzu tilida, keyin hujjat tilida, keyin en/ru/uz qidiradi."""
+    tl = detect_topic_lang(topic)
+    gl = str(gen_lang).lower()
+    order = [tl, gl]
+    for x in ("en", "ru", "uz"):
+        if x not in order: order.append(x)
+    seen, out = set(), []
+    for x in order:
+        if x and x not in seen:
+            seen.add(x); out.append(x)
+    return out[:4]
+
 _EN_STOP = {"the","and","is","of","to","in","for","with","on","that","this","it","as","are","by","an","be",
             "or","which","from","at","not","but","have","has","was","were","will","can","more","their",
             "they","we","our","you","your","also","such","than","into","about","between","these","those",
@@ -153,18 +189,15 @@ def _english_ratio(text):
     return sum(1 for w in words if w in _EN_STOP) / len(words)
 
 def _pure_language_system(lang_code):
-    lf = LANG_FULL.get(lang_code, "o'zbekcha")
-    return (f"Siz akademik matn yozish bo'yicha mutaxassissiz. "
-            f"ABSOLYUT HAMMA NARSANI faqat {lf} yozing! "
-            f"Hech qanday boshqa til so'zi, atamasi yoki iborasi aralashmasin. "
-            f"Har bir sarlavha, har bir gap, har bir raqam izohi — hammasi {lf} bo'lsin. "
-            f"Agar biror atama {lf} da bo'lmasa, uni tarjima qilib yozing. "
-            f"* # belgi ishlatmang. Faktlarga asoslaning, xayoliy ma'lumot qo'shmang.")
+    lc = str(lang_code).lower()
+    return SYSTEM_PROMPTS.get(lc, SYSTEM_PROMPTS["en"])
 
 async def wikipedia_fetch(topic, max_chars=4000, full=False, gen_lang="uz"):
+    langs = wiki_langs_for_topic(topic, gen_lang)
+    _log(f"🔍 Wikipedia qidiruv tartibi: {langs} (mavzu: '{topic}')")
     async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=20),
                                      headers={"User-Agent": USER_AGENT}) as session:
-        for lang in wiki_langs_for(gen_lang):
+        for lang in langs:
             try:
                 search_url = (f"https://{lang}.wikipedia.org/w/api.php?action=query&list=search"
                               f"&srsearch={aiohttp.helpers.quote(topic)}&format=json&srlimit=1")
@@ -296,7 +329,15 @@ async def _generate_section(service, topic, sec_title, sec_pages, sec_desc, lang
                   f"(4) faktlar, sanalar, raqamlar, misollar qo'sh.")
         txt = await _chat_complete(prompt, system=_pure_language_system(lang), max_tokens=8000)
         if not txt or "⚠️" in txt:
-            txt = f"{sec_title} bo'yicha batafsil ma'lumot. {topic} mavzusida chuqur tahlil."
+            fb = {
+                "uz": f"{sec_title} bo'yicha batafsil ma'lumot. {topic} mavzusida chuqur tahlil, faktlar va xulosalar.",
+                "ru": f"Подробные сведения по разделу «{sec_title}». Глубокий анализ, факты и выводы по теме «{topic}».",
+                "en": f"Detailed information on the section '{sec_title}'. In-depth analysis, facts and conclusions on the topic '{topic}'.",
+                "tr": f"'{sec_title}' bölümü hakkında ayrıntılı bilgi. '{topic}' konusunda derinlemesine analiz, gerçekler ve sonuçlar.",
+                "de": f"Ausführliche Informationen zum Abschnitt '{sec_title}'. Tiefgehende Analyse, Fakten und Schlussfolgerungen zum Thema '{topic}'.",
+                "fr": f"Informations détaillées sur la section « {sec_title} ». Analyse approfondie, faits et conclusions sur le sujet « {topic} ».",
+            }
+            txt = fb.get(str(lang).lower(), fb["en"])
         # TIL TOZALIGI TEKSHIRUVI: boshqa til aralashgan bo'lsa — qayta generatsiya
         enr = _english_ratio(txt)
         cyr_ratio = len(re.findall(r'[А-Яа-яЁё]', txt)) / max(1, len(txt))
@@ -324,18 +365,23 @@ async def generate(service, topic, options, lang="uz"):
                                  full=(service in LONG_SERVICES), gen_lang=lang)
     outline = await _generate_outline(service, topic, pages, lang, wiki)
     _log(f"📋 Reja: {len(outline)} bo'lim, jami {pages} bet | Wiki: {'ha' if wiki['found'] else 'yoq'}")
-    full_text_parts, prev_summary = [], ""
+    full_text_parts, prev_summary, real_count, fail_count = [], "", 0, 0
     for sec_title, sec_pages, sec_desc in outline:
         _log(f"✍️ Yozilmoqda: {sec_title} ({sec_pages} bet)...")
         sec_text = await _generate_section(service, topic, sec_title, sec_pages, sec_desc, lang, wiki, prev_summary)
-        full_text_parts.append(f"{'='*20}\n{sec_title}\n{'='*20}\n\n{sec_text}")
+        if "batafsil ma'lumot" in sec_text or "chuqur tahlil" in sec_text or sec_text.strip().startswith("⚠️"):
+            fail_count += 1
+        else:
+            real_count += 1
+        full_text_parts.append(sec_text)
         prev_summary = sec_text[:800]
     result = "\n\n".join(full_text_parts)
-    _log(f"✅ Tayyor: {name} | {pages} bet | {len(result)} belgi (reja: {pages*CHARS_PER_PAGE})")
-    if len(result) < pages * CHARS_PER_PAGE * 0.5:
+    real = real_count > 0 and fail_count <= len(outline) // 2
+    _log(f"✅ Tayyor: {name} | {pages} bet | {len(result)} belgi | real={real} (real={real_count}, fail={fail_count})")
+    if len(result) < pages * CHARS_PER_PAGE * 0.4:
         _log("⚠️ Hajm kamroq, zaxira matn qo'shilmoqda")
         result += "\n\n" + _fallback_text(service, topic, options, lang, max(3, pages//3))
-    return result, True
+    return result, real
 
 async def _generate_test(service, topic, options, lang):
     count = int(options.get("questions", options.get("pages", 15)) or 15)
@@ -587,8 +633,60 @@ async def _chat_complete(prompt, system=None, max_tokens=8000):
     _log("⚠️ BARCHA API ishlamadi!")
     return "⚠️ Hozir barcha manbalar ishlashdan to'xtadi."
 
+CHAT_STYLE = {
+    "uz": "Suhbat uslubida, qisqa va aniq javob bering. Foydalanuvchi matn yuborsa, uni tahlil qib yoki xulosa qilib javob bering.",
+    "ru": "Отвечайте в разговорном стиле, кратко и по существу. Если пользователь прислал текст — проанализируйте или резюмируйте его.",
+    "en": "Answer in a conversational style, briefly and to the point. If the user sends a long text, analyze or summarize it.",
+    "tr": "Konuşma tarzında, kısa ve net cevap ver. Kullanıcı uzun bir metin gönderirse analiz et veya özetle.",
+    "de": "Antworten Sie im Gesprächsstil, kurz und präzise. Wenn der Nutzer einen langen Text sendet, analysieren oder zusammenfassen Sie ihn.",
+    "fr": "Répondez dans un style conversationnel, brièvement et clairement. Si l'utilisateur envoie un long texte, analysez-le ou résumez-le.",
+}
+
 async def chat_answer(question):
-    return await _chat_complete(question, system=_pure_language_system("uz") + " Suhbat uslubida javob bering.", max_tokens=2000)
+    q = str(question or "")
+    lang = detect_topic_lang(q)
+    # Uzun matn — birinchi 8000 belgi, qisqartirilganini bildirish
+    truncated = ""
+    if len(q) > 8000:
+        truncated = {
+            "uz": "\n\n[Eslatma: matn juda uzun, birinchi 8000 belgi o'qildi.]",
+            "ru": "\n\n[Примечание: текст слишком длинный, прочитаны первые 8000 символов.]",
+            "en": "\n\n[Note: text too long, first 8000 characters read.]",
+            "tr": "\n\n[Not: metin çok uzun, ilk 8000 karakter okundu.]",
+            "de": "\n\n[Hinweis: Text zu lang, erste 8000 Zeichen gelesen.]",
+            "fr": "\n\n[Note : texte trop long, 8000 premiers caractères lus.]",
+        }.get(lang, "")
+        q = q[:8000]
+    system = _pure_language_system(lang) + " " + CHAT_STYLE.get(lang, CHAT_STYLE["en"])
+    ans = await _chat_complete(q, system=system, max_tokens=4000)
+    if ans and not ans.startswith("⚠️"):
+        return ans + truncated
+    return None
+
+async def test_api():
+    """Barcha API va modellarni sinash — admin /testapi buyrug'i uchun."""
+    lines = []
+    for api in API_LIST:
+        if not api["api_key"]:
+            lines.append(f"❌ {api['name']}: kalit o'rnatilmagan (skip)")
+            continue
+        ok_model = None
+        for model in api["models"]:
+            try:
+                status, text, err = await _try_post(api, model, {
+                    "messages": [{"role": "user", "content": "Say 'OK' in one word."}],
+                    "temperature": 0.1, "max_tokens": 10})
+                if status == 200 and text:
+                    ok_model = model
+                    break
+            except Exception as e:
+                err = str(e)
+        if ok_model:
+            lines.append(f"✅ {api['name']}: ishlaydi → {ok_model}")
+        else:
+            lines.append(f"❌ {api['name']}: ishlamadi. Oxirgi xato: {LAST_ERROR}")
+    lines.append(f"\nWikipedia: {wiki_langs_for_topic('test', 'uz')}")
+    return "\n".join(lines)
 
 def _extract_json(text):
     if not text: return None
