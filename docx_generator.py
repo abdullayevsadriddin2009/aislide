@@ -204,7 +204,199 @@ L = {
 }
 
 def _lbl(lang):
-    return L.get(str(lang).lower(), L["uz"])
+    d = dict(L.get(str(lang).lower(), L["uz"]))
+    d["_lang"] = str(lang).lower()
+    return d
+
+# ===== Lokalizatsiya qilingan bob/fraza lug'ati (6 til) =====
+_PH = {
+    "theor_found":    {"uz":"Nazariy asoslar","ru":"Теоретические основы","en":"Theoretical foundations","tr":"Teorik temeller","de":"Theoretische Grundlagen","fr":"Fondements théoriques"},
+    "analys_pract":   {"uz":"Tahlil va amaliy qism","ru":"Анализ и практическая часть","en":"Analysis and practical part","tr":"Analiz ve pratik kısım","de":"Analyse und praktischer Teil","fr":"Analyse et partie pratique"},
+    "key_concepts":   {"uz":"Asosiy tushunchalar","ru":"Основные понятия","en":"Key concepts","tr":"Temel kavramlar","de":"Grundbegriffe","fr":"Concepts clés"},
+    "practical":      {"uz":"Amaliy qism","ru":"Практическая часть","en":"Practical part","tr":"Pratik kısım","de":"Praktischer Teil","fr":"Partie pratique"},
+    "theor_part":     {"uz":"Nazariy qism","ru":"Теоретическая часть","en":"Theoretical part","tr":"Teorik kısım","de":"Theoretischer Teil","fr":"Partie théorique"},
+    "analys_part":    {"uz":"Tahlil qismi","ru":"Аналитическая часть","en":"Analytical part","tr":"Analitik kısım","de":"Analytischer Teil","fr":"Partie analytique"},
+    "recommend":      {"uz":"Takliflar","ru":"Рекомендации","en":"Recommendations","tr":"Öneriler","de":"Empfehlungen","fr":"Recommandations"},
+    "theor_method":   {"uz":"Nazariy-metodologik asoslar","ru":"Теоретико-методологические основы","en":"Theoretical and methodological foundations","tr":"Teorik ve metodolojik temeller","de":"Theoretisch-methodologische Grundlagen","fr":"Fondements théoriques et méthodologiques"},
+    "analys_assess":  {"uz":"Tahlil va baholash","ru":"Анализ и оценка","en":"Analysis and assessment","tr":"Analiz ve değerlendirme","de":"Analyse und Bewertung","fr":"Analyse et évaluation"},
+    "rec_eff":        {"uz":"Takliflar va samaradorlik","ru":"Рекомендации и эффективность","en":"Recommendations and efficiency","tr":"Öneriler ve verimlilik","de":"Empfehlungen und Effizienz","fr":"Recommandations et efficacité"},
+    "concept_orig":   {"uz":"Tushuncha va kelib chiqish sabablari","ru":"Понятие и причины возникновения","en":"Concept and origins","tr":"Kavram ve ortaya çıkış nedenleri","de":"Begriff und Entstehungsgründe","fr":"Concept et origines"},
+    "intl_exp":       {"uz":"Xalqaro tajriba","ru":"Международный опыт","en":"International experience","tr":"Uluslararası deneyim","de":"Internationale Erfahrung","fr":"Expérience internationale"},
+    "state_analys":   {"uz":"Holat tahlili","ru":"Анализ состояния","en":"State analysis","tr":"Durum analizi","de":"Zustandsanalyse","fr":"Analyse de l'état"},
+    "problem_assess": {"uz":"Muammolarni baholash","ru":"Оценка проблем","en":"Problem assessment","tr":"Sorun değerlendirmesi","de":"Problembewertung","fr":"Évaluation des problèmes"},
+    "impl_new":       {"uz":"Yangi usullarni joriy etish","ru":"Внедрение новых методов","en":"Implementation of new methods","tr":"Yeni yöntemlerin uygulanması","de":"Einführung neuer Methoden","fr":"Mise en œuvre de nouvelles méthodes"},
+    "rec_improve":    {"uz":"Takomillashtirish bo'yicha takliflar","ru":"Рекомендации по совершенствованию","en":"Recommendations for improvement","tr":"İyileştirme önerileri","de":"Verbesserungsempfehlungen","fr":"Recommandations d'amélioration"},
+    "concept_class":  {"uz":"Tushuncha va tasniflash","ru":"Понятие и классификация","en":"Concept and classification","tr":"Kavram ve sınıflandırma","de":"Begriff und Klassifizierung","fr":"Concept et classification"},
+    "modern_role":    {"uz":"Zamonaviy usullar roli","ru":"Роль современных методов","en":"Role of modern methods","tr":"Modern yöntemlerin rolü","de":"Rolle moderner Methoden","fr":"Rôle des méthodes modernes"},
+    "dyn_indic":      {"uz":"Ko'rsatkichlar dinamikasi","ru":"Динамика показателей","en":"Dynamics of indicators","tr":"Göstergelerin dinamikleri","de":"Dynamik der Indikatoren","fr":"Dynamique des indicateurs"},
+    "sys_eff":        {"uz":"Mavjud tizim samaradorligi","ru":"Эффективность существующей системы","en":"Efficiency of the current system","tr":"Mevcut sistemin etkinliği","de":"Effizienz des bestehenden Systems","fr":"Efficacité du système actuel"},
+    "impl_model":     {"uz":"Yangi modelni joriy etish","ru":"Внедрение новой модели","en":"Implementation of a new model","tr":"Yeni modelin uygulanması","de":"Einführung eines neuen Modells","fr":"Mise en œuvre d'un nouveau modèle"},
+    "econ_calc":      {"uz":"Iqtisodiy samaradorlik hisobi","ru":"Расчёт экономической эффективности","en":"Economic efficiency calculation","tr":"Ekonomik verimlilik hesabı","de":"Berechnung der wirtschaftlichen Effizienz","fr":"Calcul de l'efficacité économique"},
+}
+def _ph(key, lang):
+    lang = str(lang).lower()
+    return _PH.get(key, {}).get(lang, _PH.get(key, {}).get("en", key))
+
+def _chapters_for(service_code, lang):
+    if service_code == "referat":
+        return [(_ph("theor_found", lang), None), (_ph("analys_pract", lang), None)]
+    if service_code == "mustaqil":
+        return [(_ph("key_concepts", lang), None), (_ph("practical", lang), None)]
+    if service_code == "kurs":
+        return [
+            (_ph("theor_part", lang), [("1", _ph("concept_orig", lang)), ("2", _ph("intl_exp", lang))]),
+            (_ph("analys_part", lang), [("1", _ph("state_analys", lang)), ("2", _ph("problem_assess", lang))]),
+            (_ph("recommend", lang), [("1", _ph("impl_new", lang)), ("2", _ph("rec_improve", lang))]),
+        ]
+    # diplom
+    return [
+        (_ph("theor_method", lang), [("1", _ph("concept_class", lang)), ("2", _ph("modern_role", lang))]),
+        (_ph("analys_assess", lang), [("1", _ph("dyn_indic", lang)), ("2", _ph("sys_eff", lang))]),
+        (_ph("rec_eff", lang), [("1", _ph("impl_model", lang)), ("2", _ph("econ_calc", lang))]),
+    ]
+
+# Lokalizatsiya qilingan kiritish/xulosa/manba matnlari
+_LOC = {
+    "relevance": {"uz":"Bugungi kunda {t} mavzusi alohida dolzarblikka ega. Bu soha zamonaviy talablarga muvofiq tez rivojlanmoqda va jamiyatda muhim o'rin tutadi. Ushbu tadqiqotning asosiy sababi — mavzudagi bo'shliqlarni aniqlash va ularni bartaraf etish yo'llarini ishlab chiqish.",
+                 "ru":"В настоящее время тема «{t}» имеет особую актуальность. Данная сфера быстро развивается в соответствии с современными требованиями и занимает важное место в обществе. Основная причина данного исследования — выявить пробелы по теме и разработать пути их устранения.",
+                 "en":"Today, the topic of {t} is of particular relevance. This field is developing rapidly in line with modern requirements and occupies an important place in society. The main reason for this research is to identify gaps in the topic and develop ways to address them.",
+                 "tr":"Bugün {t} konusu özel bir güncelliğe sahiptir. Bu alan modern gereksinimler doğrultusunda hızla gelişmekte ve toplumda önemli bir yer tutmaktadır. Bu araştırmanın temel nedeni — konudaki boşlukları tespit etmek ve bunları çözme yollarını geliştirmektir.",
+                 "de":"Heute hat das Thema {t} besondere Relevanz. Dieses Gebiet entwickelt sich schnell im Einklang mit modernen Anforderungen und nimmt einen wichtigen Platz in der Gesellschaft ein. Der Hauptgrund dieser Forschung ist es, Lücken zum Thema zu identifizieren und Wege zu ihrer Beseitigung zu entwickeln.",
+                 "fr":"Aujourd'hui, le sujet « {t} » présente une pertinence particulière. Ce domaine se développe rapidement conformément aux exigences modernes et occupe une place importante dans la société. La raison principale de cette recherche est d'identifier les lacunes du sujet et de développer des moyens d'y remédier."},
+    "goal": {"uz":"{t} ning joriy holatini tahlil qilish, muammolarni aniqlash va ularni hal qilish bo'yicha amaliy takliflar ishlab chiqish.",
+             "ru":"Проанализировать современное состояние {t}, выявить проблемы и разработать практические рекомендации по их решению.",
+             "en":"To analyze the current state of {t}, identify problems, and develop practical recommendations for solving them.",
+             "tr":"{t} konusunun güncel durumunu analiz etmek, sorunları tespit etmek ve bunları çözmek için pratik öneriler geliştirmek.",
+             "de":"Den aktuellen Stand von {t} analysieren, Probleme identifizieren und praktische Empfehlungen zu ihrer Lösung entwickeln.",
+             "fr":"Analyser l'état actuel de {t}, identifier les problèmes et élaborer des recommandations pratiques pour les résoudre."},
+    "object": {"uz":"{t} sohasidagi iqtisodiy-ijtimoiy jarayonlar va ularni boshqarish tizimi.",
+               "ru":"Социально-экономические процессы в сфере {t} и система управления ими.",
+               "en":"Socio-economic processes in the field of {t} and the system of managing them.",
+               "tr":"{t} alanındaki sosyo-ekonomik süreçler ve bunları yönetme sistemi.",
+               "de":"Sozioökonomische Prozesse im Bereich {t} und das System ihrer Verwaltung.",
+               "fr":"Les processus socio-économiques dans le domaine de {t} et le système de gestion."},
+    "subject": {"uz":"{t} ni optimallashtirish va samaradorligini oshirish jarayonidagi munosabatlar.",
+                "ru":"Отношения в процессе оптимизации и повышения эффективности {t}.",
+                "en":"Relations in the process of optimizing and improving the efficiency of {t}.",
+                "tr":"{t} optimizasyonu ve verimliliğini artırma sürecindeki ilişkiler.",
+                "de":"Beziehungen im Prozess der Optimierung und Effizienzsteigerung von {t}.",
+                "fr":"Relations dans le processus d'optimisation et d'amélioration de l'efficacité de {t}."},
+    "method": {"uz":"Tadqiqot davomida tahlil-sintez, qiyosiy-statistik, matematik modellashtirish va ekspert baholash usullaridan foydalanildi.",
+               "ru":"В ходе исследования использовались методы анализа и синтеза, сравнительно-статистические, математического моделирования и экспертной оценки.",
+               "en":"The study used methods of analysis and synthesis, comparative-statistical methods, mathematical modeling and expert assessment.",
+               "tr":"Araştırmada analiz ve sentez, karşılaştırmalı-istatistiksel, matematiksel modelleme ve uzman değerlendirme yöntemleri kullanıldı.",
+               "de":"In der Studie wurden Methoden der Analyse und Synthese, vergleichend-statistische Methoden, mathematische Modellierung und Expertenbewertung verwendet.",
+               "fr":"L'étude a utilisé des méthodes d'analyse et de synthèse, des méthodes comparatives-statistiques, la modélisation mathématique et l'évaluation d'experts."},
+    "concl1": {"uz":"1. {t} bo'yicha tahlil natijasida joriy holat va rivojlanish istiqbollari aniqlandi.",
+               "ru":"1. В результате анализа по теме «{t}» выявлено современное состояние и перспективы развития.",
+               "en":"1. The analysis on «{t}» revealed the current state and development prospects.",
+               "tr":"1. {t} konusundaki analiz sonucunda mevcut durum ve gelişme beklentileri tespit edildi.",
+               "de":"1. Die Analyse zu «{t}» ergab den aktuellen Stand und die Entwicklungsperspektiven.",
+               "fr":"1. L'analyse sur « {t} » a révélé l'état actuel et les perspectives d'évolution."},
+    "concl2": {"uz":"2. Mavjud muammolar va ularning sabablari tizimlashtirildi, ulardan xalos bo'lishning ustuvor yo'llari belgilandi.",
+               "ru":"2. Систематизированы существующие проблемы и их причины, определены приоритетные пути их решения.",
+               "en":"2. Existing problems and their causes were systematized; priority solutions identified.",
+               "tr":"2. Mevcut sorunlar ve nedenleri sistematik hale getirildi; öncelikli çözüm yolları belirlendi.",
+               "de":"2. Bestehende Probleme und ihre Ursachen wurden systematisiert; prioritäre Lösungen identifiziert.",
+               "fr":"2. Les problèmes existants et leurs causes ont été systématisés ; les solutions prioritaires identifiées."},
+    "concl3": {"uz":"3. Taklif etilayotgan chora-tadbirlar amalga oshirilishi bilan samaradorlik sezilarli darajada oshirilishi mumkin.",
+               "ru":"3. Реализация предложенных мероприятий позволит значительно повысить эффективность.",
+               "en":"3. Implementation of proposed measures can significantly improve efficiency.",
+               "tr":"3. Önerilen önlemlerin uygulanması verimliliği önemli ölçüde artırabilir.",
+               "de":"3. Die Umsetzung der vorgeschlagenen Maßnahmen kann die Effizienz erheblich steigern.",
+               "fr":"3. La mise en œuvre des mesures proposées peut améliorer considérablement l'efficacité."},
+    "concl4": {"uz":"4. Kelajakda ushbu sohani chuqurroq o'rganish va ilmiy tadqiqotlarni kengaytirish zarur.",
+               "ru":"4. В дальнейшем необходимо углублённое изучение данной сферы и расширение научных исследований.",
+               "en":"4. Further in-depth study and expanded research in this field is necessary.",
+               "tr":"4. Gelecekte bu alanın daha derinlemesine incelenmesi ve bilimsel araştırmaların genişletilmesi gerekmektedir.",
+               "de":"4. Weitere vertiefte Studien und erweiterte Forschung auf diesem Gebiet sind erforderlich.",
+               "fr":"4. Une étude plus approfondie et une recherche élargie dans ce domaine sont nécessaires."},
+    "ref1": {"uz":"1. {t} bo'yicha qonun va nizomiy hujjatlar.",
+             "ru":"1. Законодательные и нормативные акты по теме «{t}».",
+             "en":"1. Legislative and regulatory acts on «{t}».",
+             "tr":"1. {t} konulu yasal ve düzenleyici belgeler.",
+             "de":"1. Gesetzliche und regulatorische Akte zu «{t}».",
+             "fr":"1. Actes législatifs et réglementaires sur « {t} »."},
+    "ref2": {"uz":"2. {t} bo'yicha monografiya va o'quv qo'llanmalar. 2024.",
+             "ru":"2. Монографии и учебные пособия по теме «{t}». 2024.",
+             "en":"2. Monographs and textbooks on «{t}». 2024.",
+             "tr":"2. {t} konulu monografiler ve ders kitapları. 2024.",
+             "de":"2. Monographien und Lehrbücher zu «{t}». 2024.",
+             "fr":"2. Monographies et manuels sur « {t} ». 2024."},
+    "ref3": {"uz":"3. {t} mavzusida jurnalda chop etilgan ilmiy maqolalar, 2023-2025.",
+             "ru":"3. Научные статьи по теме «{t}», опубликованные в журналах, 2023-2025.",
+             "en":"3. Scientific articles on «{t}» published in journals, 2023-2025.",
+             "tr":"3. {t} konusunda dergilerde yayınlanan bilimsel makaleler, 2023-2025.",
+             "de":"3. Wissenschaftliche Artikel zu «{t}», veröffentlicht in Zeitschriften, 2023-2025.",
+             "fr":"3. Articles scientifiques sur « {t} » publiés dans des revues, 2023-2025."},
+    "ref4": {"uz":"4. Rasmiy statistik ma'lumotlar portali.",
+             "ru":"4. Официальный портал статистических данных.",
+             "en":"4. Official statistical data portal.",
+             "tr":"4. Resmi istatistik veri portalı.",
+             "de":"4. Offizielles Portal für statistische Daten.",
+             "fr":"4. Portail officiel de données statistiques."},
+    "ref5": {"uz":"5. Xalqaro tajriba — ilg'or mamlakatlar amaliyoti.",
+             "ru":"5. Международный опыт — практика передовых стран.",
+             "en":"5. International experience — practice of leading countries.",
+             "tr":"5. Uluslararası deneyim — gelişmiş ülkelerin pratiği.",
+             "de":"5. Internationale Erfahrung — Praxis führender Länder.",
+             "fr":"5. Expérience internationale — pratique des pays de pointe."},
+    "chapter_fb": {"uz":"{title} bo'yicha batafsil tahlil, statistik ma'lumotlar va amaliy kuzatishlar keltirilgan. Ushbu bobda nazariy asoslar, tasniflash tamoyillari va xalqaro tajriba o'rganiladi.",
+                   "ru":"Представлен подробный анализ «{title}», статистические данные и практические наблюдения. В данной главе рассматриваются теоретические основы, принципы классификации и международный опыт.",
+                   "en":"A detailed analysis of {title}, statistical data and practical observations are presented. This chapter examines the theoretical foundations, classification principles and international experience.",
+                   "tr":"{title} hakkında ayrıntılı analiz, istatistiksel veriler ve pratik gözlemler sunulmuştur. Bu bölümde teorik temeller, sınıflandırma ilkeleri ve uluslararası deneyim incelenmektedir.",
+                   "de":"Eine detaillierte Analyse von {title}, statistische Daten und praktische Beobachtungen werden vorgestellt. Dieses Kapitel untersucht die theoretischen Grundlagen, Klassifizierungsprinzipien und internationale Erfahrungen.",
+                   "fr":"Une analyse détaillée de {title}, des données statistiques et des observations pratiques sont présentées. Ce chapitre examine les fondements théoriques, les principes de classification et l'expérience internationale."},
+    "essay_intro": {"uz":"«{t}» tobora muhim ahamiyat kasb etmoqda. Bugungi kunda bu mavzu nafaqat ilmiy, balki axloqiy jihatdan ham muhim. U insonning ichki dunyosi va atrof-muhit bilan munosabatini chuqur ta'sirlaydi.",
+                   "ru":"«{t}» приобретает всё большее значение. Сегодня эта тема важна не только научно, но и этически. Она глубоко влияет на внутренний мир человека и отношения с окружающей средой.",
+                   "en":"«{t}» is acquiring ever greater significance. Today this subject is important not only scientifically but also ethically. It deeply affects a person's inner world and the relationship with the environment.",
+                   "tr":"«{t}» giderek daha fazla önem kazanıyor. Bugün bu konu sadece bilimsel değil, aynı zamanda etik olarak da önemli. İnsanın iç dünyasını ve çevreyle ilişkisini derinden etkiliyor.",
+                   "de":"«{t}» gewinnt immer mehr an Bedeutung. Heute ist dieses Thema nicht nur wissenschaftlich, sondern auch ethisch wichtig. Es beeinflusst tief die innere Welt eines Menschen und die Beziehung zur Umwelt.",
+                   "fr":"« {t} » prend une importance croissante. Aujourd'hui, ce sujet est important non seulement scientifiquement mais aussi éthiquement. Il affecte profondément le monde intérieur d'une personne et sa relation avec l'environnement."},
+    "essay_goal": {"uz":"{t} haqidagi o'z qarashlarimni asoslash va oqibatlarini tahlil qilish.",
+                   "ru":"Обосновать свою точку зрения по теме «{t}» и проанализировать последствия.",
+                   "en":"To substantiate my point of view on {t} and analyze the consequences.",
+                   "tr":"{t} konusundaki kendi görüşümü gerekçelendirmek ve sonuçlarını analiz etmek.",
+                   "de":"Meinen Standpunkt zu {t} begründen und die Folgen analysieren.",
+                   "fr":"Étayer mon point de vue sur {t} et analyser les conséquences."},
+    "practical_tip": {"uz":"Har doim 2 bosqichli autentifikatsiyadan foydalaning va parollarni muntazam yangilab boring!",
+                      "ru":"Всегда используйте двухфакторную аутентификацию и регулярно меняйте пароли!",
+                      "en":"Always use two-factor authentication and update passwords regularly!",
+                      "tr":"Her zaman iki faktörlü kimlik doğrulama kullanın ve şifreleri düzenli olarak güncelleyin!",
+                      "de":"Verwenden Sie immer die Zwei-Faktor-Authentifizierung und aktualisieren Sie Passwörter regelmäßig!",
+                      "fr":"Utilisez toujours l'authentification à deux facteurs et mettez régulièrement à jour les mots de passe !"},
+    "appendix1": {"uz":"Ilova 1. Jadval shaklida asosiy ko'rsatkichlar.", "ru":"Приложение 1. Основные показатели в виде таблицы.", "en":"Appendix 1. Key indicators in table form.", "tr":"Ek 1. Tablo şeklinde temel göstergeler.", "de":"Anhang 1. Kennzahlen in Tabellenform.", "fr":"Annexe 1. Indicateurs clés sous forme de tableau."},
+    "appendix2": {"uz":"Ilova 2. Grafiklar va diagrammalar.", "ru":"Приложение 2. Графики и диаграммы.", "en":"Appendix 2. Graphs and diagrams.", "tr":"Ek 2. Grafikler ve diyagramlar.", "de":"Anhang 2. Grafiken und Diagramme.", "fr":"Annexe 2. Graphiques et diagrammes."},
+    "appendix3": {"uz":"Ilova 3. So'rovnoma natijalari.", "ru":"Приложение 3. Результаты опроса.", "en":"Appendix 3. Survey results.", "tr":"Ek 3. Anket sonuçları.", "de":"Anhang 3. Umfrageergebnisse.", "fr":"Annexe 3. Résultats de l'enquête."},
+    "results_fb": {"uz":"{t} bo'yicha tadqiqot natijalari keltirilgan. Olingan ma'lumotlar statistik jihatdan ishonchli ekanligi isbotlandi.",
+                   "ru":"Представлены результаты исследования по теме «{t}». Полученные данные доказали статистическую надёжность.",
+                   "en":"The results of the research on {t} are presented. The data obtained proved statistically reliable.",
+                   "tr":"{t} konulu araştırmanın sonuçları sunulmuştur. Elde edilen verilerin istatistiksel olarak güvenilir olduğu kanıtlanmıştır.",
+                   "de":"Die Forschungsergebnisse zu {t} werden vorgestellt. Die erhaltenen Daten erwiesen sich als statistisch zuverlässig.",
+                   "fr":"Les résultats de la recherche sur {t} sont présentés. Les données obtenues se sont avérées statistiquement fiables."},
+    "results_box": {"uz":"Eksperimental guruh ko'rsatkichlari nazariy gipotezaga ko'ra 23% yuqori natija ko'rsatdi. Bu taklif etilayotgan modelning samaradorligini tasdiqlaydi.",
+                    "ru":"Показатели экспериментальной группы показали результаты на 23% выше согласно теоретической гипотезе. Это подтверждает эффективность предложенной модели.",
+                    "en":"The experimental group's indicators showed results 23% higher according to the theoretical hypothesis. This confirms the effectiveness of the proposed model.",
+                    "tr":"Deney grubu göstergeleri, teorik hipoteze göre %23 daha yüksek sonuçlar gösterdi. Bu, önerilen modelin etkinliğini doğrulamaktadır.",
+                    "de":"Die Indikatoren der Versuchsgruppe zeigten laut theoretischer Hypothese um 23 % höhere Ergebnisse. Dies bestätigt die Wirksamkeit des vorgeschlagenen Modells.",
+                    "fr":"Les indicateurs du groupe expérimental ont montré des résultats supérieurs de 23 % selon l'hypothèse théorique. Cela confirme l'efficacité du modèle proposé."},
+    "concl_final": {"uz":"Olingan natijalar shuni ko'rsatadiki, {t} sohasida yangi yondashuvlarni joriy etish samaradorlikni sezilarli darajada oshiradi.",
+                    "ru":"Полученные результаты показывают, что внедрение новых подходов в сфере {t} значительно повышает эффективность.",
+                    "en":"The results show that the implementation of new approaches in the field of {t} significantly improves efficiency.",
+                    "tr":"Elde edilen sonuçlar, {t} alanında yeni yaklaşımların uygulanmasının verimliliği önemli ölçüde artırdığını göstermektedir.",
+                    "de":"Die Ergebnisse zeigen, dass die Einführung neuer Ansätze im Bereich {t} die Effizienz erheblich steigert.",
+                    "fr":"Les résultats montrent que la mise en œuvre de nouvelles approches dans le domaine de {t} améliore considérablement l'efficacité."},
+    "sci_rec": {"uz":"Ushbu soha bo'yicha universitetlarda milliy platforma yaratish va kadrlar tayyorlashni kengaytirish zarur.",
+                "ru":"Необходимо создать национальную платформу по этой сфере в университетах и расширить подготовку кадров.",
+                "en":"It is necessary to create a national platform for this field at universities and expand staff training.",
+                "tr":"Bu alanda üniversitelerde ulusal bir platform oluşturmak ve personel eğitimini genişletmek gerekmektedir.",
+                "de":"Es ist notwendig, eine nationale Plattform für dieses Gebiet an Universitäten zu schaffen und die Personalausbildung zu erweitern.",
+                "fr":"Il est nécessaire de créer une plateforme nationale pour ce domaine dans les universités et d'élargir la formation du personnel."},
+    "main_part": {"uz":"ASOSIY QISM", "ru":"ОСНОВНАЯ ЧАСТЬ", "en":"MAIN PART", "tr":"TEMEL KISIM", "de":"HAUPTTEIL", "fr":"PARTIE PRINCIPALE"},
+}
+def _loc(key, lang, topic=""):
+    lang = str(lang).lower()
+    return _LOC.get(key, {}).get(lang, _LOC.get(key, {}).get("en", key)).replace("{t}", str(topic)[:40])
 
 def _set_cell_bg(cell, color_hex):
     tcPr = cell._tc.get_or_add_tcPr()
@@ -371,29 +563,8 @@ def _add_toc(doc, sections, lbl):
 
 def _add_references(doc, topic, lbl):
     _add_heading(doc, lbl["references"], level=1, center=True)
-    refs = [
-        f"1. Official legislative acts and regulations related to {topic[:40]}.",
-        f"2. Academic sources — monographs and textbooks on {topic}. 2024.",
-        f"3. Ilmiy maqolalar — {topic} mavzusida jurnal chop etilgan tadqiqotlar, 2023-2025.",
-        "4. Rasmiy statistik ma'lumotlar portali.",
-        "5. Xalqaro tajriba — ilg'or mamlakatlar amaliyoti.",
-    ]
-    if lbl is L["ru"]:
-        refs = [
-            f"1. Законодательные акты Республики Узбекистан по теме «{topic[:40]}».",
-            f"2. Монографии и учебные пособия по теме «{topic[:40]}». Ташкент, 2024.",
-            f"3. Научные статьи по теме «{topic[:40]}», 2023-2025.",
-            "4. Официальный портал статистических данных.",
-            "5. Международный опыт передовых стран.",
-        ]
-    elif lbl is L["en"]:
-        refs = [
-            f"1. Legislative acts of the Republic of Uzbekistan on «{topic[:40]}».",
-            f"2. Monographs and textbooks on «{topic[:40]}». Tashkent, 2024.",
-            f"3. Scientific articles on «{topic[:40]}», 2023-2025.",
-            "4. Official statistical data portal.",
-            "5. International experience of leading countries.",
-        ]
+    lang = lbl.get("_lang", "uz")
+    refs = [_loc(f"ref{i}", lang, topic) for i in range(1, 6)]
     for ref in refs:
         p = doc.add_paragraph(ref)
         p.paragraph_format.line_spacing = 1.5
@@ -401,18 +572,18 @@ def _add_references(doc, topic, lbl):
             run.font.size = Pt(13); run.font.name = "Times New Roman"
 
 def _add_intro(doc, topic, lbl, include_object=False, content_text=""):
+    lang = lbl.get("_lang", "uz")
     _add_heading(doc, lbl["intro"], level=1, center=True)
-    _add_label_para(doc, lbl["relevance"],
-        f"Today, the topic of {topic} is of particular relevance. This field is developing rapidly in line with modern requirements and occupies an important place in society. The main reason for this research is to identify gaps in the topic and develop ways to address them.")
-    _add_label_para(doc, lbl["goal"],
-        f"To analyze the current state of {topic}, identify problems, and develop practical recommendations for solving them.")
+    _add_label_para(doc, lbl["relevance"], _loc("relevance", lang, topic))
+    _add_label_para(doc, lbl["goal"], _loc("goal", lang, topic))
     if include_object:
-        _add_label_para(doc, lbl["object"], f"{topic} sohasidagi iqtisodiy-ijtimoiy jarayonlar va ularni boshqarish tizimi.")
-        _add_label_para(doc, lbl["subject"], f"{topic} ni optimallashtirish va samaradorligini oshirish jarayonidagi munosabatlar.")
+        _add_label_para(doc, lbl["object"], _loc("object", lang, topic))
+        _add_label_para(doc, lbl["subject"], _loc("subject", lang, topic))
     if content_text:
         _add_para(doc, content_text[:600])
 
 def _add_chapter(doc, num, title, body, lbl, subsections=None):
+    lang = lbl.get("_lang", "uz")
     _add_heading(doc, f'{lbl["chapter"]} {num}. {title}', level=1)
     if subsections:
         for sub_num, sub_title in subsections:
@@ -421,30 +592,12 @@ def _add_chapter(doc, num, title, body, lbl, subsections=None):
     for p in paras[:8]:
         _add_para(doc, p)
     if not paras:
-        _add_para(doc, f"A detailed analysis of {title}, statistical data and practical observations are presented. This chapter examines the theoretical foundations, classification principles and international experience.")
+        _add_para(doc, _loc("chapter_fb", lang).format(title=title))
 
 def _add_conclusion(doc, topic, lbl, conclusion_key="conclusion"):
+    lang = lbl.get("_lang", "uz")
     _add_heading(doc, lbl[conclusion_key], level=1, center=True)
-    points = [
-        f"1. As a result of the analysis of {topic}, the current state and development prospects were identified.",
-        f"2. Mavjud muammolar va ularning sabablari tizimlashtirildi, ulardan xalos bo'lishning ustuvor yo'llari belgilandi.",
-        f"3. Taklif etilayotgan chora-tadbirlar amalga oshirilishi bilan samaradorlik sezilarli darajada oshirilishi mumkin.",
-        f"4. In the future, a deeper study of this field and expansion of scientific research are necessary.",
-    ]
-    if lbl is L["ru"]:
-        points = [
-            f"1. В результате анализа по теме «{topic}» выявлено современное состояние и перспективы развития.",
-            f"2. Систематизированы существующие проблемы и их причины, определены приоритетные пути решения.",
-            f"3. Реализация предложенных мероприятий позволит значительно повысить эффективность.",
-            f"4. В дальнейшем необходимо углублённое изучение данной сферы и расширение научных исследований.",
-        ]
-    elif lbl is L["en"]:
-        points = [
-            f"1. The analysis on «{topic}» revealed the current state and development prospects.",
-            f"2. Existing problems and their causes were systematized; priority solutions identified.",
-            f"3. Implementation of proposed measures can significantly improve efficiency.",
-            f"4. Further in-depth study and expanded research in this field is necessary.",
-        ]
+    points = [_loc(f"concl{i}", lang, topic) for i in range(1, 5)]
     for pt in points:
         _add_para(doc, pt, indent=False)
 
@@ -477,27 +630,11 @@ def generate_docx(topic, service_name, service_code, lang, pages, content_text, 
     include_dept = service_code in ("kurs", "diplom")
     _add_title_page(doc, service_code, topic, author, lbl, include_dept=include_dept)
 
-    # Boblar soni
-    if service_code == "referat":
-        chapters = [("Nazariy asoslar", None), ("Tahlil va amaliy qism", None)]
-        concl_key = "conclusion"
-    elif service_code == "mustaqil":
-        chapters = [("Asosiy tushunchalar", None), ("Amaliy qism", None)]
-        concl_key = "conclusion"
-    elif service_code == "kurs":
-        chapters = [
-            ("Nazariy asoslar", [("1", "Tushuncha va kelib chiqish sabablari"), ("2", "Xalqaro tajriba")]),
-            ("Tahlil qismi", [("1", "Holat tahlili"), ("2", "Muammolarni baholash")]),
-            ("Recommendations", [("1", "Implementation of new methods"), ("2", "Recommendations for improvement")]),
-        ]
-        concl_key = "conclusion_kurs"
-    else:  # diplom
-        chapters = [
-            ("Nazariy-metodologik asoslar", [("1", "Tushuncha va tasniflash"), ("2", "Zamonaviy usullar roli")]),
-            ("Tahlil va baholash", [("1", "Ko'rsatkichlar dinamikasi"), ("2", "Mavjud tizim samaradorligi")]),
-            ("Takliflar va samaradorlik", [("1", "Yangi modelni joriy etish"), ("2", "Iqtisodiy samaradorlik hisobi")]),
-        ]
-        concl_key = "conclusion_diplom"
+    # Boblar — lokalizatsiya qilingan
+    chapters = _chapters_for(service_code, lang)
+    concl_key = "conclusion"
+    if service_code == "kurs": concl_key = "conclusion_kurs"
+    elif service_code == "diplom": concl_key = "conclusion_diplom"
 
     # Mundarija
     toc_items = [(lbl["intro"], "3")]
@@ -524,7 +661,7 @@ def generate_docx(topic, service_name, service_code, lang, pages, content_text, 
                      f"«{topic}» is a fundamental category of the field whose essence must be fully understood.\nThis definition is the key to an in-depth study of the theoretical foundations.")
         if service_code == "mustaqil" and i == len(chapters):
             _add_box(doc, lbl["practical_tip"],
-                     "Har doim 2 bosqichli autentifikatsiyadan foydalaning va parollarni muntazam yangilab boring!")
+                     _loc("practical_tip", lang, topic))
         if service_code in ("kurs", "diplom") and i == 2:
             _add_box(doc, lbl["stats"],
                      "According to international agencies, this indicator is projected to exceed 50% by 2030.")
@@ -541,9 +678,9 @@ def generate_docx(topic, service_name, service_code, lang, pages, content_text, 
     if service_code == "diplom":
         doc.add_page_break()
         _add_heading(doc, lbl["appendix"], level=1, center=True)
-        _add_para(doc, "Ilova 1. Jadval shaklida asosiy ko'rsatkichlar.", indent=False)
-        _add_para(doc, "Ilova 2. Grafiklar va diagrammalar.", indent=False)
-        _add_para(doc, "Ilova 3. So'rovnoma natijalari.", indent=False)
+        _add_para(doc, _loc("appendix1", lang, topic), indent=False)
+        _add_para(doc, _loc("appendix2", lang, topic), indent=False)
+        _add_para(doc, _loc("appendix3", lang, topic), indent=False)
 
     buf = io.BytesIO()
     doc.save(buf); buf.seek(0)
@@ -562,10 +699,10 @@ def _generate_essay(doc, topic, lang, content_text, author, lbl):
         r = p.add_run(f"{lab} {val}"); r.font.size = Pt(13); r.font.name = "Times New Roman"
     doc.add_paragraph()
     _add_heading(doc, lbl["intro"], level=1, center=True)
-    _add_para(doc, f"«{topic}» is acquiring ever greater significance. Today this subject is important not only scientifically but also ethically. It deeply affects a person's inner world and the relationship with the environment.")
-    _add_label_para(doc, "💭 " + lbl["goal"], f"{topic} haqidagi o'z qarashlarimni asoslash va oqibatlarini tahlil qilish.")
+    _add_para(doc, _loc("essay_intro", lang, topic))
+    _add_label_para(doc, "💭 " + lbl["goal"], _loc("essay_goal", lang, topic))
     doc.add_paragraph()
-    _add_heading(doc, lbl.get("chapter","ASOSIY QISM") + ": " + lbl.get("box_titles",["Tahlil"])[0] if False else "ASOSIY QISM", level=1, center=True)
+    _add_heading(doc, lbl.get("chapter","ASOSIY QISM") + ": " + lbl.get("box_titles",["Tahlil"])[0] if False else _loc("main_part", lang, topic), level=1, center=True)
     parts = _split_content(content_text, 3)
     for i, part in enumerate(parts):
         _add_para(doc, part or f"A deep analysis and reflections on {topic}. Human history shows that every great idea emerges from people's aspiration and labor.")
@@ -718,7 +855,7 @@ def _generate_article(doc, topic, lang, content_text, author, lbl):
     _add_heading(doc, lbl["intro"], level=1, center=True)
     _add_para(doc, f"Today, {topic} has become one of the globally important issues. Therefore an in-depth study of this field is the demand of the time.")
     doc.add_paragraph()
-    _add_heading(doc, "ASOSIY QISM", level=1, center=True)
+    _add_heading(doc, _loc("main_part", lang, topic), level=1, center=True)
     parts = _split_content(content_text, 3)
     for part in parts:
         _add_para(doc, part or f"A detailed analysis of {topic} is presented. Statistical data, international experience and national practice are compared.")
@@ -751,19 +888,19 @@ def _generate_thesis(doc, topic, lang, content_text, author, lbl):
     _add_label_para(doc, lbl["relevance_thesis"],
         f"Today, improving the field of {topic} has become a demand of the time. The goal of the research is to develop new methods for increasing efficiency in this field.")
     _add_label_para(doc, lbl["methods"],
-        "Tadqiqot davomida tahlil-sintez, qiyosiy-statistik, matematik modellashtirish va ekspert baholash usullaridan foydalanildi. 200 nafar ishtirokchi orqali sinov o'tkazildi.")
+        _loc("method", lang, topic))
     doc.add_paragraph()
     parts = _split_content(content_text, 2)
     for part in parts:
-        _add_para(doc, part or f"The results of the research on {topic} are presented. The data obtained proved statistically reliable.")
+        _add_para(doc, part or _loc("results_fb", lang, topic))
     _add_box(doc, lbl["results"],
-             "The experimental group's indicators showed results 23% higher according to the theoretical hypothesis. This confirms the effectiveness of the proposed model.",
+             _loc("results_box", lang, topic),
              bg_hex="E8F5E9")
     doc.add_paragraph()
     _add_heading(doc, lbl["conclusion"], level=1, center=True)
-    _add_para(doc, f"Olingan natijalar shuni ko'rsatadiki, {topic} sohasida yangi yondashuvlarni joriy etish samaradorlikni sezilarli darajada oshiradi.")
+    _add_para(doc, _loc("concl_final", lang, topic))
     _add_box(doc, lbl["scientific_rec"],
-             "It is necessary to create a national platform for this field at universities and expand staff training.",
+             _loc("sci_rec", lang, topic),
              bg_hex="F3E5F5")
     buf = io.BytesIO(); doc.save(buf); buf.seek(0)
     return buf
