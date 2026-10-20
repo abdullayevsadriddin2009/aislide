@@ -42,9 +42,10 @@ API_LIST = [
         "api_key": os.getenv("GROQ_KEY_1", ""),
         "type": "openai",
         "models": [
-            "qwen/qwen3.8-27b",
-            "openai/gpt-oss-120b",
-            "openai/gpt-oss-20b"
+            "llama-3.3-70b-versatile",
+            "llama-3.1-8b-instant",
+            "mixtral-8x7b-32768",
+            "gemma2-9b-it"
         ]
     },
     {
@@ -53,32 +54,32 @@ API_LIST = [
         "api_key": os.getenv("GROQ_KEY_2", ""),
         "type": "openai",
         "models": [
-            "qwen/qwen3.8-27b",
-            "openai/gpt-oss-120b",
-            "openai/gpt-oss-20b"
+            "llama-3.3-70b-versatile",
+            "llama-3.1-8b-instant",
+            "mixtral-8x7b-32768"
         ]
     },
-   {"name": "Cloudflare AI (zaxira)",
-    {"name": "Groq 1 (asosiy)", "base_url": "https://api.groq.com/openai/v1",
-     "api_key": os.getenv("GROQ_KEY_1", ""), "type": "openai",
-     "models": ["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "mixtral-8x7b-32768", "gemma2-9b-it"]},
-    {"name": "Groq 2", "base_url": "https://api.groq.com/openai/v1",
-     "api_key": os.getenv("GROQ_KEY_2", ""), "type": "openai",
-     "models": ["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "mixtral-8x7b-32768"]},
-    {"name": "Cloudflare AI (zaxira)",
-     "base_url": "https://api.cloudflare.com/client/v4/accounts/{account_id}/ai/run",
-     "account_id": os.getenv("CLOUDFLARE_ACCOUNT_ID", ""),
-     "api_key": os.getenv("CLOUDFLARE_KEY", ""), "type": "cloudflare",
-     "models": ["@cf/meta/llama-3-8b-instruct", "@cf/meta/llama-3.1-8b-instruct",
-                "@cf/mistral/mistral-7b-instruct-v0.2", "@cf/google/gemma-7b-it-lora"]},
+    {
+        "name": "Cloudflare AI (zaxira)",
+        "base_url": "https://api.cloudflare.com/client/v4/accounts/{account_id}/ai/run",
+        "account_id": os.getenv("CLOUDFLARE_ACCOUNT_ID", ""),
+        "api_key": os.getenv("CLOUDFLARE_KEY", ""),
+        "type": "cloudflare",
+        "models": [
+            "@cf/meta/llama-3-8b-instruct",
+            "@cf/meta/llama-3.1-8b-instruct",
+            "@cf/mistral/mistral-7b-instruct-v0.2",
+            "@cf/google/gemma-7b-it-lora"
+        ]
+    },
     {
         "name": "OpenRouter",
         "base_url": "https://openrouter.ai/api/v1",
         "api_key": os.getenv("OPENROUTER_KEY", ""),
         "type": "openai",
         "models": [
-            "qwen/qwen3.8-27b",
-            "openai/gpt-oss-120b",
+            "meta-llama/llama-3.1-70b-instruct",
+            "qwen/qwen-2.5-72b-instruct",
             "meta-llama/llama-3.2-3b-instruct"
         ]
     },
@@ -88,9 +89,9 @@ API_LIST = [
         "api_key": os.getenv("GOOGLE_KEY_1", ""),
         "type": "google",
         "models": [
-            "gemini-2.0-flash-exp",
             "gemini-1.5-flash",
-            "gemini-1.5-flash-8b"
+            "gemini-1.5-flash-8b",
+            "gemini-1.5-pro-latest"
         ]
     },
     {
@@ -99,7 +100,7 @@ API_LIST = [
         "api_key": os.getenv("AI_API_KEY", ""),
         "type": "openai",
         "models": [AI_MODEL, "gpt-3.5-turbo", "llama3"]
-    },
+    }
     {"name": "OpenRouter", "base_url": "https://openrouter.ai/api/v1",
      "api_key": os.getenv("OPENROUTER_KEY", ""), "type": "openai",
      "models": ["meta-llama/llama-3.1-70b-instruct", "qwen/qwen-2.5-72b-instruct", "meta-llama/llama-3.2-3b-instruct"]},
