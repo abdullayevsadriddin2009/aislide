@@ -1,4 +1,6 @@
 import os
+from dotenv import load_dotenv
+load_dotenv()
 # ===== Bot token =====
 BOT_TOKEN = os.getenv("BOT_TOKEN", "8863758833:AAGOo38f5EyymLztgvL9dw94xB4oZtfT7bE")
 BOT_USERNAME = os.getenv("BOT_USERNAME", "@Talaba_AI_SlideBot")
