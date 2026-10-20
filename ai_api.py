@@ -11,6 +11,7 @@ import aiohttp
 import asyncio
 import json
 import re
+import math
 import os
 from dotenv import load_dotenv
 load_dotenv()
@@ -35,65 +36,28 @@ MAX_CHUNK_PAGES = 3
 LONG_SERVICES = ("diplom", "kurs", "referat", "maqola")
 
 API_LIST = [
-    {
-        "name": "Groq 1 (asosiy)",
-        "base_url": "https://api.groq.com/openai/v1",
-        "api_key": os.getenv("GROQ_KEY_1", ""),
-        "type": "openai",
-        "models": [
-            "qwen/qwen3.8-27b",
-            "openai/gpt-oss-120b",
-            "openai/gpt-oss-20b"
-        ]
-    },
-    {
-        "name": "Groq 2",
-        "base_url": "https://api.groq.com/openai/v1",
-        "api_key": os.getenv("GROQ_KEY_2", ""),
-        "type": "openai",
-        "models": [
-            "qwen/qwen3.8-27b",
-            "openai/gpt-oss-120b",
-            "openai/gpt-oss-20b"
-        ]
-    },
-   {"name": "Cloudflare AI (zaxira)",
+    {"name": "Groq 1 (asosiy)", "base_url": "https://api.groq.com/openai/v1",
+     "api_key": os.getenv("GROQ_KEY_1", ""), "type": "openai",
+     "models": ["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "mixtral-8x7b-32768", "gemma2-9b-it"]},
+    {"name": "Groq 2", "base_url": "https://api.groq.com/openai/v1",
+     "api_key": os.getenv("GROQ_KEY_2", ""), "type": "openai",
+     "models": ["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "mixtral-8x7b-32768"]},
+    {"name": "Cloudflare AI (zaxira)",
      "base_url": "https://api.cloudflare.com/client/v4/accounts/{account_id}/ai/run",
      "account_id": os.getenv("CLOUDFLARE_ACCOUNT_ID", ""),
      "api_key": os.getenv("CLOUDFLARE_KEY", ""), "type": "cloudflare",
      "models": ["@cf/meta/llama-3-8b-instruct", "@cf/meta/llama-3.1-8b-instruct",
                 "@cf/mistral/mistral-7b-instruct-v0.2", "@cf/google/gemma-7b-it-lora"]},
-    {
-        "name": "OpenRouter",
-        "base_url": "https://openrouter.ai/api/v1",
-        "api_key": os.getenv("OPENROUTER_KEY", ""),
-        "type": "openai",
-        "models": [
-            "qwen/qwen3.8-27b",
-            "openai/gpt-oss-120b",
-            "meta-llama/llama-3.2-3b-instruct"
-        ]
-    },
-    {
-        "name": "Google AI",
-        "base_url": "https://generativelanguage.googleapis.com/v1beta",
-        "api_key": os.getenv("GOOGLE_KEY_1", ""),
-        "type": "google",
-        "models": [
-            "gemini-2.0-flash-exp",
-            "gemini-1.5-flash",
-            "gemini-1.5-flash-8b"
-        ]
-    },
-    {
-        "name": "Local FreeLLMAPI",
-        "base_url": AI_API_URL,
-        "api_key": os.getenv("AI_API_KEY", ""),
-        "type": "openai",
-        "models": [AI_MODEL, "gpt-3.5-turbo", "llama3"]
-    },
+    {"name": "OpenRouter", "base_url": "https://openrouter.ai/api/v1",
+     "api_key": os.getenv("OPENROUTER_KEY", ""), "type": "openai",
+     "models": ["meta-llama/llama-3.1-70b-instruct", "qwen/qwen-2.5-72b-instruct", "meta-llama/llama-3.2-3b-instruct"]},
+    {"name": "Google AI", "base_url": "https://generativelanguage.googleapis.com/v1beta",
+     "api_key": os.getenv("GOOGLE_KEY_1", ""), "type": "google",
+     "models": ["gemini-1.5-flash", "gemini-1.5-flash-8b", "gemini-1.5-pro-latest"]},
+    {"name": "Local FreeLLMAPI", "base_url": AI_API_URL,
+     "api_key": os.getenv("AI_API_KEY", ""), "type": "openai",
+     "models": [AI_MODEL, "gpt-3.5-turbo", "llama3"]},
 ]
-
 CURRENT_API_INDEX = 0
 CURRENT_MODEL_INDEX = 0
 
@@ -270,12 +234,12 @@ SERVICE_TEMPLATES = {
         ("XULOSA", "Umumiy xulosa va takliflar — 3 bet"),
         ("ADABIYOTLAR RO'YXATI", "30+ manba, to'liq bibliografik ma'lumot bilan"),
         ("QO'SHIMCHALAR", "Jadvallar, diagrammalar, namunaviy hujjatlar, anketa matnlari")]},
-    "insho": {"style": "erkin, badiiy yoki publitsistik, shaxsiy fikrlar bilan. HAJMI: 2-5 bet (500-1500 so'z).", "sections": [
-        ("KIRISH / TEZIS", "Mavzuga kirish va muallifning ASOSIY fikri (tezis) — 1 bet"),
-        ("ASOSIY QISM — 1-DALIL", "Birinchi argument, hayotiy yoki fanniy misol bilan — 1-2 bet"),
-        ("ASOSIY QISM — 2-DALIL", "Ikkinchi argument, misol bilan — 1-2 bet"),
-        ("ASOSIY QISM — 3-DALIL", "Uchinchi argument, qarama-qarshi fikrni rad etish — 1 bet"),
-        ("XULOSA", "Shaxsiy yakuniy xulosa, asosiy g'oyani takrorlash — 1 bet")]},
+    "insho": {"style": "erkin, badiiy yoki publitsistik uslub, shaxsiy fikrlar bilan. QATTIY STRUKTURA: Kirish (50-60 so'z) → Asosiy qism (3 ta abzas, har biri alohida argument+misol, jami 160-200 so'z) → Xulosa (60-70 so'z). Bog'lovchi so'zlardan foydalaning. Hech qanday boshqa til aralashmasin!", "sections": [
+        ("KIRISH / TEZIS", "Mavzuga kirish (dolzarblik), perefraz va ASOSIY TEZIS (muallifning asosiy fikri) — 50-60 so'z. Bitta abzas."),
+        ("ASOSIY QISM — 1-ARGUMENT", "Birinchi kuchli argument + tushuntirish + hayotiy yoki ilmiy misol — alohida abzas"),
+        ("ASOSIY QISM — 2-ARGUMENT", "Ikkinchi argument yoki qarama-qarshi tomon tahlili + misol — alohida abzas"),
+        ("ASOSIY QISM — SHAXSIY MUNOSABAT", "Ikkala tomonni tahlil qilib shaxsiy yakuniy munosabat — alohida abzas"),
+        ("XULOSA", "Barcha argumentlarni qisqacha umumlashtirish, tezisni boshqa so'zlar bilan tasdiqlash, yakuniy taklif/chaqiriq — 60-70 so'z. Yangi fikr kiritmang!")]},
     "test": {"style": "qisqa, aniq savollar, har birida BITTAGINA to'g'ri javob. Format: savol + A/B/C/D + javob kaliti.", "sections": [
         ("TEST SAVOLLARI", "Har bir savol: raqam, savol matni, A) B) C) D) variantlari. To'g'ri javob (TO'G'RI) belgilangan"),
         ("JAVOBLAR KALITI", "Oxirida barcha to'g'ri javoblar ro'yxati (1-B, 2-A, ...) + har biriga qisqa izoh")]},
@@ -359,6 +323,8 @@ async def generate(service, topic, options, lang="uz"):
     from services import SERVICES
     name = SERVICES.get(service, {}).get("name", service)
     pages = int(options.get("pages", 10) or 10)
+    if service == "insho" and options.get("target_words"):
+        pages = max(2, math.ceil(int(options["target_words"]) / 220))
     if service == "test":
         return await _generate_test(service, topic, options, lang)
     wiki = await wikipedia_fetch(topic, max_chars=10000 if service in LONG_SERVICES else 4000,
@@ -642,9 +608,14 @@ CHAT_STYLE = {
     "fr": "Répondez dans un style conversationnel, brièvement et clairement. Si l'utilisateur envoie un long texte, analysez-le ou résumez-le.",
 }
 
-async def chat_answer(question):
+async def chat_answer(question, user_lang="uz"):
     q = str(question or "")
-    lang = detect_topic_lang(q)
+    detected = detect_topic_lang(q)
+    # Lotin matn (maxsus belgisiz) — foydalanuvchi tilini asos qil (o'zbekcha lotin = en deb noto'g'ri aniqlanmasin)
+    if detected == "en" and re.search(r'[А-Яа-яЁё]', q) is None:
+        lang = str(user_lang).lower()
+    else:
+        lang = detected
     # Uzun matn — birinchi 8000 belgi, qisqartirilganini bildirish
     truncated = ""
     if len(q) > 8000:
