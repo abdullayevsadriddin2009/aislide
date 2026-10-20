@@ -7,16 +7,16 @@ services:
     region: frankfurt
     buildCommand: pip install -r requirements.txt
     startCommand: python run.py
-    healthCheckPath: /
+    healthCheckPath: /health      # cron / UptimeRobot har 5 daqiqada shu manzilni ping qiladi
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.9
       - key: BOT_TOKEN
-        sync: false                # Render dashboard'da qo'lda kiritiladi
+        sync: false
       - key: ADMIN_ID
         sync: false
       - key: AI_BASE_URL
-        sync: false                # masalan: https://openrouter.ai/api/v1
+        sync: false
       - key: AI_API_KEY
         sync: false
       - key: AI_MODEL
@@ -27,3 +27,13 @@ services:
         value: "1"
       - key: DATA_DIR
         value: /opt/render/project/src/data
+      - key: PIXABAY_KEY
+        sync: false                # rasm qidiruv — pixabay.com/api
+      - key: PEXELS_KEY
+        sync: false                # rasm qidiruv — pexels.com/api
+      - key: UNSPLASH_KEY
+        sync: false                # rasm qidiruv — unsplash.com/developers
+      - key: GROQ_KEY_1
+        sync: false
+      - key: GROQ_KEY_2
+        sync: false
