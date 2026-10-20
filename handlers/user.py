@@ -15,6 +15,28 @@ async def _lang(user_id):
     u = await db.get_user(user_id)
     return u["lang"] if u else "uz"
 
+async def _award_referral_bonus(bot, user_id):
+    """Referal bonus beradi — yangi foydalanuvchi til tanlaganda va /start da chaqiriladi."""
+    try:
+        u = await db.get_user(user_id)
+        if not u: return
+        ref_id = u["referred_by"]
+        if not ref_id or ref_id == user_id or u["bonus_awarded"]:
+            return
+        bonus = await db.get_referral_bonus()
+        if bonus <= 0: return
+        await db.add_balance(ref_id, bonus)
+        await db.add_referral_earned(ref_id, bonus)
+        await db.update_user(user_id, bonus_awarded=1)
+        print(f"[referral] 🎁 Bonus +{bonus} so'm → {ref_id} (taklif: {user_id})", flush=True)
+        try:
+            ref_lang = await _lang(ref_id)
+            await bot.send_message(ref_id, t("referal_bonus_notify", ref_lang, bonus=bonus))
+        except Exception:
+            pass
+    except Exception as e:
+        print(f"[referral] bonus xato: {e}", flush=True)
+
 async def _is_subscribed(bot, user_id):
     """Majburiy obuna tekshiruvi. True = obuna bo'lgan yoki kerak emas."""
     require_sub = (await db.get_setting("require_channel_sub",
@@ -54,6 +76,8 @@ async def cb_bot_lang(call: CallbackQuery, state: FSMContext):
         lang_code = "uz"
     await db.update_user(call.from_user.id, lang=lang_code)
     await call.answer(t("lang_saved", lang_code))
+    # Yangi foydalanuvchi til tanlagan paytda referal bonusini beramiz
+    await _award_referral_bonus(call.bot, call.from_user.id)
     # Welcome xabarini yangi tilda ko'rsatish
     if not await _is_subscribed(call.bot, call.from_user.id):
         await _sub_message(call.bot, call, lang_code); return
@@ -98,19 +122,8 @@ async def cmd_start(message: Message, command: CommandObject, state: FSMContext)
         await _sub_message(message.bot, message, lang)
         return
 
-    # 4. Referal bonus
-    ref_id = u["referred_by"] or referred_by
-    if ref_id and ref_id != message.from_user.id and not u["bonus_awarded"]:
-        bonus = await db.get_referral_bonus()
-        if bonus > 0:
-            await db.add_balance(ref_id, bonus)
-            await db.add_referral_earned(ref_id, bonus)
-            await db.update_user(message.from_user.id, bonus_awarded=1)
-            try:
-                ref_lang = await _lang(ref_id)
-                await message.bot.send_message(ref_id, t("referal_bonus_notify", ref_lang, bonus=bonus))
-            except Exception:
-                pass
+    # 4. Referal bonus (qayta foydalanuvchilar uchun ham tekshiriladi)
+    await _award_referral_bonus(message.bot, message.from_user.id)
     try:
         await message.answer(t("welcome", lang), reply_markup=main_kb(lang))
     except Exception:
