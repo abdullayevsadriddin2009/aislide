@@ -7,6 +7,11 @@ import config
 app = Flask(__name__)
 app.secret_key = config.AI_API_KEY
 
+@app.route("/health")
+def health():
+    """Cron / UptimeRobot uchun — bot tirikligini tekshirish. Login shart emas."""
+    return "OK", 200
+
 PAGE = """
 <!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
