@@ -254,7 +254,7 @@ async def chat_handle(message: Message, state: FSMContext):
         return
     from ai_api import chat_answer
     thinking = await message.answer(t("chat_thinking", lang))
-    answer = await chat_answer(message.text)
+    answer = await chat_answer(message.text, user_lang=lang)
     try:
         if answer:
             await thinking.edit_text(answer[:4000])
