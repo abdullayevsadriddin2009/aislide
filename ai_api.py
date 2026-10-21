@@ -452,35 +452,80 @@ def _make_image_prompt(topic, idx):
 
 async def generate_slides_structured(topic, subject, lang, count):
     ln = _lang_name(lang)
-    target_chars = count * 750
     wiki = await wikipedia_fetch(topic, max_chars=4000, gen_lang=lang)
     wb = wiki_block(wiki)
+    
+    # AI uchun qat'iy qolip (1-slayd sarlavha, 2-reja va hokazo)
     system = (_pure_language_system(lang) +
-              f" Slayd tuzilishi: 1) Sarlavha; 2) Reja; 3) Kirish; 4-{count-1}) Asosiy qism (faktlar, sanalar); "
-              f"{count}) Xulosa. Har slayd: sarlavha + 6-8 gap. Faqat JSON qaytaring.")
-    prompt = f"""{topic} mavzusida {count} slaydli taqdimot. Fan: {subject}. Til: faqat {ln}.{wb}
-JSON: [{{"title":"...","content":["gap1","gap2",...]}}]"""
-    txt = None
-    for _ in range(2):
+              f" Siz professional taqdimot tuzuvchisiz. Javobni FAQAT {ln} tilida yozing! "
+              f"Boshqa birorta ham chet tilidagi so'z aralashmasin! "
+              f"Javobni faqat JSON massiv ko'rinishida qaytaring, boshqa matn yozmang.")
+              
+    prompt = f"""{topic} mavzusida {count} slaydli taqdimot tayyorlang. Fan: {subject}. Til: {ln}.{wb}
+Tuzilishi QAT'IY quyidagicha bo'lishi shart:
+1-slayd: Sarlavha (mavzu va fan nomi)
+2-slayd: Reja (taqdimot rejasi)
+3-slayd: Kirish
+4-dan {count-1}-slaydgacha: Asosiy qism (faktlar, tahlillar)
+{count}-slayd: Xulosa
+
+Har bir slayd uchun 4 tadan 6 tagacha gap yozing. 
+JSON formati: [{{"title":"...","content":["gap1","gap2",...]}}]"""
+
+    slides = None
+    for attempt in range(3): # 3 marta urinish
         txt = await _chat_complete(prompt, system=system, max_tokens=16000)
-        if txt and len(txt) > target_chars * 0.5: break
-        await asyncio.sleep(1)
-    slides = _extract_json(txt) if txt else None
+        if not txt or "⚠️" in txt: continue
+        
+        slides = _extract_json(txt)
+        if slides and isinstance(slides, list) and len(slides) >= 3:
+            # Til aralashganini tekshirish
+            all_text = " ".join([str(s.get("title", "")) + " " + " ".join(s.get("content", [])) for s in slides])
+            if _is_lang_mixed(all_text, lang):
+                _log(f"⚠️ Slaydlarda til aralashgan. Qayta generatsiya... ({attempt+1}/3)")
+                prompt += f"\n\nDIQQAT: Oldingi javobda BOSHQA TIL so'zlari aralashgan! FAQAT {ln} tilida yozing!"
+                await asyncio.sleep(1)
+                continue
+            break # Muvaffaqiyatli
+
     if slides and isinstance(slides, list) and len(slides) >= 3:
+        # Slaydlar sonini to'g'rilash
+        while len(slides) < count:
+            slides.append(slides[len(slides) % len(slides)])
+        slides = slides[:count]
+        
+        # Sarlavhalarni majburiy tartibga solish (AI xato qilsa ham)
+        fb_titles = {
+            "uz": {"reja": "Reja", "kirish": "Kirish", "xulosa": "Xulosa"},
+            "ru": {"reja": "План", "kirish": "Введение", "xulosa": "Заключение"},
+            "en": {"reja": "Outline", "kirish": "Introduction", "xulosa": "Conclusion"},
+            "tr": {"reja": "Plan", "kirish": "Giriş", "xulosa": "Sonuç"},
+            "de": {"reja": "Gliederung", "kirish": "Einleitung", "xulosa": "Fazit"},
+            "fr": {"reja": "Plan", "kirish": "Introduction", "xulosa": "Conclusion"},
+        }
+        t_lang = fb_titles.get(lang, fb_titles["en"])
+        slides[0]["title"] = f"{topic}" # 1. Sarlavha
+        slides[1]["title"] = t_lang["reja"] # 2. Reja
+        slides[2]["title"] = t_lang["kirish"] # 3. Kirish
+        slides[-1]["title"] = t_lang["xulosa"] # Oxirgi. Xulosa
+
         out = []
-        while len(slides) < count: slides.append(slides[len(slides) % len(slides)])
-        for i, s in enumerate(slides[:count]):
+        for i, s in enumerate(slides):
             cl = s.get("content", ["Ma'lumot tayyorlanmoqda..."])
             if isinstance(cl, str): cl = [p.strip() for p in cl.split("\n") if p.strip()]
-            while len(cl) < 5: cl.append(f"{topic} bo'yicha batafsil tahlil.")
-            out.append({"slide_number": i+1,
-                        "title": clean_ai_text(str(s.get("title", f"Bo'lim {i+1}"))),
-                        "content": [clean_ai_text(str(c)) for c in cl[:12]],
-                        "has_image": _is_image_slide(i, count),
-                        "image_prompt": _make_image_prompt(topic, i) if _is_image_slide(i, count) else None,
-                        "wiki_source": wiki["url"] if wiki["found"] else None})
+            while len(cl) < 4: cl.append(f"{topic} bo'yicha batafsil tahlil.")
+            
+            out.append({
+                "slide_number": i+1,
+                "title": clean_ai_text(str(s.get("title", f"Bo'lim {i+1}"))),
+                "content": [clean_ai_text(str(c)) for c in cl[:6]], # Max 6 gap
+                "has_image": _is_image_slide(i, count),
+                "image_prompt": _make_image_prompt(topic, i) if _is_image_slide(i, count) else None,
+                "wiki_source": wiki["url"] if wiki["found"] else None
+            })
         _log(f"✅ Slayd tayyor: {len(out)}")
         return out, True
+        
     _log("⚠️ Slayd zaxirasi ishlatilmoqda")
     return _fallback_slides(topic, count, lang), False
 
