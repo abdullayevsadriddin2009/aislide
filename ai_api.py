@@ -1,11 +1,12 @@
 """
-AI API — to'liq tuzatilgan versiya (v3)
+AI API — to'liq tuzatilgan versiya (v4)
 ========================================
-✓ Barcha 9 xizmat o'z shablonida bo'lakma-bo'lak generatsiya qilinadi (takrorlanmas, to'liq hajmdagi)
-✓ Til tozaligi: qaysi til tanlansa, SOF o'sha tilda (boshqa til aralashmaydi)
-✓ Wikipediya faktlari (uz→ru→en) — barcha xizmatlarda
-✓ Rasm: Wikipedia rasmi + Pixabay + Pexels + Unsplash (4 manba)
-✓ Ko'p API + ko'p model avtomatik almashish
+✓ Slaydlar tartibi: 1-Sarlavha, 2-Reja, 3-Kirish, ..., Oxirgi-Xulosa
+✓ Til tozaligi: tanlangan tilda yozilishga qat'iy majburlash
+✓ _is_lang_mixed xatosi to'g'rilandi
+✓ Barcha 9 xizmat o'z shablonida bo'lakma-bo'lak generatsiya qilinadi
+✓ Wikipediya faktlari
+✓ Rasm: Wikipedia + Pixabay + Pexels + Unsplash
 """
 import aiohttp
 import asyncio
@@ -13,7 +14,6 @@ import json
 import re
 import math
 import os
-import math
 from dotenv import load_dotenv
 load_dotenv()
 from config import AI_API_URL, AI_MODEL, AI_TIMEOUT
@@ -26,8 +26,6 @@ IMAGE_SLIDE_INDICES = [0, 3, 6]
 USER_AGENT = "SlaydBot/1.0 (aloqa: admin@example.uz)"
 
 def wiki_langs_for(gen_lang):
-    """Generatsiya tiliga ko'ra Wikipediya qidiruv tartibi — AVVAL o'sha tilda qidiradi.
-    Mavzu inglizcha bo'lsa → en.wikipedia birinchi; ruscha bo'lsa → ru.wikipedia birinchi."""
     order = {"uz": ["uz","ru","en"], "ru": ["ru","en","uz"], "en": ["en","ru","uz"],
              "tr": ["en","tr","ru","uz"], "de": ["en","de","ru","uz"], "fr": ["en","fr","ru","uz"]}
     return order.get(str(gen_lang).lower(), ["en","ru","uz"])
@@ -99,6 +97,7 @@ API_LIST = [
 CURRENT_API_INDEX = 0
 CURRENT_MODEL_INDEX = 0
 
+
 def get_current_api():  return API_LIST[CURRENT_API_INDEX]
 def get_current_model():
     return get_current_api()["models"][CURRENT_MODEL_INDEX % len(get_current_api()["models"])]
@@ -144,7 +143,6 @@ LANG_FULL = {"uz": "o'zbekcha", "ru": "ruscha", "en": "inglizcha", "tr": "turkch
 ALL_LANGS = ("uz", "ru", "en", "tr", "de", "fr")
 def _lang_name(code): return LANG_NAMES.get(str(code).lower(), "o'zbek")
 
-# ===== Tizim prompti — HAR BIR TILDA o'z tilda (modelga aniq ko'rsatish uchun) =====
 SYSTEM_PROMPTS = {
     "uz": "Siz akademik matn yozish bo'yicha mutaxassissiz. ABSOLYUT HAMMA NARSANI faqat o'zbekcha yozing! Hech qanday boshqa til so'zi, atamasi yoki iborasi aralashmasin. Har bir sarlavha, har bir gap, har bir raqam izohi — hammasi o'zbekcha bo'lsin. Agar biror atama o'zbekchada bo'lmasa, uni tarjima qilib yozing. * yoki # belgi ishlatmang. Faktlarga asoslaning, xayoliy ma'lumot qo'shmang. Berilgan manbadagi (Wikipedia) faktlar, sanalar va raqamlarni aynan shunday qoldiring.",
     "ru": "Вы специалист по написанию академических текстов. ПИШИТЕ АБСОЛЮТНО ВСЁ только на русском языке! Никаких слов, терминов или выражений на других языках. Каждый заголовок, каждое предложение, каждая сноска — всё на русском. Если термина нет в русском, переведите его. Не используйте * и #. Опирайтесь на факты, не добавляйте вымышленные данные. Факты, даты и цифры из источника (Википедии) сохраняйте точно.",
@@ -155,7 +153,6 @@ SYSTEM_PROMPTS = {
 }
 
 def detect_topic_lang(topic):
-    """Mavzu tilini aniqlash — Wikipedia qidiruv uchun."""
     t = str(topic or "")
     if len(re.findall(r'[А-Яа-яЁё]', t)) >= 2: return "ru"
     low = t.lower()
@@ -168,7 +165,6 @@ def detect_topic_lang(topic):
     return "en"
 
 def wiki_langs_for_topic(topic, gen_lang):
-    """AVVAL mavzu tilida, keyin hujjat tilida, keyin en/ru/uz qidiradi."""
     tl = detect_topic_lang(topic)
     gl = str(gen_lang).lower()
     order = [tl, gl]
@@ -189,6 +185,16 @@ def _english_ratio(text):
     words = re.findall(r'[a-zA-Z]{2,}', str(text).lower())
     if not words: return 0.0
     return sum(1 for w in words if w in _EN_STOP) / len(words)
+
+# ===== YANGI QO'SHILGAN FUNKSIYA =====
+def _is_lang_mixed(text, lang):
+    """Matnda boshqa til aralashganini tekshirish"""
+    enr = _english_ratio(text)
+    cyr_ratio = len(re.findall(r'[А-Яа-яЁё]', text)) / max(1, len(text))
+    if lang != "en" and enr > 0.05: return True
+    if lang == "ru" and cyr_ratio < 0.20: return True
+    if lang in ("uz","tr","de","fr") and cyr_ratio > 0.10: return True
+    return False
 
 def _pure_language_system(lang_code):
     lc = str(lang_code).lower()
@@ -341,14 +347,8 @@ async def _generate_section(service, topic, sec_title, sec_pages, sec_desc, lang
             }
             txt = fb.get(str(lang).lower(), fb["en"])
         # TIL TOZALIGI TEKSHIRUVI: boshqa til aralashgan bo'lsa — qayta generatsiya
-        enr = _english_ratio(txt)
-        cyr_ratio = len(re.findall(r'[А-Яа-яЁё]', txt)) / max(1, len(txt))
-        mixed = False
-        if lang != "en" and enr > 0.08: mixed = True
-        if lang == "ru" and cyr_ratio < 0.25: mixed = True   # ruscha bo'lishi kerak, lotin ko'p bo'lsa
-        if lang in ("uz","tr","de","fr") and cyr_ratio > 0.15: mixed = True  # lotin tillarida kirillcha bo'lmasin
-        if mixed:
-            _log(f"⚠️ Til aralashgan ({sec_title}, en={enr:.0%}, kir={cyr_ratio:.0%}), qayta generatsiya...")
+        if _is_lang_mixed(txt, lang):
+            _log(f"⚠️ Til aralashgan ({sec_title}), qayta generatsiya...")
             txt2 = await _chat_complete(
                 prompt + "\n\nDIQQAT: Oldingi javobda BOSHQA TIL so'zlari aralashgan! FAQAT so'ralgan tilda yoz, boshqa til so'zlarini mutlaqo ishlatma!",
                 system=_pure_language_system(lang), max_tokens=4096)
@@ -356,7 +356,6 @@ async def _generate_section(service, topic, sec_title, sec_pages, sec_desc, lang
         parts.append(txt); local_prev = txt[:600]
         await asyncio.sleep(0.2)
     return "\n\n".join(parts)
-
 
 
 async def generate_outline(service, topic, lang, words=250):
@@ -730,12 +729,10 @@ CHAT_STYLE = {
 async def chat_answer(question, user_lang="uz"):
     q = str(question or "")
     detected = detect_topic_lang(q)
-    # Lotin matn (maxsus belgisiz) — foydalanuvchi tilini asos qil (o'zbekcha lotin = en deb noto'g'ri aniqlanmasin)
     if detected == "en" and re.search(r'[А-Яа-яЁё]', q) is None:
         lang = str(user_lang).lower()
     else:
         lang = detected
-    # Uzun matn — birinchi 8000 belgi, qisqartirilganini bildirish
     truncated = ""
     if len(q) > 8000:
         truncated = {
@@ -754,7 +751,6 @@ async def chat_answer(question, user_lang="uz"):
     return None
 
 async def test_api():
-    """Barcha API va modellarni sinash — admin /testapi buyrug'i uchun."""
     lines = []
     for api in API_LIST:
         if not api["api_key"]:
