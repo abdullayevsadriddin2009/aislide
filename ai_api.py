@@ -328,7 +328,7 @@ async def _generate_section(service, topic, sec_title, sec_pages, sec_desc, lang
                   f"Shartlar: (1) faqat yangi, avval yozilmagan ma'lumot yoz; "
                   f"(2) oldingi qismni takrorlama; (3) betlarni to'ldir, qisqartma; "
                   f"(4) faktlar, sanalar, raqamlar, misollar qo'sh.")
-        txt = await _chat_complete(prompt, system=_pure_language_system(lang), max_tokens=8000)
+        txt = await _chat_complete(prompt, system=_pure_language_system(lang), max_tokens=4096)
         if not txt or "⚠️" in txt:
             fb = {
                 "uz": f"{sec_title} bo'yicha batafsil ma'lumot. {topic} mavzusida chuqur tahlil, faktlar va xulosalar.",
@@ -350,7 +350,7 @@ async def _generate_section(service, topic, sec_title, sec_pages, sec_desc, lang
             _log(f"⚠️ Til aralashgan ({sec_title}, en={enr:.0%}, kir={cyr_ratio:.0%}), qayta generatsiya...")
             txt2 = await _chat_complete(
                 prompt + "\n\nDIQQAT: Oldingi javobda BOSHQA TIL so'zlari aralashgan! FAQAT so'ralgan tilda yoz, boshqa til so'zlarini mutlaqo ishlatma!",
-                system=_pure_language_system(lang), max_tokens=8000)
+                system=_pure_language_system(lang), max_tokens=4096)
             if txt2 and "⚠️" not in txt2: txt = txt2
         parts.append(txt); local_prev = txt[:600]
         await asyncio.sleep(0.2)
@@ -647,7 +647,7 @@ async def _try_post(api, model, payload):
     except asyncio.TimeoutError: LAST_ERROR = f"Vaqt tugadi: {AI_TIMEOUT}s"; return None, None, LAST_ERROR
     except Exception as e: LAST_ERROR = f"Xato: {type(e).__name__}: {e}"; return None, None, LAST_ERROR
 
-async def _chat_complete(prompt, system=None, max_tokens=8000):
+async def _chat_complete(prompt, system=None, max_tokens=4096):
     messages = [
         {"role": "system", "content": system or _pure_language_system("uz")},
         {"role": "user", "content": prompt}]
@@ -665,8 +665,10 @@ async def _chat_complete(prompt, system=None, max_tokens=8000):
             _log(f"✅ {api['name']} | {model}")
             return text.strip()
         _log(f"❌ {api['name']} | {model}: {err}")
+        if status == 429:
+            await asyncio.sleep(2.0)   # rate limit — kutib qolamiz
         if not switch_to_next_model() and CURRENT_API_INDEX == start: break
-        await asyncio.sleep(0.3)
+        await asyncio.sleep(0.5)
     _log("⚠️ BARCHA API ishlamadi!")
     return "⚠️ Hozir barcha manbalar ishlashdan to'xtadi."
 
