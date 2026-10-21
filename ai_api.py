@@ -665,9 +665,16 @@ async def _try_post(api, model, payload):
                     return resp.status, None, f"HTTP {resp.status}"
     except Exception as e: return None, None, str(e)
 
-async def _chat_complete(prompt, system=None, max_tokens=4096):
-    messages = [{"role": "system", "content": system or _pure_language_system("uz")}, {"role": "user", "content": prompt}]
-    payload = {"messages": messages, "temperature": 0.7, "max_tokens": max_tokens}
+async def _chat_complete_essay(prompt, system=None, max_tokens=2500):
+    messages = [{"role": "system", "content": system}, {"role": "user", "content": prompt}]
+    # frequency_penalty va presence_penalty so'z takrorlanishini to'xtatadi
+    payload = {
+        "messages": messages, 
+        "temperature": 0.6, 
+        "max_tokens": max_tokens,
+        "frequency_penalty": 0.8,
+        "presence_penalty": 0.6
+    }
     start = CURRENT_API_INDEX
     while True:
         api = get_current_api(); model = get_current_model()
