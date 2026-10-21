@@ -9,7 +9,7 @@ from keyboards import (option_kb_for, confirm_kb, main_kb, option_label,
                        subjects_kb, languages_kb, design_confirm_kb, designs_kb, slide_count_kb, format_kb)
 from designs import (DESIGNS, SLIDE_COUNTS, suggest_design, subject_name, design_name,
                      detect_subject_key, lang_full_name)
-from ai_api import generate, generate_slides_structured, get_last_error, search_images, download_image
+from ai_api import generate, generate_slides_structured, get_last_error, search_images, download_image, generate_outline
 from pptx_generator import generate_pptx
 from docx_generator import generate_docx
 
@@ -284,6 +284,22 @@ async def cb_confirm(call: CallbackQuery, state: FSMContext):
         if price - pay_bonus: await db.add_balance(user_id, -(price - pay_bonus))
     await msg.edit_text(t("generating", lang))
     await call.answer()
+    # ===== ESSAY: avval REJA (outline) chiqariladi =====
+    if service == "insho":
+        language_code = data.get("language", lang)
+        words = int(options.get("words", 250))
+        outline = await generate_outline(service, topic, language_code, words)
+        from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text=t("btn_write_essay", lang), callback_data="essay:go")],
+            [InlineKeyboardButton(text=t("btn_cancel", lang), callback_data="cancel")],
+        ])
+        if outline:
+            await msg.edit_text(t("essay_outline", lang, outline=outline[:3000]), reply_markup=kb)
+        else:
+            await msg.edit_text(t("essay_outline", lang, outline="(Reja avtomatik tuziladi)"), reply_markup=kb)
+        await state.set_state(Creation.essay_outline)
+        return
     s = SERVICES.get(service, {})
     safe_topic = "".join(c for c in topic[:25] if c.isalnum() or c in " _-").strip() or "document"
     if service == "slide":
@@ -312,7 +328,13 @@ async def cb_confirm(call: CallbackQuery, state: FSMContext):
     else:
         language_code = data.get("language", lang)
         text_content, real = await generate(service, topic, options, language_code)
-        pages = int(options.get("pages", 10) or 10)
+        if service == "insho" and options.get("words"):
+            words = int(options["words"])
+            pages = max(2, math.ceil(words / 220))
+            options["pages"] = pages
+            options["target_words"] = words
+        else:
+            pages = int(options.get("pages", 10) or 10)
         buf = generate_docx(topic, service_name(service, lang), service, language_code, pages, text_content, author=author)
         docx_bytes = buf.read()
         fmt = data.get("file_format", "docx")
@@ -330,5 +352,46 @@ async def cb_confirm(call: CallbackQuery, state: FSMContext):
             doc = BufferedInputFile(docx_bytes, filename=fname)
         caption = t("gen_done", lang) if real else t("gen_failed", lang)
         await msg.answer_document(doc, caption=caption, reply_markup=main_kb(lang))
+    await db.add_order(user_id, service, topic, options, 0 if free_mode else price, topic[:100])
+    await state.clear()
+
+# ===== Essay: reja tasdiqlandi, to'liq matn yoziladi =====
+@router.callback_query(Creation.essay_outline, F.data == "essay:go")
+async def cb_essay_go(call: CallbackQuery, state: FSMContext):
+    user_id, msg = _eid(call)
+    lang = await _lang(user_id)
+    data = await state.get_data()
+    service = data.get("service")
+    topic = data.get("topic", "")
+    options = data.get("options", {})
+    author = data.get("author", "")
+    price = await db.get_price(service)
+    free_mode = (await db.get_setting("free_mode", "1")) == "1" or price == 0
+    await msg.edit_text(t("generating", lang))
+    await call.answer()
+    safe_topic = "".join(c for c in topic[:25] if c.isalnum() or c in " _-").strip() or "document"
+    language_code = data.get("language", lang)
+    text_content, real = await generate(service, topic, options, language_code)
+    words = int(options.get("words", 250))
+    pages = max(2, math.ceil(words / 220))
+    options["pages"] = pages
+    options["target_words"] = words
+    buf = generate_docx(topic, service_name(service, lang), service, language_code, pages, text_content, author=author)
+    docx_bytes = buf.read()
+    fmt = data.get("file_format", "docx")
+    prefix = t(f"fname_{service}", lang)
+    if fmt == "pdf":
+        pdf_bytes = _to_pdf(docx_bytes, topic)
+        if pdf_bytes:
+            fname = f"{prefix}_{safe_topic}.pdf".replace(" ", "_")
+            doc = BufferedInputFile(pdf_bytes, filename=fname)
+        else:
+            fname = f"{prefix}_{safe_topic}.docx".replace(" ", "_")
+            doc = BufferedInputFile(docx_bytes, filename=fname)
+    else:
+        fname = f"{prefix}_{safe_topic}.docx".replace(" ", "_")
+        doc = BufferedInputFile(docx_bytes, filename=fname)
+    caption = t("gen_done", lang) if real else t("gen_failed", lang)
+    await msg.answer_document(doc, caption=caption, reply_markup=main_kb(lang))
     await db.add_order(user_id, service, topic, options, 0 if free_mode else price, topic[:100])
     await state.clear()
