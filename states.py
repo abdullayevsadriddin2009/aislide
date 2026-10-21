@@ -11,6 +11,7 @@ class Creation(StatesGroup):
     format = State()
     author = State()   # ✅ YANGI: muallif ismi (bir nechta qator bo'lishi mumkin)
     confirm = State()
+    essay_outline = State()   # ✅ Essay reja bosqichi
 
 class TopUp(StatesGroup):
     amount = State()
