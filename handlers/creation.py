@@ -1,10 +1,11 @@
+import math  # <--- NAMEERROR XATOSI TUZATILDI
 from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery, BufferedInputFile
 from aiogram.fsm.context import FSMContext
 import database as db
 from texts import t
 from states import Creation
-from services import SERVICES, service_name
+from services import SERVICES, service_name, ALL_LANGS  # ALL_LANGS shu yerga qo'shildi
 from keyboards import (option_kb_for, confirm_kb, main_kb, option_label,
                        subjects_kb, languages_kb, design_confirm_kb, designs_kb, slide_count_kb, format_kb)
 from designs import (DESIGNS, SLIDE_COUNTS, suggest_design, subject_name, design_name,
@@ -39,7 +40,6 @@ async def _collect_images(topic, slides_content, total=5):
     return paths
 
 async def _lang(uid):
-    from designs import ALL_LANGS
     u = await db.get_user(uid)
     return u["lang"] if u and u["lang"] in ALL_LANGS else "uz"
 
@@ -330,7 +330,7 @@ async def cb_confirm(call: CallbackQuery, state: FSMContext):
         text_content, real = await generate(service, topic, options, language_code)
         if service == "insho" and options.get("words"):
             words = int(options["words"])
-            pages = max(2, math.ceil(words / 220))
+            pages = max(2, math.ceil(words / 220))  # <--- math xatosiz ishlaydi
             options["pages"] = pages
             options["target_words"] = words
         else:
@@ -373,7 +373,7 @@ async def cb_essay_go(call: CallbackQuery, state: FSMContext):
     language_code = data.get("language", lang)
     text_content, real = await generate(service, topic, options, language_code)
     words = int(options.get("words", 250))
-    pages = max(2, math.ceil(words / 220))
+    pages = max(2, math.ceil(words / 220))  # <--- math xatosiz ishlaydi
     options["pages"] = pages
     options["target_words"] = words
     buf = generate_docx(topic, service_name(service, lang), service, language_code, pages, text_content, author=author)
