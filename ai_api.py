@@ -36,65 +36,28 @@ MAX_CHUNK_PAGES = 3
 LONG_SERVICES = ("diplom", "kurs", "referat", "maqola")
 
 API_LIST = [
-    {
-        "name": "Groq 1 (asosiy)",
-        "base_url": "https://api.groq.com/openai/v1",
-        "api_key": os.getenv("GROQ_KEY_1", ""),
-        "type": "openai",
-        "models": [
-            "qwen/qwen3.8-27b",
-            "openai/gpt-oss-120b",
-            "openai/gpt-oss-20b"
-        ]
-    },
-    {
-        "name": "Groq 2",
-        "base_url": "https://api.groq.com/openai/v1",
-        "api_key": os.getenv("GROQ_KEY_2", ""),
-        "type": "openai",
-        "models": [
-            "qwen/qwen3.8-27b",
-            "openai/gpt-oss-120b",
-            "openai/gpt-oss-20b"
-        ]
-    },
-   {"name": "Cloudflare AI (zaxira)",
+    {"name": "Groq 1 (asosiy)", "base_url": "https://api.groq.com/openai/v1",
+     "api_key": os.getenv("GROQ_KEY_1", ""), "type": "openai",
+     "models": ["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "mixtral-8x7b-32768", "gemma2-9b-it"]},
+    {"name": "Groq 2", "base_url": "https://api.groq.com/openai/v1",
+     "api_key": os.getenv("GROQ_KEY_2", ""), "type": "openai",
+     "models": ["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "mixtral-8x7b-32768"]},
+    {"name": "Cloudflare AI (zaxira)",
      "base_url": "https://api.cloudflare.com/client/v4/accounts/{account_id}/ai/run",
      "account_id": os.getenv("CLOUDFLARE_ACCOUNT_ID", ""),
      "api_key": os.getenv("CLOUDFLARE_KEY", ""), "type": "cloudflare",
      "models": ["@cf/meta/llama-3-8b-instruct", "@cf/meta/llama-3.1-8b-instruct",
                 "@cf/mistral/mistral-7b-instruct-v0.2", "@cf/google/gemma-7b-it-lora"]},
-    {
-        "name": "OpenRouter",
-        "base_url": "https://openrouter.ai/api/v1",
-        "api_key": os.getenv("OPENROUTER_KEY", ""),
-        "type": "openai",
-        "models": [
-            "qwen/qwen3.8-27b",
-            "openai/gpt-oss-120b",
-            "meta-llama/llama-3.2-3b-instruct"
-        ]
-    },
-    {
-        "name": "Google AI",
-        "base_url": "https://generativelanguage.googleapis.com/v1beta",
-        "api_key": os.getenv("GOOGLE_KEY_1", ""),
-        "type": "google",
-        "models": [
-            "gemini-2.0-flash-exp",
-            "gemini-1.5-flash",
-            "gemini-1.5-flash-8b"
-        ]
-    },
-    {
-        "name": "Local FreeLLMAPI",
-        "base_url": AI_API_URL,
-        "api_key": os.getenv("AI_API_KEY", ""),
-        "type": "openai",
-        "models": [AI_MODEL, "gpt-3.5-turbo", "llama3"]
-    },
+    {"name": "OpenRouter", "base_url": "https://openrouter.ai/api/v1",
+     "api_key": os.getenv("OPENROUTER_KEY", ""), "type": "openai",
+     "models": ["meta-llama/llama-3.1-70b-instruct", "qwen/qwen-2.5-72b-instruct", "meta-llama/llama-3.2-3b-instruct"]},
+    {"name": "Google AI", "base_url": "https://generativelanguage.googleapis.com/v1beta",
+     "api_key": os.getenv("GOOGLE_KEY_1", ""), "type": "google",
+     "models": ["gemini-1.5-flash", "gemini-1.5-flash-8b", "gemini-1.5-pro-latest"]},
+    {"name": "Local FreeLLMAPI", "base_url": AI_API_URL,
+     "api_key": os.getenv("AI_API_KEY", ""), "type": "openai",
+     "models": [AI_MODEL, "gpt-3.5-turbo", "llama3"]},
 ]
-
 CURRENT_API_INDEX = 0
 CURRENT_MODEL_INDEX = 0
 
@@ -355,6 +318,40 @@ async def _generate_section(service, topic, sec_title, sec_pages, sec_desc, lang
         parts.append(txt); local_prev = txt[:600]
         await asyncio.sleep(0.2)
     return "\n\n".join(parts)
+
+
+
+async def generate_outline(service, topic, lang, words=250):
+    """Essay uchun REJA (outline) — qisqa, foydalanuvchiga ko'rsatiladi."""
+    wiki = await wikipedia_fetch(topic, max_chars=2000, gen_lang=lang)
+    prompts = {
+        "uz": ("Mavzu: " + topic + ". Essening REJASINI (outline) tuz. Qisqa, faqat rejani yoz:\n"
+               "1. KIRISH (50-60 so'z): asosiy tezis nima bo'ladi?\n"
+               "2. ASOSIY QISM — 1-argument (abzas): qanday fikr + qanday misol?\n"
+               "3. ASOSIY QISM — 2-argument (abzas): qanday fikr + qanday misol?\n"
+               "4. ASOSIY QISM — shaxsiy munosabat (abzas): qanday?\n"
+               "5. XULOSA (60-70 so'z): qanday yakuniy taklif?\n"
+               "Jami hajmi: " + str(words) + " so'z. Faqat rejani yoz, asosiy matnni emas."),
+        "ru": ("Тема: " + topic + ". Составь ПЛАН эссе (outline). Только план, кратко:\n"
+               "1. Введение (50-60 слов): какой основной тезис?\n"
+               "2. Основная часть — 1-й аргумент (абзац): какая мысль + какой пример?\n"
+               "3. Основная часть — 2-й аргумент (абзац): какая мысль + какой пример?\n"
+               "4. Основная часть — личное отношение (абзац): какое?\n"
+               "5. Заключение (60-70 слов): какой финальный вывод?\n"
+               "Общий объём: " + str(words) + " слов. Пиши только план, не основной текст."),
+        "en": ("Topic: " + topic + ". Create an ESSAY OUTLINE (plan). Short, plan only:\n"
+               "1. Introduction (50-60 words): what is the main thesis?\n"
+               "2. Body — Argument 1 (paragraph): what idea + what example?\n"
+               "3. Body — Argument 2 (paragraph): what idea + what example?\n"
+               "4. Body — Personal stance (paragraph): what is it?\n"
+               "5. Conclusion (60-70 words): what final takeaway?\n"
+               "Total length: " + str(words) + " words. Write only the outline, not the essay."),
+    }
+    prompt = prompts.get(str(lang).lower(), prompts["en"]) + wiki_block(wiki)
+    txt = await _chat_complete(prompt, system=_pure_language_system(lang), max_tokens=1200)
+    if txt and not txt.startswith("⚠️"):
+        return txt
+    return None
 
 async def generate(service, topic, options, lang="uz"):
     from services import SERVICES
