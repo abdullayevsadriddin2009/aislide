@@ -665,7 +665,7 @@ async def _try_post(api, model, payload):
                     return resp.status, None, f"HTTP {resp.status}"
     except Exception as e: return None, None, str(e)
 
-async def _chat_complete_essay(prompt, system=None, max_tokens=2500):
+async def _chat_complete(prompt, system=None, max_tokens=2500):
     messages = [{"role": "system", "content": system}, {"role": "user", "content": prompt}]
     # frequency_penalty va presence_penalty so'z takrorlanishini to'xtatadi
     payload = {
