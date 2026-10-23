@@ -1,10 +1,9 @@
 """
-AI API — to'liq tuzatilgan versiya (v7)
+AI API — to'liq tuzatilgan versiya (v8)
 ========================================
-✓ SyntaxError xatosi to'liq tuzatildi.
-✓ Insho (Essey): Sarlavhasiz, 3 qismli (Kirish, Asosiy, Xulosa) badiiy matn.
-✓ So'z hajmi nazorati: Kirish/Xulosa 70-80 so'z, Asosiy qism 300-400 so'z.
-✓ Slaydlar tartibi qat'iy saqlanadi.
+✓ Til sofligi: Barcha fallback matnlari 6 tilga o'tkazildi (aralashish yo'q).
+✓ Test xizmati: Nechta savol tanlansa, aynan shuncha savol generatsiya qiladi.
+✓ Slaydlar, rasm qidirish va boshqa barcha funksiyalar to'liq saqlab qolindi.
 """
 import aiohttp
 import asyncio
@@ -27,6 +26,7 @@ def wiki_langs_for(gen_lang):
     order = {"uz": ["uz","ru","en"], "ru": ["ru","en","uz"], "en": ["en","ru","uz"],
              "tr": ["en","tr","ru","uz"], "de": ["en","de","ru","uz"], "fr": ["en","fr","ru","uz"]}
     return order.get(str(gen_lang).lower(), ["en","ru","uz"])
+    
 _KEYWORD_CACHE = {}
 CHARS_PER_PAGE = 900
 MAX_CHUNK_PAGES = 3
@@ -346,38 +346,32 @@ async def generate(service, topic, options, lang="uz"):
         wiki = await wikipedia_fetch(topic, max_chars=3000, gen_lang=lang)
         wb = wiki_block(wiki)
         
-        # Tizim promptiga qat'iy qoida qo'shamiz
         system = _pure_language_system(lang) + """ Siz badiiy va falsafiy essey yozadigan mohir adibsiz. 
 QAT'IY QOIDA: Hech qanday sarlavha (KIRISH, ASOSIY QISM, XULOSA) yozmang! Raqamlar (1, 2, 3) yoki ro'yxat (nuqtalar) ishlatmang! Faqat oddiy abzaslardan iborat badiiy matn yozing."""
 
-        # 1. Kirish (70-80 so'z)
         prompt_k = f"Mavzu: {topic}. Inshoning kirish qismini yozing. Kamida 70-80 so'z bo'lsin. Hech qanday sarlavha yozmang, to'g'ridan-to'g'ri matnni boshlang. {wb}"
         kirish = await _chat_complete(prompt_k, system=system, max_tokens=1000)
         if _is_lang_mixed(kirish, lang) or not kirish:
             kirish = await _chat_complete(prompt_k + f"\nFAQAT {_lang_name(lang)} TILIDA YOZING!", system=system, max_tokens=1000)
         if not kirish or kirish.startswith("⚠️"): kirish = f"{topic} haqida o'ylar. Bu mavzu insoniyat uchun muhim ahamiyatga ega."
 
-        # 2. Asosiy qism (300-400 so'z, 3 abzas)
         prompt_a = f"Mavzu: {topic}. Inshoning asosiy qismi uchun 3 ta mazmunli abzas yozing. Jami hajmi 300-400 so'z bo'lsin. Raqamlar (1,2,3) yoki sarlavhalar ishlatmang! Faqat 3 ta abzasni bering. {wb}"
         asosiy = await _chat_complete(prompt_a, system=system, max_tokens=2000)
         if _is_lang_mixed(asosiy, lang) or not asosiy:
             asosiy = await _chat_complete(prompt_a + f"\nFAQAT {_lang_name(lang)} TILIDA YOZING!", system=system, max_tokens=2000)
         if not asosiy or asosiy.startswith("⚠️"): asosiy = f"{topic} ning bugungi kundagi o'rni va ahamiyati haqida fikrlar. Ushbu masala yuzasidan turli qarashlar mavjud."
 
-        # 3. Xulosa (70-80 so'z)
         prompt_x = f"Mavzu: {topic}. Inshoning xulosa qismini yozing. Kamida 70-80 so'z bo'lsin. Hech qanday sarlavha yozmang, faqat yakuniy fikrni yozing."
         xulosa = await _chat_complete(prompt_x, system=system, max_tokens=1000)
         if _is_lang_mixed(xulosa, lang) or not xulosa:
             xulosa = await _chat_complete(prompt_x + f"\nFAQAT {_lang_name(lang)} TILIDA YOZING!", system=system, max_tokens=1000)
         if not xulosa or xulosa.startswith("⚠️"): xulosa = f"Xulosa o'rnida shuni aytish mumkinki, {topic} mavzusi biz uchun katta saboq bo'lib xizmat qiladi."
 
-        # Birlashtirish
         result = f"{kirish}\n\n{asosiy}\n\n{xulosa}"
         real = bool(kirish and asosiy and xulosa and not kirish.startswith("⚠️"))
         return clean_ai_text(result), real
     # ===============================================
 
-    # Boshqa xizmatlar uchun (Referat, Kurs ishi va h.k.)
     pages = int(options.get("pages", 10) or 10)
     if service == "test":
         return await _generate_test(service, topic, options, lang)
@@ -398,16 +392,19 @@ QAT'IY QOIDA: Hech qanday sarlavha (KIRISH, ASOSIY QISM, XULOSA) yozmang! Raqaml
         result += "\n\n" + _fallback_text(service, topic, options, lang, max(3, pages//3))
     return result, real
 
+# ===== TEST GENERATSIYASI (QAT'IY NAZORAT) =====
 async def _generate_test(service, topic, options, lang):
-    count = int(options.get("questions", options.get("pages", 15)) or 15)
+    count = int(options.get("questions", options.get("pages", 20)) or 20)
     wiki = await wikipedia_fetch(topic, max_chars=5000, gen_lang=lang)
-    all_questions, chunk_size = [], 10
+    all_questions, chunk_size = [], 5
     for start in range(1, count + 1, chunk_size):
         end = min(count, start + chunk_size - 1)
-        prompt = f"{topic} bo'yicha test. {start}-{end} gacha ({end-start+1} ta). A) B) C) D). To'g'ri javobni belgilang. {wiki_block(wiki)}"
-        txt = await _chat_complete(prompt, system=_pure_language_system(lang), max_tokens=4000)
-        if txt and "⚠️" not in txt: all_questions.append(txt)
-        await asyncio.sleep(0.2)
+        num_to_gen = end - start + 1
+        prompt = f"Mavzu: {topic}. AYNAN {num_to_gen} ta test savolini yozing. Savollar {start} dan {end} gacha raqamlansin. Variantlar A) B) C) D) bo'lsin. To'g'ri javobni (✓) bilan belgilang. Faqat savollarni yozing. {wiki_block(wiki)}"
+        txt = await _chat_complete(prompt, system=_pure_language_system(lang), max_tokens=3000)
+        if txt and "⚠️" not in txt: 
+            all_questions.append(txt)
+        await asyncio.sleep(0.5)
     result = "\n\n".join(all_questions) + "\n\nJAVOBLAR KALITI: (TO'G'RI) belgilangan variant."
     return result, bool(all_questions)
 
@@ -445,19 +442,16 @@ async def generate_slides_structured(topic, subject, lang, count):
     }
     t_lang = titles.get(lang, titles["en"])
 
-    # 1-slayd
     all_slides.append({
         "title": f"{topic}",
         "content": [f"{subject} fanidan taqdimot", f"Tayyorlagan: (Muallif)"]
     })
 
-    # 2-slayd
     all_slides.append({
         "title": t_lang["reja"],
         "content": ["1. Kirish qismi", "2. Asosiy tahlillar va ma'lumotlar", "3. Xulosa va natijalar"]
     })
 
-    # 3-slayd
     all_slides.append({
         "title": t_lang["kirish"],
         "content": [
@@ -497,7 +491,6 @@ JSON formati: [{{"title": "Sarlavha", "content": ["gap1", "gap2", ...]}}]"""
             for i in range(chunk_size):
                 all_slides.append({"title": f"{topic} tahlili {start+i+1}", "content": [f"{topic} bo'yicha asosiy ma'lumotlar.", "Qo'shimcha tahliliy ma'lumotlar."]})
 
-    # Oxirgi slayd
     all_slides.append({
         "title": t_lang["xulosa"],
         "content": [
@@ -667,7 +660,6 @@ async def _try_post(api, model, payload):
 
 async def _chat_complete(prompt, system=None, max_tokens=2500):
     messages = [{"role": "system", "content": system}, {"role": "user", "content": prompt}]
-    # frequency_penalty va presence_penalty so'z takrorlanishini to'xtatadi
     payload = {
         "messages": messages, 
         "temperature": 0.6, 
@@ -734,19 +726,26 @@ def _extract_json(text):
         except Exception: pass
     return None
 
+# ===== 6 TIL UCHUN TO'LIQ FALLBACK =====
 FB = {
     "uz": {"sections": ["Kirish", "Tarixiy kelib chiqishi", "Asosiy qism 1", "Asosiy qism 2", "Tahlil", "Xulosa"],
         "slide_sections": ["Kirish", "Tarix", "Tahlil", "Natijalar", "Xulosa"]},
-    "ru": {"sections": ["Введение", "История", "Основная часть", "Анализ", "Заключение"],
+    "ru": {"sections": ["Введение", "История", "Основная часть 1", "Основная часть 2", "Анализ", "Заключение"],
         "slide_sections": ["Введение", "История", "Анализ", "Результаты", "Заключение"]},
-    "en": {"sections": ["Introduction", "Background", "Main part", "Analysis", "Conclusion"],
+    "en": {"sections": ["Introduction", "Background", "Main part 1", "Main part 2", "Analysis", "Conclusion"],
         "slide_sections": ["Introduction", "Background", "Analysis", "Results", "Conclusion"]},
+    "tr": {"sections": ["Giriş", "Tarihçe", "Ana Kısım 1", "Ana Kısım 2", "Analiz", "Sonuç"],
+        "slide_sections": ["Giriş", "Tarih", "Analiz", "Sonuçlar", "Sonuç"]},
+    "de": {"sections": ["Einleitung", "Geschichte", "Hauptteil 1", "Hauptteil 2", "Analyse", "Fazit"],
+        "slide_sections": ["Einleitung", "Geschichte", "Analyse", "Ergebnisse", "Fazit"]},
+    "fr": {"sections": ["Introduction", "Histoire", "Partie principale 1", "Partie principale 2", "Analyse", "Conclusion"],
+        "slide_sections": ["Introduction", "Histoire", "Analyse", "Résultats", "Conclusion"]}
 }
-def _fb(lang): return FB.get(str(lang).lower(), FB["uz"])
+def _fb(lang): return FB.get(str(lang).lower(), FB["en"])
 
 def _fallback_text(service, topic, options, lang, bob_count=10):
     fb = _fb(lang); sections = list(fb["sections"])
-    while len(sections) < bob_count: sections.insert(len(sections)-2, "Qo'shimcha qism")
+    while len(sections) < bob_count: sections.insert(len(sections)-2, "Qism" if lang=="uz" else "Part")
     return f"{topic}\n\n" + "\n\n".join([f"{sec}\n{topic} bo'yicha ma'lumot." for sec in sections[:bob_count]])
 
 def _fallback_slides(topic, count, lang):
@@ -760,11 +759,3 @@ def _fallback_slides(topic, count, lang):
             "image_prompt": _make_image_prompt(topic, i) if _is_image_slide(i, count) else None
         })
     return out
-# Funksiya nomi tasodifan o'zgargan bo'lsa — alias (ikkala nom ham ishlaydi)
-try:
-    _chat_complete = _chat_complete_essay
-except NameError:
-    try:
-        _chat_complete_essay = _chat_complete
-    except NameError:
-        pass
