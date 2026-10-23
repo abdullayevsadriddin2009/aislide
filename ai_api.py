@@ -760,3 +760,11 @@ def _fallback_slides(topic, count, lang):
             "image_prompt": _make_image_prompt(topic, i) if _is_image_slide(i, count) else None
         })
     return out
+# Funksiya nomi tasodifan o'zgargan bo'lsa — alias (ikkala nom ham ishlaydi)
+try:
+    _chat_complete = _chat_complete_essay
+except NameError:
+    try:
+        _chat_complete_essay = _chat_complete
+    except NameError:
+        pass
