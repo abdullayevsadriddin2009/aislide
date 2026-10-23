@@ -5,7 +5,8 @@ services:
     runtime: python
     plan: free                    # doimiy ishlashi uchun: starter ($7/oy) yoki free + UptimeRobot
     region: frankfurt
-    buildCommand: pip install -r requirements.txt
+    # Linux (Render) uchun LibreOffice o'rnatiladi — PDF yaratish uchun zarur!
+    buildCommand: apt-get update && apt-get install -y libreoffice && pip install -r requirements.txt
     startCommand: python run.py
     healthCheckPath: /health      # cron / UptimeRobot har 5 daqiqada shu manzilni ping qiladi
     envVars:
@@ -36,4 +37,13 @@ services:
       - key: GROQ_KEY_1
         sync: false
       - key: GROQ_KEY_2
+        sync: false
+      # Qo'shimcha AI API provayderlari (ai_api.py dagi zaxira tizim uchun)
+      - key: CLOUDFLARE_ACCOUNT_ID
+        sync: false
+      - key: CLOUDFLARE_KEY
+        sync: false
+      - key: OPENROUTER_KEY
+        sync: false
+      - key: GOOGLE_KEY_1
         sync: false
