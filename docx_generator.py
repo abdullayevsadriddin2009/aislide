@@ -1,7 +1,7 @@
 """DOCX generator — 8 ta xizmat turi uchun to'liq struktura.
 Har bir xizmat: Titul sahifa → Mundarija → Kirish → Boblar → Xulosa → Adabiyotlar.
-6 til qo'llab-quvvatlanadi. Har sahifa pastida: 11pt "Yaratildi: @Talaba_AI_SlideBot".
-Muallif bir nechta qator bo'lishi mumkin (Bajaruvchi, Ilmiy rahbar, Kafedra mudiri).
+6 til to'liq qo'llab-quvvatlanadi. Har sahifa pastida: 11pt "Yaratildi: @Talaba_AI_SlideBot".
+Testlar soni foydalanuvchi tanlagan songa qat'iy tenglashtirilgan.
 """
 import io
 import re
@@ -43,8 +43,7 @@ L = {
         "author": "Muallif:", "affiliation": "Tashkilot:", "email": "E-mail:",
         "relevance_thesis": "📌 DOLZARBLIGI VA MAQSADI:",
         "test_title": "QUIZ / BILIMLAR TESTI", "questions_count": "Savollar soni:",
-        "level": "Daraja: O'rta", "question": "SAVOL",
-        "skip_author": "Talaba",
+        "level": "Daraja: O'rta", "question": "SAVOL", "skip_author": "Talaba",
     },
     "ru": {
         "ministry": "МИНИСТЕРСТВО ВЫСШЕГО ОБРАЗОВАНИЯ, НАУКИ И ИННОВАЦИЙ РЕСПУБЛИКИ УЗБЕКИСТАН",
@@ -55,13 +54,11 @@ L = {
         "topic_label": "ТЕМА:", "author_label": "Выполнил:", "supervisor_label": "Научный руководитель:",
         "dept_head_label": "Заведующий кафедрой:", "reviewer_label": "Рецензент:",
         "accepted_label": "Принял:", "checked_label": "Проверил:",
-        "city_year": "Ташкент — 2026",
-        "toc": "СОДЕРЖАНИЕ", "intro": "ВВЕДЕНИЕ",
+        "city_year": "Ташкент — 2026", "toc": "СОДЕРЖАНИЕ", "intro": "ВВЕДЕНИЕ",
         "relevance": "Актуальность темы:", "goal": "Цель работы:",
         "object": "Объект исследования:", "subject": "Предмет исследования:",
-        "tasks": "Задачи исследования:",
-        "conclusion": "ЗАКЛЮЧЕНИЕ", "conclusion_kurs": "ЗАКЛЮЧЕНИЕ И ПРЕДЛОЖЕНИЯ",
-        "conclusion_diplom": "ЗАКЛЮЧЕНИЕ И РЕКОМЕНДАЦИИ",
+        "tasks": "Задачи исследования:", "conclusion": "ЗАКЛЮЧЕНИЕ",
+        "conclusion_kurs": "ЗАКЛЮЧЕНИЕ И ПРЕДЛОЖЕНИЯ", "conclusion_diplom": "ЗАКЛЮЧЕНИЕ И РЕКОМЕНДАЦИИ",
         "references": "СПИСОК ИСПОЛЬЗОВАННОЙ ЛИТЕРАТУРЫ", "appendix": "ПРИЛОЖЕНИЯ",
         "chapter": "ГЛАВА", "important_def": "📌 ВАЖНОЕ ОПРЕДЕЛЕНИЕ",
         "practical_tip": "🛡 ПРАКТИЧЕСКИЙ СОВЕТ", "stats": "📊 СТАТИСТИЧЕСКИЕ ДАННЫЕ",
@@ -72,134 +69,84 @@ L = {
         "annotation": "📌 Аннотация:", "keywords": "🔑 Ключевые слова:",
         "essay_style": "СТИЛЬ: Художественно-философское эссе", "thesis": "НАУЧНЫЙ ТЕЗИС",
         "author": "Автор:", "affiliation": "Организация:", "email": "E-mail:",
-        "relevance_thesis": "📌 АКТУАЛЬНОСТЬ И ЦЕЛЬ:",
-        "test_title": "ТЕСТ / ПРОВЕРКА ЗНАНИЙ", "questions_count": "Количество вопросов:",
-        "level": "Уровень: Средний", "question": "ВОПРОС",
-        "skip_author": "Студент",
+        "relevance_thesis": "📌 АКТУАЛЬНОСТЬ И ЦЕЛЬ:", "test_title": "ТЕСТ / ПРОВЕРКА ЗНАНИЙ",
+        "questions_count": "Количество вопросов:", "level": "Уровень: Средний", "question": "ВОПРОС", "skip_author": "Студент",
     },
     "en": {
         "ministry": "MINISTRY OF HIGHER EDUCATION, SCIENCE AND INNOVATIONS OF THE REPUBLIC OF UZBEKISTAN",
-        "inst_placeholder": "[University / Institute / College name]",
-        "dept_placeholder": "[Department / Major name]",
-        "referat": "ESSAY / REPORT", "mustaqil": "ASSIGNMENT", "kurs": "COURSEWORK",
-        "diplom": "GRADUATION THESIS",
+        "inst_placeholder": "[University / Institute / College name]", "dept_placeholder": "[Department / Major name]",
+        "referat": "ESSAY / REPORT", "mustaqil": "ASSIGNMENT", "kurs": "COURSEWORK", "diplom": "GRADUATION THESIS",
         "topic_label": "TOPIC:", "author_label": "Prepared by:", "supervisor_label": "Scientific advisor:",
         "dept_head_label": "Head of Department:", "reviewer_label": "Reviewer:",
-        "accepted_label": "Accepted by:", "checked_label": "Checked by:",
-        "city_year": "Tashkent — 2026",
-        "toc": "CONTENTS", "intro": "INTRODUCTION",
-        "relevance": "Relevance of the topic:", "goal": "Goal of the work:",
-        "object": "Research object:", "subject": "Research subject:",
-        "tasks": "Tasks completed:",
-        "conclusion": "CONCLUSION", "conclusion_kurs": "CONCLUSION AND RECOMMENDATIONS",
-        "conclusion_diplom": "CONCLUSION AND SUGGESTIONS",
-        "references": "REFERENCES", "appendix": "APPENDICES",
-        "chapter": "CHAPTER", "important_def": "📌 KEY DEFINITION",
-        "practical_tip": "🛡 PRACTICAL TIP", "stats": "📊 STATISTICAL DATA",
-        "quote": "📜 FAMOUS QUOTE", "final_wisdom": "💡 FINAL THOUGHT",
-        "author_recommendation": "💡 AUTHOR'S RECOMMENDATION", "scientific_rec": "🎓 SCIENTIFIC RECOMMENDATION",
-        "results": "📊 MAIN RESULTS", "methods": "📊 METHODS AND METHODOLOGY",
-        "rationale": "💡 Rationale:", "correct_mark": "(✓ Correct answer)",
-        "annotation": "📌 Abstract:", "keywords": "🔑 Keywords:",
+        "accepted_label": "Accepted by:", "checked_label": "Checked by:", "city_year": "Tashkent — 2026",
+        "toc": "CONTENTS", "intro": "INTRODUCTION", "relevance": "Relevance of the topic:", "goal": "Goal of the work:",
+        "object": "Research object:", "subject": "Research subject:", "tasks": "Tasks completed:",
+        "conclusion": "CONCLUSION", "conclusion_kurs": "CONCLUSION AND RECOMMENDATIONS", "conclusion_diplom": "CONCLUSION AND SUGGESTIONS",
+        "references": "REFERENCES", "appendix": "APPENDICES", "chapter": "CHAPTER", "important_def": "📌 KEY DEFINITION",
+        "practical_tip": "🛡 PRACTICAL TIP", "stats": "📊 STATISTICAL DATA", "quote": "📜 FAMOUS QUOTE",
+        "final_wisdom": "💡 FINAL THOUGHT", "author_recommendation": "💡 AUTHOR'S RECOMMENDATION", "scientific_rec": "🎓 SCIENTIFIC RECOMMENDATION",
+        "results": "📊 MAIN RESULTS", "methods": "📊 METHODS AND METHODOLOGY", "rationale": "💡 Rationale:",
+        "correct_mark": "(✓ Correct answer)", "annotation": "📌 Abstract:", "keywords": "🔑 Keywords:",
         "essay_style": "STYLE: Literary-Philosophical Essay", "thesis": "SCIENTIFIC ABSTRACT",
         "author": "Author:", "affiliation": "Affiliation:", "email": "E-mail:",
-        "relevance_thesis": "📌 RELEVANCE AND GOAL:",
-        "test_title": "QUIZ / KNOWLEDGE TEST", "questions_count": "Number of questions:",
-        "level": "Level: Intermediate", "question": "QUESTION",
-        "skip_author": "Student",
+        "relevance_thesis": "📌 RELEVANCE AND GOAL:", "test_title": "QUIZ / KNOWLEDGE TEST",
+        "questions_count": "Number of questions:", "level": "Level: Intermediate", "question": "QUESTION", "skip_author": "Student",
     },
     "tr": {
         "ministry": "ÖZBEKİSTAN CUMHURİYETİ YÜKSEKÖĞRETİM, BİLİM VE İNOVASYON BAKANLIĞI",
-        "inst_placeholder": "[Üniversite / Enstitü / Kolej adı]",
-        "dept_placeholder": "[Bölüm / Anabilim dalı adı]",
-        "referat": "RAPOR", "mustaqil": "ÖDEV", "kurs": "DÖNEM ÖDEVİ",
-        "diplom": "MEZUNİYET TEZİ",
+        "inst_placeholder": "[Üniversite / Enstitü / Kolej adı]", "dept_placeholder": "[Bölüm / Anabilim dalı adı]",
+        "referat": "RAPOR", "mustaqil": "ÖDEV", "kurs": "DÖNEM ÖDEVİ", "diplom": "MEZUNİYET TEZİ",
         "topic_label": "KONU:", "author_label": "Hazırlayan:", "supervisor_label": "Danışman:",
-        "dept_head_label": "Bölüm başkanı:", "reviewer_label": "Hakem:",
-        "accepted_label": "Kabul eden:", "checked_label": "Kontrol eden:",
-        "city_year": "Taşkent — 2026",
-        "toc": "İÇİNDEKİLER", "intro": "GİRİŞ",
-        "relevance": "Konu güncelliği:", "goal": "Çalışmanın amacı:",
-        "object": "Araştırma nesnesi:", "subject": "Araştırma konusu:",
-        "tasks": "Yapılan görevler:",
-        "conclusion": "SONUÇ", "conclusion_kurs": "SONUÇ VE ÖNERİLER",
-        "conclusion_diplom": "SONUÇ VE TAVSİYELER",
-        "references": "KAYNAKÇA", "appendix": "EKLER",
-        "chapter": "BÖLÜM", "important_def": "📌 ÖNEMLİ TANIM",
-        "practical_tip": "🛡 PRATİK ÖNERİ", "stats": "📊 İSTATİSTİKSEL VERİ",
-        "quote": "📜 MEŞHUR ALINTI", "final_wisdom": "💡 SON DÜŞÜNCE",
-        "author_recommendation": "💡 YAZAR ÖNERİSİ", "scientific_rec": "🎓 BİLİMSEL ÖNERİ",
-        "results": "📊 TEMEL BULGULAR", "methods": "📊 YÖNTEM VE METODOLOJİ",
-        "rationale": "💡 Açıklama:", "correct_mark": "(✓ Doğru cevap)",
-        "annotation": "📌 Özet:", "keywords": "🔑 Anahtar kelimeler:",
-        "essay_style": "TARZ: Edebi-Felsefi Deneme", "thesis": "BİLİMSEL TEZ ÖZETİ",
-        "author": "Yazar:", "affiliation": "Kurum:", "email": "E-posta:",
-        "relevance_thesis": "📌 GÜNCELLİK VE AMAÇ:",
-        "test_title": "TEST / BİLGİ SINAVI", "questions_count": "Soru sayısı:",
-        "level": "Seviye: Orta", "question": "SORU",
-        "skip_author": "Öğrenci",
+        "dept_head_label": "Bölüm başkanı:", "reviewer_label": "Hakem:", "accepted_label": "Kabul eden:", "checked_label": "Kontrol eden:",
+        "city_year": "Taşkent — 2026", "toc": "İÇİNDEKİLER", "intro": "GİRİŞ",
+        "relevance": "Konu güncelliği:", "goal": "Çalışmanın amacı:", "object": "Araştırma nesnesi:", "subject": "Araştırma konusu:",
+        "tasks": "Yapılan görevler:", "conclusion": "SONUÇ", "conclusion_kurs": "SONUÇ VE ÖNERİLER",
+        "conclusion_diplom": "SONUÇ VE TAVSİYELER", "references": "KAYNAKÇA", "appendix": "EKLER",
+        "chapter": "BÖLÜM", "important_def": "📌 ÖNEMLİ TANIM", "practical_tip": "🛡 PRATİK ÖNERİ", "stats": "📊 İSTATİSTİKSEL VERİ",
+        "quote": "📜 MEŞHUR ALINTI", "final_wisdom": "💡 SON DÜŞÜNCE", "author_recommendation": "💡 YAZAR ÖNERİSİ",
+        "scientific_rec": "🎓 BİLİMSEL ÖNERİ", "results": "📊 TEMEL BULGULAR", "methods": "📊 YÖNTEM VE METODOLOJİ",
+        "rationale": "💡 Açıklama:", "correct_mark": "(✓ Doğru cevap)", "annotation": "📌 Özet:", "keywords": "🔑 Anahtar kelimeler:",
+        "essay_style": "TARZ: Edebi-Felsefi Deneme", "thesis": "BİLİMSEL TEZ ÖZETİ", "author": "Yazar:", "affiliation": "Kurum:", "email": "E-posta:",
+        "relevance_thesis": "📌 GÜNCELLİK VE AMAÇ:", "test_title": "TEST / BİLGİ SINAVI",
+        "questions_count": "Soru sayısı:", "level": "Seviye: Orta", "question": "SORU", "skip_author": "Öğrenci",
     },
     "de": {
         "ministry": "MINISTERIUM FÜR HOCHSCHULWESEN, WISSENSCHAFT UND INNOVATION DER REPUBLIK USBEKISTAN",
-        "inst_placeholder": "[Name der Universität / Instituts / Kollegs]",
-        "dept_placeholder": "[Name des Lehrstuhls / Studiengangs]",
-        "referat": "REFERAT", "mustaqil": "HAUSARBEIT", "kurs": "SEMINARARBEIT",
-        "diplom": "ABSCHLUSSARBEIT",
+        "inst_placeholder": "[Name der Universität / Instituts / Kollegs]", "dept_placeholder": "[Name des Lehrstuhls / Studiengangs]",
+        "referat": "REFERAT", "mustaqil": "HAUSARBEIT", "kurs": "SEMINARARBEIT", "diplom": "ABSCHLUSSARBEIT",
         "topic_label": "THEMA:", "author_label": "Verfasser:", "supervisor_label": "Wissenschaftlicher Betreuer:",
-        "dept_head_label": "Lehrstuhlleiter:", "reviewer_label": "Gutachter:",
-        "accepted_label": "Angenommen von:", "checked_label": "Geprüft von:",
-        "city_year": "Taschkent — 2026",
-        "toc": "INHALTSVERZEICHNIS", "intro": "EINLEITUNG",
-        "relevance": "Aktualität des Themas:", "goal": "Ziel der Arbeit:",
-        "object": "Untersuchungsgegenstand:", "subject": "Untersuchungssubjekt:",
-        "tasks": "Aufgaben:",
-        "conclusion": "FAZIT", "conclusion_kurs": "FAZIT UND EMPFEHLUNGEN",
-        "conclusion_diplom": "FAZIT UND VORSCHLÄGE",
-        "references": "LITERATURVERZEICHNIS", "appendix": "ANHÄNGE",
-        "chapter": "KAPITEL", "important_def": "📌 WICHTIGE DEFINITION",
-        "practical_tip": "🛡 PRAKTISCHER TIPP", "stats": "📊 STATISTISCHE DATEN",
-        "quote": "📜 BERÜHMTES ZITAT", "final_wisdom": "💡 ABSCHLIESSENDE GEDANKE",
-        "author_recommendation": "💡 EMPFEHLUNG DES AUTORES", "scientific_rec": "🎓 WISSENSCHAFTLICHE EMPFEHLUNG",
-        "results": "📊 HAUPTERGEBNISSE", "methods": "📊 METHODEN UND METHODIK",
-        "rationale": "💡 Begründung:", "correct_mark": "(✓ Richtige Antwort)",
-        "annotation": "📌 Zusammenfassung:", "keywords": "🔑 Schlüsselwörter:",
-        "essay_style": "STIL: Literarisch-philosophischer Essay", "thesis": "WISSENSCHAFTLICHE THESE",
-        "author": "Autor:", "affiliation": "Einrichtung:", "email": "E-Mail:",
-        "relevance_thesis": "📌 AKTUALITÄT UND ZIEL:",
-        "test_title": "TEST / WISSENSABFRAGE", "questions_count": "Anzahl der Fragen:",
-        "level": "Niveau: Mittel", "question": "FRAGE",
-        "skip_author": "Student",
+        "dept_head_label": "Lehrstuhlleiter:", "reviewer_label": "Gutachter:", "accepted_label": "Angenommen von:", "checked_label": "Geprüft von:",
+        "city_year": "Taschkent — 2026", "toc": "INHALTSVERZEICHNIS", "intro": "EINLEITUNG",
+        "relevance": "Aktualität des Themas:", "goal": "Ziel der Arbeit:", "object": "Untersuchungsgegenstand:", "subject": "Untersuchungssubjekt:",
+        "tasks": "Aufgaben:", "conclusion": "FAZIT", "conclusion_kurs": "FAZIT UND EMPFEHLUNGEN", "conclusion_diplom": "FAZIT UND VORSCHLÄGE",
+        "references": "LITERATURVERZEICHNIS", "appendix": "ANHÄNGE", "chapter": "KAPITEL", "important_def": "📌 WICHTIGE DEFINITION",
+        "practical_tip": "🛡 PRAKTISCHER TIPP", "stats": "📊 STATISTISCHE DATEN", "quote": "📜 BERÜHMTES ZITAT",
+        "final_wisdom": "💡 ABSCHLIESSENDE GEDANKE", "author_recommendation": "💡 EMPFEHLUNG DES AUTORES", "scientific_rec": "🎓 WISSENSCHAFTLICHE EMPFEHLUNG",
+        "results": "📊 HAUPTERGEBNISSE", "methods": "📊 METHODEN UND METHODIK", "rationale": "💡 Begründung:", "correct_mark": "(✓ Richtige Antwort)",
+        "annotation": "📌 Zusammenfassung:", "keywords": "🔑 Schlüsselwörter:", "essay_style": "STIL: Literarisch-philosophischer Essay",
+        "thesis": "WISSENSCHAFTLICHE THESE", "author": "Autor:", "affiliation": "Einrichtung:", "email": "E-Mail:",
+        "relevance_thesis": "📌 AKTUALITÄT UND ZIEL:", "test_title": "TEST / WISSENSABFRAGE",
+        "questions_count": "Anzahl der Fragen:", "level": "Niveau: Mittel", "question": "FRAGE", "skip_author": "Student",
     },
     "fr": {
         "ministry": "MINISTÈRE DE L'ENSEIGNEMENT SUPÉRIEUR, DES SCIENCES ET DE L'INNOVATION DE LA RÉPUBLIQUE D'OUBZÉKISTAN",
-        "inst_placeholder": "[Nom de l'université / institut / collège]",
-        "dept_placeholder": "[Nom du département / filière]",
-        "referat": "EXPOSÉ", "mustaqil": "DEVOIR", "kurs": "MÉMOIRE",
-        "diplom": "MÉMOIRE DE FIN D'ÉTUDES",
+        "inst_placeholder": "[Nom de l'université / institut / collège]", "dept_placeholder": "[Nom du département / filière]",
+        "referat": "EXPOSÉ", "mustaqil": "DEVOIR", "kurs": "MÉMOIRE", "diplom": "MÉMOIRE DE FIN D'ÉTUDES",
         "topic_label": "SUJET :", "author_label": "Réalisé par :", "supervisor_label": "Directeur de recherche :",
-        "dept_head_label": "Chef de département :", "reviewer_label": "Rapporteur :",
-        "accepted_label": "Accepté par :", "checked_label": "Vérifié par :",
-        "city_year": "Tachkent — 2026",
-        "toc": "SOMMAIRE", "intro": "INTRODUCTION",
-        "relevance": "Pertinence du sujet :", "goal": "Objectif du travail :",
-        "object": "Objet de recherche :", "subject": "Sujet de recherche :",
-        "tasks": "Tâches effectuées :",
-        "conclusion": "CONCLUSION", "conclusion_kurs": "CONCLUSION ET RECOMMANDATIONS",
-        "conclusion_diplom": "CONCLUSION ET SUGGESTIONS",
-        "references": "BIBLIOGRAPHIE", "appendix": "ANNEXES",
-        "chapter": "CHAPITRE", "important_def": "📌 DÉFINITION CLÉ",
-        "practical_tip": "🛡 CONSEIL PRATIQUE", "stats": "📊 DONNÉES STATISTIQUES",
-        "quote": "📜 CITATION CÉLÈBRE", "final_wisdom": "💡 PENSÉE FINALE",
+        "dept_head_label": "Chef de département :", "reviewer_label": "Rapporteur :", "accepted_label": "Accepté par :", "checked_label": "Vérifié par :",
+        "city_year": "Tachkent — 2026", "toc": "SOMMAIRE", "intro": "INTRODUCTION",
+        "relevance": "Pertinence du sujet :", "goal": "Objectif du travail :", "object": "Objet de recherche :", "subject": "Sujet de recherche :",
+        "tasks": "Tâches effectuées :", "conclusion": "CONCLUSION", "conclusion_kurs": "CONCLUSION ET RECOMMANDATIONS",
+        "conclusion_diplom": "CONCLUSION ET SUGGESTIONS", "references": "BIBLIOGRAPHIE", "appendix": "ANNEXES",
+        "chapter": "CHAPITRE", "important_def": "📌 DÉFINITION CLÉ", "practical_tip": "🛡 CONSEIL PRATIQUE",
+        "stats": "📊 DONNÉES STATISTIQUES", "quote": "📜 CITATION CÉLÈBRE", "final_wisdom": "💡 PENSÉE FINALE",
         "author_recommendation": "💡 RECOMMANDATION DE L'AUTEUR", "scientific_rec": "🎓 RECOMMANDATION SCIENTIFIQUE",
-        "results": "📊 RÉSULTATS PRINCIPAUX", "methods": "📊 MÉTHODES ET MÉTHODOLOGIE",
-        "rationale": "💡 Explication :", "correct_mark": "(✓ Bonne réponse)",
-        "annotation": "📌 Résumé :", "keywords": "🔑 Mots-clés :",
+        "results": "📊 RÉSULTATS PRINCIPAUX", "methods": "📊 MÉTHODES ET MÉTHODOLOGIE", "rationale": "💡 Explication :",
+        "correct_mark": "(✓ Bonne réponse)", "annotation": "📌 Résumé :", "keywords": "🔑 Mots-clés :",
         "essay_style": "STYLE : Essai littéraire et philosophique", "thesis": "THÈSE SCIENTIFIQUE",
-        "author": "Auteur :", "affiliation": "Affiliation :", "email": "E-mail :",
-        "relevance_thesis": "📌 PERTINENCE ET OBJECTIF :",
-        "test_title": "QUIZ / TEST DE CONNAISSANCES", "questions_count": "Nombre de questions :",
-        "level": "Niveau : Intermédiaire", "question": "QUESTION",
-        "skip_author": "Étudiant",
+        "author": "Auteur :", "affiliation": "Affiliation :", "email": "E-mail :", "relevance_thesis": "📌 PERTINENCE ET OBJECTIF :",
+        "test_title": "QUIZ / TEST DE CONNAISSANCES", "questions_count": "Nombre de questions :", "level": "Niveau : Intermédiaire",
+        "question": "QUESTION", "skip_author": "Étudiant",
     },
 }
 
@@ -255,7 +202,7 @@ def _chapters_for(service_code, lang):
         (_ph("rec_eff", lang), [("1", _ph("impl_model", lang)), ("2", _ph("econ_calc", lang))]),
     ]
 
-# Lokalizatsiya qilingan kiritish/xulosa/manba matnlari
+# ===== To'liq Lokalizatsiya (barcha fallback va matnlar 6 tilda) =====
 _LOC = {
     "relevance": {"uz":"Bugungi kunda {t} mavzusi alohida dolzarblikka ega. Bu soha zamonaviy talablarga muvofiq tez rivojlanmoqda va jamiyatda muhim o'rin tutadi. Ushbu tadqiqotning asosiy sababi — mavzudagi bo'shliqlarni aniqlash va ularni bartaraf etish yo'llarini ishlab chiqish.",
                  "ru":"В настоящее время тема «{t}» имеет особую актуальность. Данная сфера быстро развивается в соответствии с современными требованиями и занимает важное место в обществе. Основная причина данного исследования — выявить пробелы по теме и разработать пути их устранения.",
@@ -365,9 +312,67 @@ _LOC = {
                       "tr":"Her zaman iki faktörlü kimlik doğrulama kullanın ve şifreleri düzenli olarak güncelleyin!",
                       "de":"Verwenden Sie immer die Zwei-Faktor-Authentifizierung und aktualisieren Sie Passwörter regelmäßig!",
                       "fr":"Utilisez toujours l'authentification à deux facteurs et mettez régulièrement à jour les mots de passe !"},
-    "appendix1": {"uz":"Ilova 1. Jadval shaklida asosiy ko'rsatkichlar.", "ru":"Приложение 1. Основные показатели в виде таблицы.", "en":"Appendix 1. Key indicators in table form.", "tr":"Ek 1. Tablo şeklinde temel göstergeler.", "de":"Anhang 1. Kennzahlen in Tabellenform.", "fr":"Annexe 1. Indicateurs clés sous forme de tableau."},
-    "appendix2": {"uz":"Ilova 2. Grafiklar va diagrammalar.", "ru":"Приложение 2. Графики и диаграммы.", "en":"Appendix 2. Graphs and diagrams.", "tr":"Ek 2. Grafikler ve diyagramlar.", "de":"Anhang 2. Grafiken und Diagramme.", "fr":"Annexe 2. Graphiques et diagrammes."},
-    "appendix3": {"uz":"Ilova 3. So'rovnoma natijalari.", "ru":"Приложение 3. Результаты опроса.", "en":"Appendix 3. Survey results.", "tr":"Ek 3. Anket sonuçları.", "de":"Anhang 3. Umfrageergebnisse.", "fr":"Annexe 3. Résultats de l'enquête."},
+    "def_box": {"uz":"«{t}» — bu sohaning asosiy kategoriyasi bo'lib, uning mohiyatini to'liq anglab yetish zarur. Ushbu ta'rif nazariy asoslarni chuqur o'rganishning kalitidir.",
+                "ru":"«{t}» — это фундаментальная категория данной сферы, суть которой должна быть полностью осмыслена. Это определение является ключом к углубленному изучению теоретических основ.",
+                "en":"«{t}» is a fundamental category of this field whose essence must be fully understood. This definition is the key to an in-depth study of the theoretical foundations.",
+                "tr":"«{t}» bu alanın özü tam olarak anlaşılması gereken temel bir kategorisidir. Bu tanım, teorik temellerin derinlemesine incelenmesinin anahtarıdır.",
+                "de":"«{t}» ist eine grundlegende Kategorie dieses Bereichs, deren Wesen vollständig verstanden werden muss. Diese Definition ist der Schlüssel zu einem eingehenden Studium der theoretischen Grundlagen.",
+                "fr":"« {t} » est une catégorie fondamentale de ce domaine dont l'essence doit être pleinement comprise. Cette définition est la clé d'une étude approfondie des fondements théoriques."},
+    "stats_box": {"uz":"Xalqaro agentliklarning ma'lumotlariga ko'ra, 2030 yilga kelib ushbu ko'rsatkich 50% dan oshishi prognoz qilinmoqda, bu esa ham yangi imkoniyatlar, ham muammolarni keltirib chiqaradi.",
+                  "ru":"По данным международных агентств, к 2030 году этот показатель превысит 50%, что принесет как новые возможности, так и проблемы.",
+                  "en":"According to international agencies, this indicator is projected to exceed 50% by 2030, which will bring both new opportunities and challenges.",
+                  "tr":"Uluslararası kuruluşlara göre, bu göstergenin 2030 yılına kadar %50'yi aşması bekleniyor, bu da hem yeni fırsatlar hem de zorluklar getirecek.",
+                  "de":"Laut internationalen Agenturen wird prognostiziert, dass dieser Indikator bis 2030 50 % überschreiten wird, was sowohl neue Chancen als auch Herausforderungen mit sich bringt.",
+                  "fr":"Selon les agences internationales, cet indicateur devrait dépasser 50 % d'ici 2030, ce qui apportera à la fois de nouvelles opportunités et de nouveaux défis."},
+    "quote_text": {"uz":'"Kitob — vaqt ummonida suzib yurgan va o\'zining qimmatbaho yukini avloddan-avlodga aytib berayotgan kemadir."\n— Frensis Bekon',
+                   "ru":'"Книга — это корабль, плывущий по океану времени и несущий свой драгоценный груз от поколения к поколению."\n— Фрэнсис Бэкон',
+                   "en":'"Books are ships that pass through the vast sea of time, carrying their precious cargo from generation to generation."\n— Francis Bacon',
+                   "tr":'"Kitaplar, zamanın engin denizinde süzülen ve değerli yüklerini nesilden nesile taşıyan gemilerdir."\n— Francis Bacon',
+                   "de":'"Bücher sind Schiffe, die über das weite Meer der Zeit fahren und ihre kostbare Fracht von Generation zu Generation tragen."\n— Francis Bacon',
+                   "fr":'"Les livres sont des navires qui traversent le vaste océan du temps, portant leur précieuse cargaison de génération en génération."\n— Francis Bacon'},
+    "final_wisdom": {"uz":"Dunyoni o'zgartirmoqchi bo'lsangiz, avvalo o'zingizdan boshlang va bilim olishni hech vaqt to'xtatmang!",
+                     "ru":"Если вы хотите изменить мир, начните с себя и никогда не прекращайте учиться!",
+                     "en":"If you want to change the world, start with yourself and never stop learning!",
+                     "tr":"Dünyayı değiştirmek istiyorsanız, önce kendinizden başlayın ve öğrenmeyi asla bırakmayın!",
+                     "de":"Wenn Sie die Welt verändern wollen, fangen Sie bei sich selbst an und hören Sie nie auf zu lernen!",
+                     "fr":"Si vous voulez changer le monde, commencez par vous-même et n'arrêtez jamais d'apprendre !"},
+    "author_rec": {"uz":"Ushbu soha bo'yicha jamoatchilik va tadbirkorlik sub'ektlari o'rtasida o'rganishni yanada rag'batlantirish zarur. Davlat dasturlari orqali qo'llab-quvvatlashni kengaytirish lozim.",
+                   "ru":"Необходимо дополнительно стимулировать изучение этой сферы среди общественности и субъектов предпринимательства. Следует расширять поддержку через государственные программы.",
+                   "en":"It is necessary to further encourage the study of this field among the public and business entities. Support through government programs should be expanded.",
+                   "tr":"Bu alanın kamusal ve ticari kuruluşlar arasında incelenmesini daha fazla teşvik etmek gerekmektedir. Devlet programları aracılığıyla destek genişletilmelidir.",
+                   "de":"Es ist notwendig, das Studium dieses Bereichs in der Öffentlichkeit und bei Unternehmen weiter zu fördern. Die Unterstützung durch staatliche Programme sollte ausgeweitet werden.",
+                   "fr":"Il est nécessaire d'encourager davantage l'étude de ce domaine auprès du public et des entreprises. Le soutien par le biais de programmes gouvernementaux devrait être élargi."},
+    "article_abstract": {"uz":"Ushbu maqolada {t} ning bugungi kundagi holati, rivojlanish istiqbollari va amaliy tavsiyalar tahlil qilinadi. Ustuvor yo'nalishlar belgilab olindi.",
+                         "ru":"В данной статье анализируется текущее состояние {t}, перспективы развития и практические рекомендации. Определены приоритетные направления.",
+                         "en":"This article analyzes the current state of {t}, development prospects and practical recommendations. Priority directions have been identified.",
+                         "tr":"Bu makale, {t} konusunun mevcut durumunu, gelişme beklentilerini ve pratik önerileri analiz etmektedir. Öncelikli yönler belirlenmiştir.",
+                         "de":"In diesem Artikel werden der aktuelle Stand von {t}, Entwicklungsperspektiven und praktische Empfehlungen analysiert. Prioritäre Richtungen wurden identifiziert.",
+                         "fr":"Cet article analyse l'état actuel de {t}, les perspectives de développement et les recommandations pratiques. Les directions prioritaires ont été identifiées."},
+    "article_intro": {"uz":"Bugungi kunda {t} global miqyosdagi eng muhim masalalardan biriga aylandi. Shu sababli ushbu sohani chuqur o'rganish zamon talabidir.",
+                      "ru":"Сегодня {t} стало одним из глобально важных вопросов. Поэтому углубленное изучение этой сферы является требованием времени.",
+                      "en":"Today, {t} has become one of the globally important issues. Therefore, an in-depth study of this field is the demand of the time.",
+                      "tr":"Bugün {t}, küresel olarak önemli konulardan biri haline gelmiştir. Bu nedenle, bu alanın derinlemesine incelenmesi zamanın gereğidir.",
+                      "de":"Heute ist {t} zu einem der global wichtigen Themen geworden. Daher ist eine eingehende Untersuchung dieses Bereichs eine Forderung der Zeit.",
+                      "fr":"Aujourd'hui, {t} est devenu l'un des problèmes mondiaux importants. Par conséquent, une étude approfondie de ce domaine est l'exigence du temps."},
+    "thesis_intro": {"uz":"Bugungi kunda {t} sohasini takomillashtirish zamon talabiga aylandi. Tadqiqotning maqsadi ushbu sohada samaradorlikni oshirishning yangi usullarini ishlab chiqishdir.",
+                     "ru":"Сегодня совершенствование сферы {t} стало требованием времени. Цель исследования — разработать новые методы повышения эффективности в этой сфере.",
+                     "en":"Today, improving the field of {t} has become a demand of the time. The goal of the research is to develop new methods for increasing efficiency in this field.",
+                     "tr":"Bugün {t} alanını geliştirmek zamanın bir gereği haline gelmiştir. Araştırmanın amacı, bu alanda verimliliği artırmak için yeni yöntemler geliştirmektir.",
+                     "de":"Heute ist die Verbesserung des Bereichs {t} zu einer Forderung der Zeit geworden. Das Ziel der Forschung ist es, neue Methoden zur Effizienzsteigerung in diesem Bereich zu entwickeln.",
+                     "fr":"Aujourd'hui, l'amélioration du domaine de {t} est devenue une exigence du temps. L'objectif de la recherche est de développer de nouvelles méthodes pour augmenter l'efficacité dans ce domaine."},
+    "essay_main_fb": {"uz":"{t} bo'yicha chuqur tahlil va mulohazalar. Insoniyat tarixi shuni ko'rsatadiki, har qanday buyuk g'oya insonning intilishi va mehnati samarasidir.",
+                      "ru":"Глубокий анализ и размышления на тему «{t}». История человечества показывает, что любая великая идея — это результат стремления и труда человека.",
+                      "en":"A deep analysis and reflections on {t}. Human history shows that every great idea is the result of human aspiration and labor.",
+                      "tr":"{t} üzerine derin bir analiz ve düşünceler. İnsanlık tarihi gösteriyor ki, her büyük fikir insanın çabasının ve emeğinin sonucudur.",
+                      "de":"Eine tiefgehende Analyse und Reflexionen zu {t}. Die Geschichte der Menschheit zeigt, dass jede große Idee das Ergebnis menschlichen Strebens und Arbeitens ist.",
+                      "fr":"Une analyse approfondie et des réflexions sur {t}. L'histoire de l'humanité montre que toute grande idée est le résultat de l'aspiration et du travail humain."},
+    "essay_concl_fb": {"uz":"Xulosa qilib aytganda, {t} kelajakka qilingan eng katta sarmoyadir. Har bir yangi kashfiyot oldimizdagi yo'lni yoritadi.",
+                       "ru":"В заключение, {t} — это величайшая инвестиция в будущее. Каждое новое открытие освещает путь впереди.",
+                       "en":"In conclusion, {t} is the greatest investment in the future. Every new discovery brightens the road ahead.",
+                       "tr":"Sonuç olarak, {t} geleceğe yapılan en büyük yatırımdır. Her yeni keşif önümüzdeki yolu aydınlatır.",
+                       "de":"Zusammenfassend ist {t} die größte Investition in die Zukunft. Jede neue Entdeckung erhellt den Weg vor uns.",
+                       "fr":"En conclusion, {t} est le plus grand investissement dans l'avenir. Chaque nouvelle découverte éclaire la route à venir."},
+    "main_part": {"uz":"ASOSIY QISM", "ru":"ОСНОВНАЯ ЧАСТЬ", "en":"MAIN PART", "tr":"TEMEL KISIM", "de":"HAUPTTEIL", "fr":"PARTIE PRINCIPALE"},
     "results_fb": {"uz":"{t} bo'yicha tadqiqot natijalari keltirilgan. Olingan ma'lumotlar statistik jihatdan ishonchli ekanligi isbotlandi.",
                    "ru":"Представлены результаты исследования по теме «{t}». Полученные данные доказали статистическую надёжность.",
                    "en":"The results of the research on {t} are presented. The data obtained proved statistically reliable.",
@@ -392,11 +397,75 @@ _LOC = {
                 "tr":"Bu alanda üniversitelerde ulusal bir platform oluşturmak ve personel eğitimini genişletmek gerekmektedir.",
                 "de":"Es ist notwendig, eine nationale Plattform für dieses Gebiet an Universitäten zu schaffen und die Personalausbildung zu erweitern.",
                 "fr":"Il est nécessaire de créer une plateforme nationale pour ce domaine dans les universités et d'élargir la formation du personnel."},
-    "main_part": {"uz":"ASOSIY QISM", "ru":"ОСНОВНАЯ ЧАСТЬ", "en":"MAIN PART", "tr":"TEMEL KISIM", "de":"HAUPTTEIL", "fr":"PARTIE PRINCIPALE"},
 }
+
 def _loc(key, lang, topic=""):
     lang = str(lang).lower()
     return _LOC.get(key, {}).get(lang, _LOC.get(key, {}).get("en", key)).replace("{t}", str(topic)[:40])
+
+# ===== Test Fallback Savollari (6 tilda) =====
+_TEST_FB = {
+    "uz": [("Mavzu bo'yicha asosiy tushuncha nima?", ["Asosiy tushuncha", "Ikkinchi variant", "Uchinchi variant", "To'rtinchi variant"]),
+           ("Ushbu soha qaysi yo'nalishga tegishli?", ["Aniq fanlar", "Ijtimoiy fanlar", "Tabiiy fanlar", "Barcha javoblar to'g'ri"]),
+           ("Mavzuning asosiy maqsadi nima?", ["Tahlil qilish", "O'rganish", "Rivojlantirish", "Barchasi to'g'ri"]),
+           ("Qaysi yil muhim bosqich hisoblanadi?", ["2020", "2021", "2022", "2023"]),
+           ("Mavzuga oid qaysi atama mavjud?", ["Atama A", "Atama B", "Atama C", "Barchasi"]),
+           ("Ushbu jarayonning asosiy natijasi nima?", ["Natija A", "Natija B", "Natija C", "Barchasi"]),
+           ("Kim ushbu sohaga hissa qo'shgan?", ["Olim A", "Olim B", "Olim C", "Barchasi"]),
+           ("Mavzuning amaliy ahamiyati qanday?", ["Yuqori", "O'rta", "Past", "Ahamiyatsiz"]),
+           ("Qaysi usul samaraliroq?", ["Usul A", "Usul B", "Usul C", "Barchasi"]),
+           ("Kelajakda qanday o'zgarish kutilmoqda?", ["Yaxshilanish", "O'zgarishsiz", "Yomonlashuv", "Noma'lum"])],
+    "ru": [("Что является основным понятием по теме?", ["Основное понятие", "Второй вариант", "Третий вариант", "Четвертый вариант"]),
+           ("К какому направлению относится эта область?", ["Точные науки", "Социальные науки", "Естественные науки", "Все ответы верны"]),
+           ("Какова основная цель темы?", ["Анализ", "Изучение", "Развитие", "Все вышеперечисленное"]),
+           ("Какой год считается важным этапом?", ["2020", "2021", "2022", "2023"]),
+           ("Какой термин относится к теме?", ["Термин А", "Термин Б", "Термин В", "Все"]),
+           ("Каков основной результат этого процесса?", ["Результат А", "Результат Б", "Результат В", "Все"]),
+           ("Кто внес вклад в эту область?", ["Ученый А", "Ученый Б", "Ученый В", "Все"]),
+           ("Каково практическое значение темы?", ["Высокое", "Среднее", "Низкое", "Незначительное"]),
+           ("Какой метод более эффективен?", ["Метод А", "Метод Б", "Метод В", "Все"]),
+           ("Каких изменений ожидают в будущем?", ["Улучшение", "Без изменений", "Ухудшение", "Неизвестно"])],
+    "en": [("What is the main concept of the topic?", ["Main concept", "Second option", "Third option", "Fourth option"]),
+           ("Which field does this area belong to?", ["Exact sciences", "Social sciences", "Natural sciences", "All answers are correct"]),
+           ("What is the main goal of the topic?", ["Analysis", "Study", "Development", "All of the above"]),
+           ("Which year is considered an important stage?", ["2020", "2021", "2022", "2023"]),
+           ("Which term is related to the topic?", ["Term A", "Term B", "Term C", "All"]),
+           ("What is the main result of this process?", ["Result A", "Result B", "Result C", "All"]),
+           ("Who contributed to this field?", ["Scientist A", "Scientist B", "Scientist C", "All"]),
+           ("What is the practical significance of the topic?", ["High", "Medium", "Low", "Insignificant"]),
+           ("Which method is more effective?", ["Method A", "Method B", "Method C", "All"]),
+           ("What changes are expected in the future?", ["Improvement", "No change", "Deterioration", "Unknown"])],
+    "tr": [("Konunun ana kavramı nedir?", ["Ana kavram", "İkinci seçenek", "Üçüncü seçenek", "Dördüncü seçenek"]),
+           ("Bu alan hangi yöne aittir?", ["Fen bilimleri", "Sosyal bilimler", "Doğa bilimleri", "Tüm cevaplar doğru"]),
+           ("Konunun temel amacı nedir?", ["Analiz", "Çalışma", "Geliştirme", "Yukarıdakilerin hepsi"]),
+           ("Hangi yıl önemli bir aşama olarak kabul edilir?", ["2020", "2021", "2022", "2023"]),
+           ("Konuyla ilgili hangi terim var?", ["Terim A", "Terim B", "Terim C", "Hepsi"]),
+           ("Bu sürecin ana sonucu nedir?", ["Sonuç A", "Sonuç B", "Sonuç C", "Hepsi"]),
+           ("Bu alana kim katkıda bulundu?", ["Bilim insanı A", "Bilim insanı B", "Bilim insanı C", "Hepsi"]),
+           ("Konunun pratik önemi nedir?", ["Yüksek", "Orta", "Düşük", "Önemsiz"]),
+           ("Hangi yöntem daha etkilidir?", ["Yöntem A", "Yöntem B", "Yöntem C", "Hepsi"]),
+           ("Gelecekte hangi değişiklikler bekleniyor?", ["İyileşme", "Değişiklik yok", "Kötüleşme", "Bilinmiyor"])],
+    "de": [("Was ist das Hauptkonzept des Themas?", ["Hauptkonzept", "Zweite Option", "Dritte Option", "Vierte Option"]),
+           ("Zu welchem Bereich gehört dieses Gebiet?", ["Exakte Wissenschaften", "Sozialwissenschaften", "Naturwissenschaften", "Alle Antworten sind richtig"]),
+           ("Was ist das Hauptziel des Themas?", ["Analyse", "Studium", "Entwicklung", "Alles oben Genannte"]),
+           ("Welches Jahr gilt als wichtiger Meilenstein?", ["2020", "2021", "2022", "2023"]),
+           ("Welcher Begriff gehört zum Thema?", ["Begriff A", "Begriff B", "Begriff C", "Alle"]),
+           ("Was ist das Hauptergebnis dieses Prozesses?", ["Ergebnis A", "Ergebnis B", "Ergebnis C", "Alle"]),
+           ("Wer hat zu diesem Bereich beigetragen?", ["Wissenschaftler A", "Wissenschaftler B", "Wissenschaftler C", "Alle"]),
+           ("Welche praktische Bedeutung hat das Thema?", ["Hoch", "Mittel", "Niedrig", "Unbedeutend"]),
+           ("Welche Methode ist effektiver?", ["Methode A", "Methode B", "Methode C", "Alle"]),
+           ("Welche Veränderungen werden in Zukunft erwartet?", ["Verbesserung", "Keine Veränderung", "Verschlechterung", "Unbekannt"])],
+    "fr": [("Quel est le concept principal du sujet ?", ["Concept principal", "Deuxième option", "Troisième option", "Quatrième option"]),
+           ("À quel domaine appartient ce domaine ?", ["Sciences exactes", "Sciences sociales", "Sciences naturelles", "Toutes les réponses sont correctes"]),
+           ("Quel est l'objectif principal du sujet ?", ["Analyse", "Étude", "Développement", "Tout ce qui précède"]),
+           ("Quelle année est considérée comme une étape importante ?", ["2020", "2021", "2022", "2023"]),
+           ("Quel terme est lié au sujet ?", ["Terme A", "Terme B", "Terme C", "Tous"]),
+           ("Quel est le résultat principal de ce processus ?", ["Résultat A", "Résultat B", "Résultat C", "Tous"]),
+           ("Qui a contribué à ce domaine ?", ["Scientifique A", "Scientifique B", "Scientifique C", "Tous"]),
+           ("Quelle est l'importance pratique du sujet ?", ["Élevée", "Moyenne", "Faible", "Insignifiante"]),
+           ("Quelle méthode est plus efficace ?", ["Méthode A", "Méthode B", "Méthode C", "Toutes"]),
+           ("Quels changements sont attendus à l'avenir ?", ["Amélioration", "Aucun changement", "Détérioration", "Inconnu"])]
+}
 
 def _set_cell_bg(cell, color_hex):
     tcPr = cell._tc.get_or_add_tcPr()
@@ -406,12 +475,11 @@ def _set_cell_bg(cell, color_hex):
     tcPr.append(shd)
 
 def _add_footer(section, lang):
-    """Har sahifa pastiga: 11pt 'Yaratildi: @Talaba_AI_SlideBot'."""
     footer = section.footer
     footer.is_linked_to_previous = False
     p = footer.paragraphs[0]
     p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
-    _cb = {"uz": "Yaratildi:", "ru": "Создано:", "en": "Created by:"}.get(str(lang).lower(), "Created by:")
+    _cb = {"uz": "Yaratildi:", "ru": "Создано:", "en": "Created by:", "tr": "Oluşturan:", "de": "Erstellt von:", "fr": "Créé par :"}.get(str(lang).lower(), "Created by:")
     run = p.add_run(f"{_cb} {BOT_USERNAME}")
     run.font.size = Pt(11)
     run.font.italic = True
@@ -423,22 +491,17 @@ def _add_heading(doc, text, level=1, center=False):
         h.alignment = WD_ALIGN_PARAGRAPH.CENTER
     for run in h.runs:
         run.font.name = "Times New Roman"
-        if level == 0:
-            run.font.size = Pt(22)
-        elif level == 1:
-            run.font.size = Pt(16)
-        else:
-            run.font.size = Pt(14)
+        if level == 0: run.font.size = Pt(22)
+        elif level == 1: run.font.size = Pt(16)
+        else: run.font.size = Pt(14)
         run.font.bold = True
         run.font.color.rgb = RGBColor(20, 20, 20)
     return h
 
 def _add_para(doc, text, size=14, bold=False, italic=False, align=None, indent=True, color=None):
     p = doc.add_paragraph()
-    if align:
-        p.alignment = align
-    if indent:
-        p.paragraph_format.first_line_indent = Cm(1.25)
+    if align: p.alignment = align
+    if indent: p.paragraph_format.first_line_indent = Cm(1.25)
     p.paragraph_format.line_spacing = 1.5
     p.paragraph_format.space_after = Pt(6)
     run = p.add_run(text)
@@ -446,8 +509,7 @@ def _add_para(doc, text, size=14, bold=False, italic=False, align=None, indent=T
     run.font.name = "Times New Roman"
     run.font.bold = bold
     run.font.italic = italic
-    if color:
-        run.font.color.rgb = color
+    if color: run.font.color.rgb = color
     return p
 
 def _add_label_para(doc, label, text, size=14):
@@ -461,54 +523,43 @@ def _add_label_para(doc, label, text, size=14):
     return p
 
 def _add_box(doc, title, body, bg_hex="FFF8E1", border_color=None):
-    """Ramkali blok — jadval orqali (fon rangli, chegarali)."""
     table = doc.add_table(rows=1, cols=1)
     table.style = "Table Grid"
     cell = table.cell(0, 0)
     _set_cell_bg(cell, bg_hex)
-    # Sarlavha
     p1 = cell.paragraphs[0]
     r1 = p1.add_run(title)
     r1.font.bold = True; r1.font.size = Pt(14); r1.font.name = "Times New Roman"
     r1.font.color.rgb = RGBColor(120, 60, 0)
-    # Matn
     for line in body.split("\n"):
-        if not line.strip():
-            continue
+        if not line.strip(): continue
         p = cell.add_paragraph()
         p.paragraph_format.line_spacing = 1.3
         run = p.add_run(line.strip())
         run.font.size = Pt(13); run.font.name = "Times New Roman"
-    doc.add_paragraph()  # bo'sh qator
+    doc.add_paragraph()
 
 def _split_content(text, n):
-    """AI matnini n ta bobga bo'ladi."""
-    if not text:
-        return ["" for _ in range(n)]
+    if not text: return ["" for _ in range(n)]
     paras = [p.strip() for p in re.split(r'\n\s*\n|\n', text) if p.strip() and len(p.strip()) > 20]
-    if not paras:
-        paras = [text[i:i+400] for i in range(0, len(text), 400)]
+    if not paras: paras = [text[i:i+400] for i in range(0, len(text), 400)]
     per = max(1, len(paras) // n)
     parts = []
     idx = 0
     for i in range(n):
-        if i == n - 1:
-            parts.append("\n".join(paras[idx:]))
+        if i == n - 1: parts.append("\n".join(paras[idx:]))
         else:
             parts.append("\n".join(paras[idx:idx+per]))
             idx += per
     return parts
 
 def _parse_author(author, lbl):
-    """Muallif maydonini bir nechta qatorga bo'ladi.
-    1-qator: Bajaruvchi, keyingi qatorlar: Ilmiy rahbar, Kafedra mudiri h.k."""
     if not author or author.strip() in ("-", "—", ""):
         return [(lbl["author_label"], lbl["skip_author"])]
     lines = [l.strip() for l in author.split("\n") if l.strip()]
     result = []
     labels = [lbl["author_label"], lbl["supervisor_label"], lbl["dept_head_label"], lbl["reviewer_label"]]
     for i, line in enumerate(lines):
-        # Agar foydalanuvchi o'zi yorliq bilan yozgan bo'lsa — shunday qoldiramiz
         if ":" in line[:20]:
             lab, val = line.split(":", 1)
             result.append((lab.strip() + ":", val.strip()))
@@ -517,7 +568,6 @@ def _parse_author(author, lbl):
     return result
 
 def _add_title_page(doc, service, topic, author, lbl, include_dept=False):
-    """Titul sahifasi."""
     service_key = service if service in ("referat","mustaqil","kurs","diplom") else "referat"
     doc.add_paragraph()
     p = doc.add_paragraph(); p.alignment = WD_ALIGN_PARAGRAPH.CENTER
@@ -528,29 +578,23 @@ def _add_title_page(doc, service, topic, author, lbl, include_dept=False):
     if include_dept:
         p = doc.add_paragraph(); p.alignment = WD_ALIGN_PARAGRAPH.CENTER
         r = p.add_run(lbl["dept_placeholder"]); r.font.size = Pt(13); r.font.name = "Times New Roman"
-    for _ in range(4):
-        doc.add_paragraph()
+    for _ in range(4): doc.add_paragraph()
     p = doc.add_paragraph(); p.alignment = WD_ALIGN_PARAGRAPH.CENTER
     r = p.add_run(lbl[service_key]); r.font.size = Pt(20); r.font.bold = True; r.font.name = "Times New Roman"
     doc.add_paragraph()
     p = doc.add_paragraph(); p.alignment = WD_ALIGN_PARAGRAPH.CENTER
     r = p.add_run(f'{lbl["topic_label"]} {topic}'); r.font.size = Pt(16); r.font.bold = True; r.font.name = "Times New Roman"
-    for _ in range(3):
-        doc.add_paragraph()
-    # Muallif ma'lumotlari — o'ng tomonda
-    author_pairs = _parse_author(author, lbl)
-    for lab, val in author_pairs:
+    for _ in range(3): doc.add_paragraph()
+    for lab, val in _parse_author(author, lbl):
         p = doc.add_paragraph(); p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
         r1 = p.add_run(f"{lab} "); r1.font.size = Pt(14); r1.font.name = "Times New Roman"
         r2 = p.add_run(val); r2.font.size = Pt(14); r2.font.name = "Times New Roman"
-    for _ in range(4):
-        doc.add_paragraph()
+    for _ in range(4): doc.add_paragraph()
     p = doc.add_paragraph(); p.alignment = WD_ALIGN_PARAGRAPH.CENTER
     r = p.add_run(lbl["city_year"]); r.font.size = Pt(14); r.font.name = "Times New Roman"
     doc.add_page_break()
 
 def _add_toc(doc, sections, lbl):
-    """Mundarija — nuqtalar bilan."""
     _add_heading(doc, lbl["toc"], level=1, center=True)
     doc.add_paragraph()
     for title, page in sections:
@@ -564,12 +608,10 @@ def _add_toc(doc, sections, lbl):
 def _add_references(doc, topic, lbl):
     _add_heading(doc, lbl["references"], level=1, center=True)
     lang = lbl.get("_lang", "uz")
-    refs = [_loc(f"ref{i}", lang, topic) for i in range(1, 6)]
-    for ref in refs:
+    for ref in [_loc(f"ref{i}", lang, topic) for i in range(1, 6)]:
         p = doc.add_paragraph(ref)
         p.paragraph_format.line_spacing = 1.5
-        for run in p.runs:
-            run.font.size = Pt(13); run.font.name = "Times New Roman"
+        for run in p.runs: run.font.size = Pt(13); run.font.name = "Times New Roman"
 
 def _add_intro(doc, topic, lbl, include_object=False, content_text=""):
     lang = lbl.get("_lang", "uz")
@@ -579,8 +621,7 @@ def _add_intro(doc, topic, lbl, include_object=False, content_text=""):
     if include_object:
         _add_label_para(doc, lbl["object"], _loc("object", lang, topic))
         _add_label_para(doc, lbl["subject"], _loc("subject", lang, topic))
-    if content_text:
-        _add_para(doc, content_text[:600])
+    if content_text: _add_para(doc, content_text[:600])
 
 def _add_chapter(doc, num, title, body, lbl, subsections=None):
     lang = lbl.get("_lang", "uz")
@@ -589,26 +630,20 @@ def _add_chapter(doc, num, title, body, lbl, subsections=None):
         for sub_num, sub_title in subsections:
             _add_heading(doc, f"{num}.{sub_num}. {sub_title}", level=2)
     paras = [p for p in body.split("\n") if p.strip()]
-    for p in paras[:8]:
-        _add_para(doc, p)
-    if not paras:
-        _add_para(doc, _loc("chapter_fb", lang).format(title=title))
+    for p in paras[:8]: _add_para(doc, p)
+    if not paras: _add_para(doc, _loc("chapter_fb", lang).format(title=title))
 
 def _add_conclusion(doc, topic, lbl, conclusion_key="conclusion"):
     lang = lbl.get("_lang", "uz")
     _add_heading(doc, lbl[conclusion_key], level=1, center=True)
-    points = [_loc(f"concl{i}", lang, topic) for i in range(1, 5)]
-    for pt in points:
-        _add_para(doc, pt, indent=False)
+    for pt in [_loc(f"concl{i}", lang, topic) for i in range(1, 5)]: _add_para(doc, pt, indent=False)
 
 # ===== Asosiy funksiya =====
 def generate_docx(topic, service_name, service_code, lang, pages, content_text, author=""):
     doc = Document()
-    # Standart stil
     style = doc.styles["Normal"]
     style.font.name = "Times New Roman"
     style.font.size = Pt(14)
-    # Sahifa parametrlari
     section = doc.sections[0]
     section.top_margin = Cm(2); section.bottom_margin = Cm(2)
     section.left_margin = Cm(3); section.right_margin = Cm(1.5)
@@ -626,55 +661,43 @@ def generate_docx(topic, service_name, service_code, lang, pages, content_text, 
     if service_code == "insho":
         return _generate_essay(doc, topic, lang, content_text, author, lbl)
 
-    # Akademik turlar: referat, mustaqil, kurs, diplom
     include_dept = service_code in ("kurs", "diplom")
     _add_title_page(doc, service_code, topic, author, lbl, include_dept=include_dept)
 
-    # Boblar — lokalizatsiya qilingan
     chapters = _chapters_for(service_code, lang)
     concl_key = "conclusion"
     if service_code == "kurs": concl_key = "conclusion_kurs"
     elif service_code == "diplom": concl_key = "conclusion_diplom"
 
-    # Mundarija
     toc_items = [(lbl["intro"], "3")]
     for i, (ct, subs) in enumerate(chapters, 1):
         toc_items.append((f'{lbl["chapter"]} {i}. {ct}', str(4 + i*3)))
     toc_items.append((lbl[concl_key], str(4 + len(chapters)*3 + 2)))
     toc_items.append((lbl["references"], str(4 + len(chapters)*3 + 4)))
-    if service_code == "diplom":
-        toc_items.append((lbl["appendix"], str(4 + len(chapters)*3 + 6)))
+    if service_code == "diplom": toc_items.append((lbl["appendix"], str(4 + len(chapters)*3 + 6)))
     _add_toc(doc, toc_items, lbl)
 
-    # Kirish
-    _add_intro(doc, topic, lbl, include_object=(service_code in ("kurs","diplom")),
-               content_text=content_text[:400])
+    _add_intro(doc, topic, lbl, include_object=(service_code in ("kurs","diplom")), content_text=content_text[:400])
     doc.add_page_break()
 
-    # Boblar — kontentni taqsimlaymiz
     parts = _split_content(content_text, len(chapters))
     for i, ((ct, subs), body) in enumerate(zip(chapters, parts), 1):
         _add_chapter(doc, i, ct, body, lbl, subsections=subs)
-        # Maxsus ramkalar
+        
+        # Lokalizatsiya qilingan ramkalar
         if i == 1:
-            _add_box(doc, lbl["important_def"],
-                     f"«{topic}» is a fundamental category of the field whose essence must be fully understood.\nThis definition is the key to an in-depth study of the theoretical foundations.")
+            _add_box(doc, lbl["important_def"], _loc("def_box", lang, topic))
         if service_code == "mustaqil" and i == len(chapters):
-            _add_box(doc, lbl["practical_tip"],
-                     _loc("practical_tip", lang, topic))
+            _add_box(doc, lbl["practical_tip"], _loc("practical_tip", lang, topic))
         if service_code in ("kurs", "diplom") and i == 2:
-            _add_box(doc, lbl["stats"],
-                     "According to international agencies, this indicator is projected to exceed 50% by 2030.")
+            _add_box(doc, lbl["stats"], _loc("stats_box", lang, topic))
+            
         doc.add_page_break()
 
-    # Xulosa
     _add_conclusion(doc, topic, lbl, conclusion_key=concl_key)
     doc.add_page_break()
-
-    # Adabiyotlar
     _add_references(doc, topic, lbl)
 
-    # Ilavalar (faqat diplom)
     if service_code == "diplom":
         doc.add_page_break()
         _add_heading(doc, lbl["appendix"], level=1, center=True)
@@ -682,19 +705,16 @@ def generate_docx(topic, service_name, service_code, lang, pages, content_text, 
         _add_para(doc, _loc("appendix2", lang, topic), indent=False)
         _add_para(doc, _loc("appendix3", lang, topic), indent=False)
 
-    buf = io.BytesIO()
-    doc.save(buf); buf.seek(0)
+    buf = io.BytesIO(); doc.save(buf); buf.seek(0)
     return buf
 
 def _generate_essay(doc, topic, lang, content_text, author, lbl):
-    """Insho / Esse."""
     doc.add_paragraph()
     p = doc.add_paragraph(); p.alignment = WD_ALIGN_PARAGRAPH.CENTER
     r = p.add_run(f"{lbl.get('essay_style','ESSAY')}"); r.font.size = Pt(14); r.font.italic = True; r.font.name = "Times New Roman"
     p = doc.add_paragraph(); p.alignment = WD_ALIGN_PARAGRAPH.CENTER
     r = p.add_run(f'{lbl["topic_label"]} {topic}'); r.font.size = Pt(18); r.font.bold = True; r.font.name = "Times New Roman"
-    author_pairs = _parse_author(author, lbl)
-    for lab, val in author_pairs:
+    for lab, val in _parse_author(author, lbl):
         p = doc.add_paragraph(); p.alignment = WD_ALIGN_PARAGRAPH.CENTER
         r = p.add_run(f"{lab} {val}"); r.font.size = Pt(13); r.font.name = "Times New Roman"
     doc.add_paragraph()
@@ -702,33 +722,23 @@ def _generate_essay(doc, topic, lang, content_text, author, lbl):
     _add_para(doc, _loc("essay_intro", lang, topic))
     _add_label_para(doc, "💭 " + lbl["goal"], _loc("essay_goal", lang, topic))
     doc.add_paragraph()
-    _add_heading(doc, lbl.get("chapter","ASOSIY QISM") + ": " + lbl.get("box_titles",["Tahlil"])[0] if False else _loc("main_part", lang, topic), level=1, center=True)
+    _add_heading(doc, _loc("main_part", lang, topic), level=1, center=True)
     parts = _split_content(content_text, 3)
     for i, part in enumerate(parts):
-        _add_para(doc, part or f"A deep analysis and reflections on {topic}. Human history shows that every great idea emerges from people's aspiration and labor.")
-    _add_box(doc, lbl["quote"],
-             '"Kitob — vaqt ummonida suzib yurgan va o\'zining qimmatbaho yukini avloddan-avlodga aytib berayotgan kemadir."\n— Frensis Bekon',
-             bg_hex="F3E5F5")
+        _add_para(doc, part or _loc("essay_main_fb", lang, topic))
+    _add_box(doc, lbl["quote"], _loc("quote_text", lang), bg_hex="F3E5F5")
     doc.add_paragraph()
     _add_heading(doc, lbl["conclusion"], level=1, center=True)
-    _add_para(doc, f"In conclusion, {topic} is the greatest investment in the future. Every new discovery brightens the road ahead.")
-    _add_box(doc, lbl["final_wisdom"],
-             "Dunyoni o'zgartirmoqchi bo'lsangiz, avvalo o'zingizdan boshlang va bilim olishni hech vaqt to'xtatmang!",
-             bg_hex="E8F5E9")
+    _add_para(doc, _loc("essay_concl_fb", lang, topic))
+    _add_box(doc, lbl["final_wisdom"], _loc("final_wisdom", lang), bg_hex="E8F5E9")
     buf = io.BytesIO(); doc.save(buf); buf.seek(0)
     return buf
 
 def _parse_test_questions(content_text, n_q, topic, lang):
-    """AI matnidan savollar + variantlar + to'g'ri javob + izohni ajratib oladi.
-    Hech qachon variant ichida to'g'ri javob belgisi qolmaydi — hammasi oxirgi kalitda."""
-    AK_RAT = {"uz": "To'g'ri javob — mavzuning asosiy mohiyatini ifodalaydi.",
-              "ru": "Правильный ответ отражает суть темы.",
-              "en": "The correct answer reflects the core essence of the topic.",
-              "tr": "Doğru cevap konunun temel özünü yansıtır.",
-              "de": "Die richtige Antwort spiegelt den Kern des Themas wider.",
-              "fr": "La bonne réponse reflète l'essence du sujet."}
+    AK_RAT = {"uz": "To'g'ri javob — mavzuning asosiy mohiyatini ifodalaydi.", "ru": "Правильный ответ отражает суть темы.", "en": "The correct answer reflects the core essence of the topic.", "tr": "Doğru cevap konunun temel özünü yansıtır.", "de": "Die richtige Antwort spiegelt den Kern des Themas wider.", "fr": "La bonne réponse reflète l'essence du sujet."}
     default_rat = AK_RAT.get(str(lang).lower(), AK_RAT["en"])
     questions = []
+    
     if content_text and len(str(content_text).strip()) > 50:
         lines = [ln.rstrip() for ln in str(content_text).split("\n")]
         cur = None
@@ -736,8 +746,7 @@ def _parse_test_questions(content_text, n_q, topic, lang):
         qhead_re = re.compile(r'^\s*(\d+)[\.\-\)]\s*(?:SAVOL|QUESTION|SORU|FRAGE|ВОПРОС|Вопрос|Question)?\s*[:\-]?\s*(.*)$', re.I)
         rat_re = re.compile(r'^\s*(?:💡\s*)?(?:Izoh|Rationale|Açıklama|Begründung|Explication|Обоснование|Explanation)\s*[:\-]?\s*(.*)$', re.I)
         for ln in lines:
-            if not ln.strip():
-                continue
+            if not ln.strip(): continue
             qm = qhead_re.match(ln)
             om = opt_re.match(ln)
             rm = rat_re.match(ln)
@@ -747,73 +756,66 @@ def _parse_test_questions(content_text, n_q, topic, lang):
             elif om and cur is not None:
                 opt_text = om.group(2).strip()
                 is_correct = ("✓" in opt_text) or ("✔" in opt_text) or ("(✓" in opt_text) or ("to'g'ri javob" in opt_text.lower()) or ("correct answer" in opt_text.lower()) or ("doğru cevap" in opt_text.lower()) or ("richtige antwort" in opt_text.lower()) or ("bonne réponse" in opt_text.lower()) or ("правильный ответ" in opt_text.lower())
-                # To'g'ri javob belgisini variant matnidan tozalash
                 opt_text = re.sub(r'\s*\(?(?:✓|✔)[^)]*\)?', '', opt_text).strip()
                 opt_text = re.sub(r'\s*\([^)]*(to\'g\'ri|correct|doğru|richtige|bonne|правильн)[^)]*\)', '', opt_text, flags=re.I).strip()
                 letter = "ABCD"["ABCD1234".find(om.group(1).upper()) % 4] if om.group(1).upper() in "ABCD1234" else "A"
                 cur["options"].append((letter, opt_text))
-                if is_correct:
-                    cur["correct"] = letter
+                if is_correct: cur["correct"] = letter
             elif rm and cur is not None:
                 cur["rationale"] = rm.group(1).strip()
-            elif cur is not None and not om:
-                # savol matnining davomi
-                if len(cur["options"]) == 0:
-                    cur["text"] = (cur["text"] + " " + ln.strip()).strip()
+            elif cur is not None and not om and len(cur["options"]) == 0:
+                cur["text"] = (cur["text"] + " " + ln.strip()).strip()
         if cur: questions.append(cur)
-    # Fallback — agar AI matni parse bo'lmasa (til-neytral, o'zbekchasiz)
-    fallback_opts = [
-        "The most complete and detailed answer reflecting the essence of the topic.",
-        "An alternative approach to the question.",
-        "A practical indicator related to the topic.",
-        "International experience on the issue.",
-    ]
+        
+    fb_list = _TEST_FB.get(str(lang).lower(), _TEST_FB["en"])
+    
+    # QAT'IY TO'LDIRISH: Agar AI kam savol yozsa, foydalanuvchi tanlagan songa to'ldiriladi
     while len(questions) < n_q:
         i = len(questions) + 1
+        fb_q = fb_list[(i-1) % len(fb_list)]
         questions.append({
-            "text": f"Question {i} on the topic: {topic}. Which aspect is most important? Choose the correct answer.",
-            "options": [("A", fallback_opts[0]), ("B", fallback_opts[1]), ("C", fallback_opts[2]), ("D", fallback_opts[3])],
+            "text": f"{i}. {fb_q[0]} ({topic})",
+            "options": [("A", fb_q[1][0]), ("B", fb_q[1][1]), ("C", fb_q[1][2]), ("D", fb_q[1][3])],
             "correct": "ABCD"[i % 4], "rationale": default_rat,
         })
+        
     out = []
+    # QAT'IY QIRQISH: Agar AI ko'p savol yozsa, foydalanuvchi tanlagan songa qirqiladi
     for i, q in enumerate(questions[:n_q]):
         opts = q["options"]
         if len(opts) < 4:
             used = {o[0] for o in opts}
             for L in "ABCD":
-                if L not in used:
-                    opts.append((L, fallback_opts[len(opts) % 4]))
+                if L not in used: opts.append((L, fb_list[0][1][len(opts) % 4]))
                 if len(opts) >= 4: break
         q["options"] = opts[:4]
-        if not q["correct"]:
-            q["correct"] = "ABCD"[i % 4]
-        if not q["rationale"]:
-            q["rationale"] = default_rat
+        if not q["correct"]: q["correct"] = "ABCD"[i % 4]
+        if not q["rationale"]: q["rationale"] = default_rat
         out.append(q)
     return out
 
 def _generate_test(doc, topic, lang, pages, content_text, author, lbl):
-    """Quiz / Test — variantlarda to'g'ri javob belgilanmaydi; oxirida JAVOBLAR KALITI + izoh."""
-    AK = {"uz": "JAVOBLAR KALITI VA IZOHLAR", "ru": "КЛЮЧ К ОТВЕТАМ И ОБЪЯСНЕНИЯ",
-          "en": "ANSWER KEY AND EXPLANATIONS", "tr": "CEVAP ANAHTARI VE AÇIKLAMALAR",
-          "de": "LÖSUNGSSCHLÜSSEL UND ERKLÄRUNGEN", "fr": "CORRIGÉ ET EXPLICATIONS"}
+    AK = {"uz": "JAVOBLAR KALITI VA IZOHLAR", "ru": "КЛЮЧ К ОТВЕТАМ И ОБЪЯСНЕНИЯ", "en": "ANSWER KEY AND EXPLANATIONS", "tr": "CEVAP ANAHTARI VE AÇIKLAMALAR", "de": "LÖSUNGSSCHLÜSSEL UND ERKLÄRUNGEN", "fr": "CORRIGÉ ET EXPLICATIONS"}
     ak_title = AK.get(str(lang).lower(), AK["en"])
     doc.add_paragraph()
     p = doc.add_paragraph(); p.alignment = WD_ALIGN_PARAGRAPH.CENTER
     r = p.add_run(lbl["test_title"]); r.font.size = Pt(18); r.font.bold = True; r.font.name = "Times New Roman"
     p = doc.add_paragraph(); p.alignment = WD_ALIGN_PARAGRAPH.CENTER
     r = p.add_run(f'{lbl["topic_label"]} {topic}'); r.font.size = Pt(15); r.font.name = "Times New Roman"
-    n_q = max(5, min(30, pages))
+    
+    # ===== QAT'IY NAZORAT: n_q = foydalanuvchi tanlagan son (20 bo'lsa 20) =====
+    n_q = int(pages) if pages else 20 
+    if n_q < 1: n_q = 20
+    
     p = doc.add_paragraph(); p.alignment = WD_ALIGN_PARAGRAPH.CENTER
     r = p.add_run(f'{lbl["questions_count"]}: {n_q}   •   {lbl["level"]}'); r.font.size = Pt(13); r.font.italic = True; r.font.name = "Times New Roman"
-    author_pairs = _parse_author(author, lbl)
-    for lab, val in author_pairs:
+    for lab, val in _parse_author(author, lbl):
         p = doc.add_paragraph(); p.alignment = WD_ALIGN_PARAGRAPH.CENTER
         r = p.add_run(f"{lab} {val}"); r.font.size = Pt(12); r.font.name = "Times New Roman"
     doc.add_paragraph()
 
     questions = _parse_test_questions(content_text, n_q, topic, lang)
-    answer_key = []  # (raqam, to'g'ri harf, izoh)
+    answer_key = []
     for i, q in enumerate(questions, 1):
         _add_heading(doc, f'{i}. {lbl["question"]}', level=2)
         _add_para(doc, q["text"], indent=False)
@@ -825,7 +827,6 @@ def _generate_test(doc, topic, lang, pages, content_text, author, lbl):
         answer_key.append((i, q["correct"], q["rationale"]))
         doc.add_paragraph()
 
-    # === OXIRIDA — JAVOBLAR KALITI VA IZOHLAR (alohida sahifada) ===
     doc.add_page_break()
     _add_heading(doc, ak_title, level=1, center=True)
     doc.add_paragraph()
@@ -835,72 +836,58 @@ def _generate_test(doc, topic, lang, pages, content_text, author, lbl):
         p.paragraph_format.space_after = Pt(6)
         r1 = p.add_run(f"{num}-{letter}.  "); r1.font.bold = True; r1.font.size = Pt(13); r1.font.name = "Times New Roman"; r1.font.color.rgb = RGBColor(20, 120, 40)
         r2 = p.add_run(f"{lbl['rationale']} {rationale}"); r2.font.size = Pt(12); r2.font.name = "Times New Roman"
+    
     buf = io.BytesIO(); doc.save(buf); buf.seek(0)
     return buf
 
 def _generate_article(doc, topic, lang, content_text, author, lbl):
-    """Maqola."""
     doc.add_paragraph()
     p = doc.add_paragraph(); p.alignment = WD_ALIGN_PARAGRAPH.CENTER
     r = p.add_run(f"📰 {topic}"); r.font.size = Pt(18); r.font.bold = True; r.font.name = "Times New Roman"
-    author_pairs = _parse_author(author, lbl)
-    for lab, val in author_pairs:
+    for lab, val in _parse_author(author, lbl):
         p = doc.add_paragraph(); p.alignment = WD_ALIGN_PARAGRAPH.CENTER
         r = p.add_run(f"{lab} {val}"); r.font.size = Pt(12); r.font.name = "Times New Roman"
     doc.add_paragraph()
-    _add_label_para(doc, lbl["annotation"],
-        f"This article analyzes the current state of {topic}, development prospects and practical recommendations. Priority directions have been identified.")
+    _add_label_para(doc, lbl["annotation"], _loc("article_abstract", lang, topic))
     _add_label_para(doc, lbl["keywords"], f"{topic}, analysis, development, efficiency, recommendations.")
     doc.add_paragraph()
     _add_heading(doc, lbl["intro"], level=1, center=True)
-    _add_para(doc, f"Today, {topic} has become one of the globally important issues. Therefore an in-depth study of this field is the demand of the time.")
+    _add_para(doc, _loc("article_intro", lang, topic))
     doc.add_paragraph()
     _add_heading(doc, _loc("main_part", lang, topic), level=1, center=True)
     parts = _split_content(content_text, 3)
     for part in parts:
-        _add_para(doc, part or f"A detailed analysis of {topic} is presented. Statistical data, international experience and national practice are compared.")
-    _add_box(doc, lbl["stats"],
-             "According to international agencies, this indicator is projected to exceed 50% by 2030, which will bring both new opportunities and challenges.",
-             bg_hex="E3F2FD")
+        _add_para(doc, part or _loc("essay_main_fb", lang, topic))
+    _add_box(doc, lbl["stats"], _loc("stats_box", lang, topic), bg_hex="E3F2FD")
     doc.add_paragraph()
     _add_heading(doc, lbl["conclusion"], level=1, center=True)
-    _add_para(doc, f"In conclusion, developing the field of {topic} is the guarantee of a sustainable future. Cooperation of all parties is needed.")
-    _add_box(doc, lbl["author_recommendation"],
-             "It is necessary to further encourage the study of this field among the public and business entities. Support through government programs should be expanded.",
-             bg_hex="FFF3E0")
+    _add_para(doc, _loc("essay_concl_fb", lang, topic))
+    _add_box(doc, lbl["author_recommendation"], _loc("author_rec", lang, topic), bg_hex="FFF3E0")
     buf = io.BytesIO(); doc.save(buf); buf.seek(0)
     return buf
 
 def _generate_thesis(doc, topic, lang, content_text, author, lbl):
-    """Ilmiy tezis."""
     doc.add_paragraph()
     p = doc.add_paragraph(); p.alignment = WD_ALIGN_PARAGRAPH.CENTER
     r = p.add_run(lbl["thesis"]); r.font.size = Pt(16); r.font.bold = True; r.font.name = "Times New Roman"
     p = doc.add_paragraph(); p.alignment = WD_ALIGN_PARAGRAPH.CENTER
     r = p.add_run(f'{lbl["topic_label"]} {topic.upper()}'); r.font.size = Pt(15); r.font.bold = True; r.font.name = "Times New Roman"
-    author_pairs = _parse_author(author, lbl)
-    for lab, val in author_pairs:
+    for lab, val in _parse_author(author, lbl):
         p = doc.add_paragraph(); p.alignment = WD_ALIGN_PARAGRAPH.CENTER
         r = p.add_run(f"{lab} {val}"); r.font.size = Pt(12); r.font.name = "Times New Roman"
     p = doc.add_paragraph(); p.alignment = WD_ALIGN_PARAGRAPH.CENTER
     r = p.add_run(f'{lbl["email"]} example@mail.uz'); r.font.size = Pt(11); r.font.italic = True; r.font.name = "Times New Roman"
     doc.add_paragraph()
-    _add_label_para(doc, lbl["relevance_thesis"],
-        f"Today, improving the field of {topic} has become a demand of the time. The goal of the research is to develop new methods for increasing efficiency in this field.")
-    _add_label_para(doc, lbl["methods"],
-        _loc("method", lang, topic))
+    _add_label_para(doc, lbl["relevance_thesis"], _loc("thesis_intro", lang, topic))
+    _add_label_para(doc, lbl["methods"], _loc("method", lang, topic))
     doc.add_paragraph()
     parts = _split_content(content_text, 2)
     for part in parts:
         _add_para(doc, part or _loc("results_fb", lang, topic))
-    _add_box(doc, lbl["results"],
-             _loc("results_box", lang, topic),
-             bg_hex="E8F5E9")
+    _add_box(doc, lbl["results"], _loc("results_box", lang, topic), bg_hex="E8F5E9")
     doc.add_paragraph()
     _add_heading(doc, lbl["conclusion"], level=1, center=True)
     _add_para(doc, _loc("concl_final", lang, topic))
-    _add_box(doc, lbl["scientific_rec"],
-             _loc("sci_rec", lang, topic),
-             bg_hex="F3E5F5")
+    _add_box(doc, lbl["scientific_rec"], _loc("sci_rec", lang, topic), bg_hex="F3E5F5")
     buf = io.BytesIO(); doc.save(buf); buf.seek(0)
     return buf
