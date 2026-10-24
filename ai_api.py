@@ -1,9 +1,9 @@
 """
-AI API — to'liq tuzatilgan versiya (v8)
+AI API — to'liq tuzatilgan versiya (v9 - Yangi Shablonlar)
 ========================================
-✓ Til sofligi: Barcha fallback matnlari 6 tilga o'tkazildi (aralashish yo'q).
-✓ Test xizmati: Nechta savol tanlansa, aynan shuncha savol generatsiya qiladi.
-✓ Slaydlar, rasm qidirish va boshqa barcha funksiyalar to'liq saqlab qolindi.
+✓ Slaydlar: Yangi 10, 15, 20, 25 shablonlariga qat'iy moslashgan generatsiya.
+✓ Til sofligi: Barcha fallback matnlari 6 tilga o'tkazildi.
+✓ API va Model almashinuvi: Xatolik yuz berganda avtomatik keyingisiga o'tadi.
 """
 import aiohttp
 import asyncio
@@ -19,7 +19,6 @@ LAST_ERROR = "hali sinanmadi"
 PIXABAY_KEY  = os.getenv("PIXABAY_KEY", "")
 PEXELS_KEY   = os.getenv("PEXELS_KEY", "")
 UNSPLASH_KEY = os.getenv("UNSPLASH_KEY", "")
-IMAGE_SLIDE_INDICES = [0, 3, 6]
 USER_AGENT = "SlaydBot/1.0 (aloqa: admin@example.uz)"
 
 def wiki_langs_for(gen_lang):
@@ -336,7 +335,7 @@ Faqat shu rejani qisqa qilib yozing, matnni yozmang. {wb}"""
     txt = await _chat_complete(prompt, system=_pure_language_system(lang), max_tokens=1000)
     return txt if txt and not txt.startswith("⚠️") else None
 
-# ===== ASOSIY GENERATE FUNKSIYASI =====
+# ===== ASOSIY GENERATE FUNKSIYASI (Hujjatlar uchun) =====
 async def generate(service, topic, options, lang="uz"):
     from services import SERVICES
     name = SERVICES.get(service, {}).get("name", service)
@@ -408,19 +407,7 @@ async def _generate_test(service, topic, options, lang):
     result = "\n\n".join(all_questions) + "\n\nJAVOBLAR KALITI: (TO'G'RI) belgilangan variant."
     return result, bool(all_questions)
 
-def _is_image_slide(idx, total):
-    return idx in IMAGE_SLIDE_INDICES or idx == total - 1
-
-def _make_image_prompt(topic, idx):
-    base = "educational illustration, realistic"
-    for uz, en in SEARCH_MAP.items():
-        if uz in topic.lower(): base = en; break
-    if idx == 0:   return f"portrait of {base}, photorealistic"
-    elif idx == 3: return f"{base}, educational scene"
-    elif idx == 6: return f"{base}, architecture or monument"
-    return f"{base}, inspirational, cinematic"
-
-# ====== SLAYDLAR GENERATSIYASI ======
+# ====== SLAYDLAR GENERATSIYASI (Yangi shablonlar uchun qat'iy struktura) ======
 async def generate_slides_structured(topic, subject, lang, count):
     ln = _lang_name(lang)
     wiki = await wikipedia_fetch(topic, max_chars=4000, gen_lang=lang)
@@ -430,88 +417,64 @@ async def generate_slides_structured(topic, subject, lang, count):
               f" Siz professional taqdimot tuzuvchisiz. Javobni FAQAT {ln} tilida yozing! "
               f"Javobni faqat JSON massiv ko'rinishida qaytaring.")
 
+    # AI'dan so'ralgan shablon o'lchamiga (10, 15, 20, 25) mos ravishda qat'iy slaydlar strukturasini so'raymiz
+    prompt = f"""Mavzu: {topic}. Fan: {subject}.
+Aynan {count} ta slayddan iborat taqdimot tuzing.
+1-slayd: Muqova (Sarlavha va qisqa ta'rif).
+2-slayd: Mundarija (Bo'limlar ro'yxati).
+{count}-slayd: Xulosa (Asosiy xulosalar va rahmat).
+Qolgan {count-3} ta slayd mavzuning mantiqiy qismlariga (nazariya, tahlil, jadval, bosqichlar, iqtibos va h.k.) bag'ishlansin.
+Har bir slayd uchun 3-5 ta mazmunli, qisqa gaplardan iborat ro'yxat yozing.
+{wb}
+QAT'IY QOIDA: Javobingiz aynan {count} ta elementdan iborat JSON massiv bo'lishi shart!
+JSON formati:
+[{{"title": "Sarlavha 1", "content": ["gap1", "gap2", "gap3"]}}, {{"title": "Sarlavha 2", "content": ["gap1", "gap2", "gap3"]}}, ...]"""
+
+    txt = await _chat_complete(prompt, system=system, max_tokens=4000)
+    parsed = _extract_json(txt)
+    
     all_slides = []
     
-    titles = {
-        "uz": {"reja": "Reja", "kirish": "Kirish", "xulosa": "Xulosa"},
-        "ru": {"reja": "План", "kirish": "Введение", "xulosa": "Заключение"},
-        "en": {"reja": "Outline", "kirish": "Introduction", "xulosa": "Conclusion"},
-        "tr": {"reja": "Plan", "kirish": "Giriş", "xulosa": "Sonuç"},
-        "de": {"reja": "Gliederung", "kirish": "Einleitung", "xulosa": "Fazit"},
-        "fr": {"reja": "Plan", "kirish": "Introduction", "xulosa": "Conclusion"},
-    }
-    t_lang = titles.get(lang, titles["en"])
-
-    all_slides.append({
-        "title": f"{topic}",
-        "content": [f"{subject} fanidan taqdimot", f"Tayyorlagan: (Muallif)"]
-    })
-
-    all_slides.append({
-        "title": t_lang["reja"],
-        "content": ["1. Kirish qismi", "2. Asosiy tahlillar va ma'lumotlar", "3. Xulosa va natijalar"]
-    })
-
-    all_slides.append({
-        "title": t_lang["kirish"],
-        "content": [
-            f"Ushbu taqdimot {topic} mavzusiga bag'ishlangan.",
-            f"Mavzuning dolzarbligi va bugungi kundagi o'rni tahlil qilinadi.",
-            f"{subject} fanidagi asosiy tushunchalar yoritiladi."
-        ]
-    })
-
-    main_count = count - 4
-    if main_count < 1: main_count = 1
+    if parsed and isinstance(parsed, list):
+        # Til aralashuvi borligini tekshirish
+        all_text = " ".join([str(s.get("title", "")) + " " + " ".join(s.get("content", [])) for s in parsed if isinstance(s, dict)])
+        if _is_lang_mixed(all_text, lang):
+            txt = await _chat_complete(prompt + f"\nDIQQAT: FAQAT {ln} tilida yozing!", system=system, max_tokens=4000)
+            parsed = _extract_json(txt)
+            
+        if parsed and isinstance(parsed, list):
+            for s in parsed:
+                if isinstance(s, dict):
+                    cl = s.get("content", [])
+                    if isinstance(cl, str): cl = [p.strip() for p in cl.split("\n") if p.strip()]
+                    all_slides.append({
+                        "title": clean_ai_text(str(s.get("title", f"Bo'lim {len(all_slides)+1}"))),
+                        "content": [clean_ai_text(str(c)) for c in cl]
+                    })
     
-    for start in range(0, main_count, 5):
-        chunk_size = min(5, main_count - start)
-        prompt = f"""{topic} mavzusida taqdimotning asosiy qismi uchun {chunk_size} ta slayd yarating.
-Har bir slayd uchun 4-5 ta mazmunli gap yozing. 
-QAT'IY: Sarlavhada "Kirish", "Xulosa", "Reja" so'zlari BO'LMASIN!
-{wb}
-JSON formati: [{{"title": "Sarlavha", "content": ["gap1", "gap2", ...]}}]"""
-        
-        txt = await _chat_complete(prompt, system=system, max_tokens=4000)
-        parsed = _extract_json(txt)
-        
-        if parsed and isinstance(parsed, list) and len(parsed) > 0:
-            all_text = " ".join([str(s.get("title", "")) + " " + " ".join(s.get("content", [])) for s in parsed])
-            if _is_lang_mixed(all_text, lang):
-                txt = await _chat_complete(prompt + f"\nFAQAT {ln} tilida!", system=system, max_tokens=4000)
-                parsed = _extract_json(txt)
-                
-            if parsed and isinstance(parsed, list):
-                for s in parsed[:chunk_size]:
-                    all_slides.append({"title": s.get("title", "Tahlil"), "content": s.get("content", [])})
-            else:
-                for i in range(chunk_size):
-                    all_slides.append({"title": f"{topic} tahlili {start+i+1}", "content": [f"{topic} bo'yicha ma'lumot.", "Qo'shimcha tahlillar."]})
-        else:
-            for i in range(chunk_size):
-                all_slides.append({"title": f"{topic} tahlili {start+i+1}", "content": [f"{topic} bo'yicha asosiy ma'lumotlar.", "Qo'shimcha tahliliy ma'lumotlar."]})
+    # Qat'iy nazorat: Agar AI kam yoki ko'p slayd qaytarsa, {count} ga keltiramiz
+    if not all_slides:
+        all_slides = _fallback_slides(topic, count, lang)
+    else:
+        while len(all_slides) < count:
+            idx = len(all_slides) + 1
+            all_slides.append({
+                "title": f"{topic} - {idx}-qism",
+                "content": [f"{topic} bo'yicha qo'shimcha ma'lumotlar.", "Tahliliy xulosalar va natijalar."]
+            })
+        all_slides = all_slides[:count]
 
-    all_slides.append({
-        "title": t_lang["xulosa"],
-        "content": [
-            f"{topic} mavzusi bo'yicha umumiy xulosalar.",
-            "Asosiy natijalar va keyingi qadamlar.",
-            "E'tiboringiz uchun rahmat!"
-        ]
-    })
-
+    # Pptx generator uchun tayyorlash
     out = []
-    for i, s in enumerate(all_slides[:count]):
+    for i, s in enumerate(all_slides):
         cl = s.get("content", [])
         if isinstance(cl, str): cl = [p.strip() for p in cl.split("\n") if p.strip()]
         while len(cl) < 3: cl.append(f"{topic} bo'yicha ma'lumot.")
         
         out.append({
             "slide_number": i+1,
-            "title": clean_ai_text(str(s.get("title", f"Bo'lim {i+1}"))),
-            "content": [clean_ai_text(str(c)) for c in cl[:6]],
-            "has_image": _is_image_slide(i, count),
-            "image_prompt": _make_image_prompt(topic, i) if _is_image_slide(i, count) else None,
+            "title": s.get("title", f"Bo'lim {i+1}"),
+            "content": cl[:6],
             "wiki_source": wiki["url"] if wiki["found"] else None
         })
     return out, True
@@ -749,13 +712,26 @@ def _fallback_text(service, topic, options, lang, bob_count=10):
     return f"{topic}\n\n" + "\n\n".join([f"{sec}\n{topic} bo'yicha ma'lumot." for sec in sections[:bob_count]])
 
 def _fallback_slides(topic, count, lang):
-    fb = _fb(lang); secs = fb["slide_sections"]; out = []
+    fb = _fb(lang)
+    secs = fb["slide_sections"]
+    out = []
     for i in range(count):
+        if i == 0:
+            title = f"{topic}"
+        elif i == 1:
+            title = "Mundarija" if lang == "uz" else ("Содержание" if lang == "ru" else "Contents")
+        elif i == count - 1:
+            title = "Xulosa" if lang == "uz" else ("Заключение" if lang == "ru" else "Conclusion")
+        else:
+            title = secs[i % len(secs)]
+            
         out.append({
-            "slide_number": i+1,
-            "title": secs[i % len(secs)],
-            "content": [f"{topic} bo'yicha ma'lumot.", "Tahliliy xulosalar.", "Amaliy ahamiyati."],
-            "has_image": _is_image_slide(i, count),
-            "image_prompt": _make_image_prompt(topic, i) if _is_image_slide(i, count) else None
+            "slide_number": i + 1,
+            "title": title,
+            "content": [
+                f"{topic} bo'yicha asosiy ma'lumotlar.",
+                "Tahliliy xulosalar va natijalar.",
+                "Amaliy ahamiyati va tavsiyalar."
+            ]
         })
     return out
