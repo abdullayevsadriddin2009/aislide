@@ -1,7 +1,8 @@
 from aiogram.types import (ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton)
 from texts import t
 from services import SERVICES, service_name
-from designs import DESIGNS, SLIDE_COUNTS, SUBJECT_KEYS, subject_name, design_name, LANGUAGES
+# Eski dizaynlarga tegishli importlar olib tashlandi
+from designs import SUBJECT_KEYS, subject_name, LANGUAGES
 
 # ===== Asosiy menyu =====
 def main_kb(lang="uz"):
@@ -112,38 +113,15 @@ def subjects_kb(detected_key, lang="uz"):
         rows.append(row)
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
-# ===== Dizayn tasdiq =====
-def design_confirm_kb(suggested, lang="uz"):
-    d = DESIGNS.get(suggested, DESIGNS["minimal"])
-    dname = design_name(suggested, lang)
+# ===== YANGI: Taqdimot shablonlarini tanlash (Dizayn va slayd soni o'rniga) =====
+def template_kb(lang="uz"):
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text=f"✅ {d['emoji']} {dname} — {t('btn_continue_design', lang)}", callback_data=f"dsg:{suggested}")],
-        [InlineKeyboardButton(text=t("btn_choose_design", lang), callback_data="dsg:choose")],
-        [InlineKeyboardButton(text=t("btn_ai_design", lang), callback_data="dsg:ai_new")],
+        [InlineKeyboardButton(text="🥇 Gold Shablon (10 slayd)", callback_data="tmpl:10")],
+        [InlineKeyboardButton(text="🟢 Green Shablon (15 slayd)", callback_data="tmpl:15")],
+        [InlineKeyboardButton(text="🍷 Wine Shablon (20 slayd)", callback_data="tmpl:20")],
+        [InlineKeyboardButton(text="🌊 Teal Shablon (25 slayd)", callback_data="tmpl:25")],
+        [InlineKeyboardButton(text=t("btn_cancel", lang), callback_data="cancel")],
     ])
-
-def designs_kb(lang="uz"):
-    rows = []
-    row = []
-    for key, d in DESIGNS.items():
-        row.append(InlineKeyboardButton(text=f"{d['emoji']} {design_name(key, lang)}", callback_data=f"dsg:{key}"))
-        if len(row) == 2:
-            rows.append(row); row = []
-    if row:
-        rows.append(row)
-    return InlineKeyboardMarkup(inline_keyboard=rows)
-
-# ===== Slayd soni =====
-def slide_count_kb(lang="uz"):
-    rows = []
-    row = []
-    for cnt, price in SLIDE_COUNTS:
-        row.append(InlineKeyboardButton(text=f"📊 {t('slides_label', lang, n=cnt)}", callback_data=f"slcnt:{cnt}:{price}"))
-        if len(row) == 3:
-            rows.append(row); row = []
-    if row:
-        rows.append(row)
-    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 # ===== Chek ko'rib chiqish =====
 def check_review_kb(check_id, lang="uz"):
