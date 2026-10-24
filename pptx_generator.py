@@ -1,16 +1,8 @@
 # -*- coding: utf-8 -*-
 """
-PPTX generator — to'liq qayta yozildi.
-Namunaviy fayllarga (Amir_Temur.pptx, Hujayra.pptx) 1:1 mos layout:
-  - 16:9 (13.333 x 7.5 dyuym)
-  - Sarlavha shrifti: Playfair Display (qalin)
-  - Matn shrifti: Noto Sans, asosiy matn 15pt (foydalanuvchi talabi)
-  - 2 tema: temurid (to'q ko'k #1B2A41 + oltin #C9A227) va biolog (to'q yashil #1B4332 + yashil #4ADE80)
-  - Tuzilma: 1 muqova + 1 mundarija + (N-3) ta kontent slayd + 1 yakuniy = N
-  - Kontent slaydlarda 6 xil layout (A-F) navbat bilan — bo'sh joy qolmaydi.
-  - 6 til: uz / ru / en / tr / de / fr.
-Interfeys (o'zgartirilmaydi, creation.py chaqiradi):
-  generate_pptx(topic, subject, lang, design_key, slide_count, slides_content, images=None, author="") -> BytesIO
+YANGI PPTX GENERATOR (v2.0) - 4 ta maxsus shablon.
+Gold (10 slayd), Green (15 slayd), Wine (20 slayd), Teal (25 slayd).
+Interfeys o'zgarmagan: creation.py dan chaqiriladi.
 """
 import io
 import os
@@ -21,85 +13,40 @@ from pptx.dml.color import RGBColor
 from pptx.enum.text import PP_ALIGN, MSO_ANCHOR
 from pptx.enum.shapes import MSO_SHAPE
 
-try:
-    from designs import select_theme, DESIGNS, subject_name, lang_full_name
-except Exception:
-    select_theme = lambda s, d=None: "temurid"
-    DESIGNS = {}
-    subject_name = lambda s, l="uz": s
-    lang_full_name = lambda c, l="uz": c
-
 BOT_USERNAME = "@Talaba_AI_SlideBot"
 
-# ===== 6 til uchun yorliqlar =====
-LABELS = {
-    "uz": {"agenda":"MUNDARIJA","conclusion":"XULOSA","thankyou":"E'tiboringiz uchun rahmat!",
-           "questions":"Savollar uchun","author_label":"Bajaruvchi","subject_label":"Fan",
-           "created_by":"Yaratildi","overview":"UMUMIY KO'RINISH","key_facts":"ASOSIY FAKTLAR",
-           "timeline":"JARAYON BOSQICHLARI","comparison":"SOLISHTIRMA","table_note":"Qisqacha jadval",
-           "sources":"Manbalar","detail":"Tafsilotlar","key_point":"Asosiy nuqta","quote":"Iqtibos"},
-    "ru": {"agenda":"СОДЕРЖАНИЕ","conclusion":"ЗАКЛЮЧЕНИЕ","thankyou":"Спасибо за внимание!",
-           "questions":"Для вопросов","author_label":"Выполнил","subject_label":"Предмет",
-           "created_by":"Создано","overview":"ОБЗОР","key_facts":"ОСНОВНЫЕ ФАКТЫ",
-           "timeline":"ЭТАПЫ","comparison":"СРАВНЕНИЕ","table_note":"Краткая таблица",
-           "sources":"Источники","detail":"Детали","key_point":"Главный пункт","quote":"Цитата"},
-    "en": {"agenda":"AGENDA","conclusion":"CONCLUSION","thankyou":"Thank you for your attention!",
-           "questions":"For questions","author_label":"By","subject_label":"Subject",
-           "created_by":"Created by","overview":"OVERVIEW","key_facts":"KEY FACTS",
-           "timeline":"STEPS","comparison":"COMPARISON","table_note":"Summary table",
-           "sources":"Sources","detail":"Details","key_point":"Key point","quote":"Quote"},
-    "tr": {"agenda":"İÇİNDEKİLER","conclusion":"SONUÇ","thankyou":"Dikkatiniz için teşekkürler!",
-           "questions":"Sorular için","author_label":"Hazırlayan","subject_label":"Ders",
-           "created_by":"Oluşturan","overview":"GENEL BAKIŞ","key_facts":"TEMEL GERÇEKLER",
-           "timeline":"AŞAMALAR","comparison":"KARŞILAŞTIRMA","table_note":"Özet tablo",
-           "sources":"Kaynaklar","detail":"Ayrıntılar","key_point":"Ana nokta","quote":"Alıntı"},
-    "de": {"agenda":"INHALTSVERZEICHNIS","conclusion":"FAZIT","thankyou":"Vielen Dank für Ihre Aufmerksamkeit!",
-           "questions":"Für Fragen","author_label":"Von","subject_label":"Fach",
-           "created_by":"Erstellt von","overview":"ÜBERSICHT","key_facts":"KERNFakten".replace("Kern","KERN"),
-           "timeline":"ABSCHNITTE","comparison":"VERGLEICH","table_note":"Übersichtstabelle",
-           "sources":"Quellen","detail":"Details","key_point":"Kernpunkt","quote":"Zitat"},
-    "fr": {"agenda":"SOMMAIRE","conclusion":"CONCLUSION","thankyou":"Merci pour votre attention !",
-           "questions":"Pour les questions","author_label":"Par","subject_label":"Matière",
-           "created_by":"Créé par","overview":"APERÇU","key_facts":"FAITS CLÉS",
-           "timeline":"ÉTAPES","comparison":"COMPARAISON","table_note":"Tableau récapitulatif",
-           "sources":"Sources","detail":"Détails","key_point":"Point clé","quote":"Citation"},
+# ===== Shablon ranglari (4 xil uslub) =====
+THEMES = {
+    "10": {"name": "Gold",  "bg": (255, 255, 255), "primary": (201, 162, 39),  "text": (40, 40, 40),   "light": (252, 248, 235), "dark": (150, 110, 10)},
+    "15": {"name": "Green", "bg": (255, 255, 255), "primary": (45, 106, 79),   "text": (40, 40, 40),   "light": (240, 248, 240), "dark": (25, 70, 50)},
+    "20": {"name": "Wine",  "bg": (255, 255, 255), "primary": (128, 0, 32),    "text": (40, 40, 40),   "light": (250, 240, 240), "dark": (80, 0, 20)},
+    "25": {"name": "Teal",  "bg": (255, 255, 255), "primary": (15, 118, 110),  "text": (40, 40, 40),   "light": (230, 245, 245), "dark": (10, 80, 75)}
 }
 
-def _lbl(lang):
-    return LABELS.get(str(lang).lower(), LABELS["en"])
-
-def _rgb(tup):
-    return RGBColor(tup[0], tup[1], tup[2])
+def _rgb(tup): return RGBColor(tup[0], tup[1], tup[2])
 
 def _set_bg(slide, rgb):
     fill = slide.background.fill
     fill.solid()
     fill.fore_color.rgb = _rgb(rgb)
 
-def _no_line(shape):
-    shape.line.fill.background()
-
-def _rect(slide, x, y, w, h, fill_rgb, line_rgb=None, line_w=0.75, rounded=False):
+def _rect(slide, x, y, w, h, fill_rgb, line_rgb=None, rounded=False):
     shp_type = MSO_SHAPE.ROUNDED_RECTANGLE if rounded else MSO_SHAPE.RECTANGLE
     sp = slide.shapes.add_shape(shp_type, Inches(x), Inches(y), Inches(w), Inches(h))
     sp.fill.solid()
     sp.fill.fore_color.rgb = _rgb(fill_rgb)
     if line_rgb:
         sp.line.color.rgb = _rgb(line_rgb)
-        sp.line.width = Pt(line_w)
+        sp.line.width = Pt(1.0)
     else:
-        _no_line(sp)
+        sp.line.fill.background()
     try:
         sp.shadow.inherit = False
     except Exception:
         pass
     return sp
 
-def _line(slide, x, y, w, rgb, h=0.04):
-    return _rect(slide, x, y, w, h, rgb)
-
-def _txt(slide, x, y, w, h, text, size=15, bold=False, rgb=(40,40,40), font="Noto Sans",
-         align=PP_ALIGN.LEFT, anchor=MSO_ANCHOR.TOP, italic=False, line_spacing=1.25):
+def _txt(slide, x, y, w, h, text, size=16, bold=False, rgb=(40,40,40), font="Arial", align=PP_ALIGN.LEFT, anchor=MSO_ANCHOR.TOP):
     tb = slide.shapes.add_textbox(Inches(x), Inches(y), Inches(w), Inches(h))
     tf = tb.text_frame
     tf.word_wrap = True
@@ -109,40 +56,16 @@ def _txt(slide, x, y, w, h, text, size=15, bold=False, rgb=(40,40,40), font="Not
     for i, ln in enumerate(lines):
         p = tf.paragraphs[0] if i == 0 else tf.add_paragraph()
         p.alignment = align
-        p.line_spacing = line_spacing
+        p.line_spacing = 1.2
         r = p.add_run()
         r.text = ln
         r.font.name = font
         r.font.size = Pt(size)
         r.font.bold = bold
-        r.font.italic = italic
         r.font.color.rgb = _rgb(rgb)
     return tb
 
-def _bullets(slide, x, y, w, h, items, size=15, rgb=(43,43,43), font="Noto Sans",
-             bold_labels=True, line_spacing=1.3, bullet_char="•"):
-    """Bold label (birinchi so'zgacha ':') + oddiy matn ko'rinishidagi ro'yxat."""
-    tb = slide.shapes.add_textbox(Inches(x), Inches(y), Inches(w), Inches(h))
-    tf = tb.text_frame
-    tf.word_wrap = True
-    tf.margin_left = Emu(0); tf.margin_right = Emu(0); tf.margin_top = Emu(0); tf.margin_bottom = Emu(0)
-    for i, it in enumerate(items):
-        p = tf.paragraphs[0] if i == 0 else tf.add_paragraph()
-        p.alignment = PP_ALIGN.LEFT
-        p.line_spacing = line_spacing
-        p.space_after = Pt(6)
-        clean = str(it).strip().lstrip("•-–—0123456789.) ").strip()
-        label, sep, rest = clean.partition(":")
-        r0 = p.add_run(); r0.text = f"{bullet_char}  "; r0.font.name=font; r0.font.size=Pt(size); r0.font.bold=True; r0.font.color.rgb=_rgb(rgb)
-        if sep and bold_labels and rest.strip():
-            r1 = p.add_run(); r1.text = label.strip() + ": "; r1.font.name=font; r1.font.size=Pt(size); r1.font.bold=True; r1.font.color.rgb=_rgb((20,20,20))
-            r2 = p.add_run(); r2.text = rest.strip(); r2.font.name=font; r2.font.size=Pt(size); r2.font.bold=False; r2.font.color.rgb=_rgb(rgb)
-        else:
-            r1 = p.add_run(); r1.text = clean; r1.font.name=font; r1.font.size=Pt(size); r1.font.bold=False; r1.font.color.rgb=_rgb(rgb)
-    return tb
-
 def _pic(slide, path, x, y, w, h):
-    """Rasm qo'shish — xato bo'lsa None."""
     try:
         if path and os.path.exists(str(path)):
             return slide.shapes.add_picture(str(path), Inches(x), Inches(y), Inches(w), Inches(h))
@@ -150,313 +73,336 @@ def _pic(slide, path, x, y, w, h):
         pass
     return None
 
-def _decor_image(theme_key, w=1600, h=900):
-    """Rasm yo'q bo'lsa — gradient dekor (Pillow orqali). BytesIO qaytaradi."""
-    try:
-        from PIL import Image, ImageDraw
-        if theme_key == "biolog":
-            c1, c2 = (27,67,50), (74,222,128)
-        else:
-            c1, c2 = (10,35,66), (201,162,39)
-        img = Image.new("RGB", (w, h), c1)
-        dr = ImageDraw.Draw(img)
-        for y in range(h):
-            t = y / h
-            r = int(c1[0]*(1-t) + c2[0]*t)
-            g = int(c1[1]*(1-t) + c2[1]*t)
-            b = int(c1[2]*(1-t) + c2[2]*t)
-            dr.line([(0,y),(w,y)], fill=(r,g,b))
-        buf = io.BytesIO(); img.save(buf, format="PNG"); buf.seek(0)
-        return buf
-    except Exception:
-        return None
+def _get_sd(sc, idx, default_title="Ma'lumot", default_content=None):
+    """AI generatsiya qilgan ro'yxatdan xavfsiz ma'lumot olish."""
+    if default_content is None: default_content = ["Asosiy ma'lumotlar.", "Tahliliy xulosalar."]
+    if idx < len(sc):
+        d = sc[idx]
+        if isinstance(d, dict):
+            t = str(d.get("title", default_title))
+            c = d.get("content", default_content)
+            if isinstance(c, str): c = [p.strip() for p in c.split("\n") if p.strip()]
+            return t, c
+    return default_title, default_content
 
-def _extract_bullets(slide_data):
-    if isinstance(slide_data, dict):
-        c = slide_data.get("content") or slide_data.get("points") or []
-        if isinstance(c, str):
-            c = [x.strip() for x in c.split("\n") if x.strip()]
-        return list(c)
-    if isinstance(slide_data, (list, tuple)):
-        return [str(x) for x in slide_data]
-    return []
+# ================= LAYOUTS =================
 
-def _pad_bullets(bullets, n, topic, lbl):
-    """Yetarli bo'lmasa — mavzudan kelib chiqqan qo'shimcha qatorlar bilan to'ldirish (bo'sh joy qolmasin)."""
-    extras = [
-        f"{lbl['detail']}: {topic} — nazariy asoslar va amaliy ahamiyati",
-        f"{lbl['key_point']}: Tarixiy kontekst va zamonaviy talqin",
-        f"{lbl['detail']}: Tahlil qilishning metodologik asoslari",
-        f"{lbl['key_point']}: Global tajriba va mahalliy o'xshashliklar",
-        f"{lbl['detail']}: Rivojlanish istiqbollari va ta'sir omillari",
-        f"{lbl['key_point']}: Xulosa va amaliy tavsiyalar",
-    ]
-    out = list(bullets)
-    i = 0
-    while len(out) < n:
-        out.append(extras[i % len(extras)])
-        i += 1
-    return out[:n]
-
-# ===== Umumiy elementlar =====
-def _footer(slide, th, page, total, topic, subject, lang):
-    sec = (subject_name(subject, lang) or "").upper()
-    left = f"{str(topic)[:38].upper()}  ·  {sec}" if sec else str(topic)[:50].upper()
-    _txt(slide, 0.69, 7.01, 8.5, 0.3, left, size=11, rgb=(120,120,120), font="Noto Sans")
-    _txt(slide, 10.5, 7.01, 2.14, 0.3, f"{page:02d} / {total:02d}", size=11, rgb=(120,120,120),
-         font="Noto Sans", align=PP_ALIGN.RIGHT)
-
-def _content_header(slide, th, eyebrow, title, accent_bright):
-    _rect(slide, 0, 0, 0.08, 7.5, accent_bright)
-    _txt(slide, 0.69, 0.49, 12.0, 0.35, eyebrow, size=12, bold=True, rgb=accent_bright, font="Noto Sans")
-    _txt(slide, 0.69, 0.85, 12.0, 0.75, title, size=28, bold=True, rgb=th["primary"], font=th["title_font"])
-    _line(slide, 0.69, 1.68, 0.83, accent_bright, h=0.04)
-
-# ===== 1. Muqova slayd =====
-def _cover(prs, topic, subject, lang, th, accent_bright, images, author):
+def _slide_cover(prs, th, topic, subject, author):
     slide = prs.slides.add_slide(prs.slide_layouts[6])
-    _set_bg(slide, th["dark_close"])
-    cover_img = images[0] if (isinstance(images, list) and images) else images
-    pic = _pic(slide, cover_img, 0, 0, 13.333, 7.5)
-    if not pic:
-        buf = _decor_image(th.get("style","temurid"))
-        if buf:
-            try:
-                slide.shapes.add_picture(buf, 0, 0, Inches(13.333), Inches(7.5))
-            except Exception:
-                pass
-    ov = _rect(slide, 0, 0, 13.333, 7.5, th["dark_close"])
-    lbl = _lbl(lang)
-    subj = subject_name(subject, lang)
-    _rect(slide, 1.11, 2.0, 0.11, 3.2, accent_bright)
-    _txt(slide, 1.45, 2.08, 10.5, 0.4, f"{subj.upper()}  ·  {lang_full_name(lang, lang).upper()}",
-         size=16, bold=True, rgb=accent_bright, font="Noto Sans")
-    words = str(topic).strip().split()
-    if len(words) > 1:
-        main = " ".join(words[:-1]); last = words[-1]
-        tb = slide.shapes.add_textbox(Inches(1.45), Inches(2.6), Inches(11.0), Inches(2.2))
-        tf = tb.text_frame; tf.word_wrap = True
-        p = tf.paragraphs[0]; p.line_spacing = 1.05
-        r1 = p.add_run(); r1.text = main + " "; r1.font.name=th["title_font"]; r1.font.size=Pt(54); r1.font.bold=True; r1.font.color.rgb=_rgb((255,255,255))
-        r2 = p.add_run(); r2.text = last; r2.font.name=th["title_font"]; r2.font.size=Pt(54); r2.font.bold=True; r2.font.color.rgb=_rgb(accent_bright)
-    else:
-        _txt(slide, 1.45, 2.6, 11.0, 2.2, str(topic), size=54, bold=True, rgb=(255,255,255), font=th["title_font"], line_spacing=1.05)
-    _line(slide, 1.45, 4.95, 1.67, accent_bright, h=0.05)
-    _txt(slide, 1.45, 5.2, 10.5, 0.6, f"{lbl['overview']} · {subj}", size=18, rgb=(240,240,240), font="Noto Sans")
-    if author and str(author) not in ("-",""):
-        _txt(slide, 1.45, 5.85, 10.5, 0.4, f"{lbl['author_label']}: {author}", size=14, rgb=(220,220,220), font="Noto Sans")
-    _txt(slide, 1.45, 6.81, 10.5, 0.3, f"{lbl['created_by']} {BOT_USERNAME}", size=12, rgb=(180,180,180), font="Noto Sans")
+    _set_bg(slide, th["light"])
+    _rect(slide, 0, 0, 13.333, 0.5, th["primary"]) # Tepa chiziq
+    _rect(slide, 0, 7.0, 13.333, 0.5, th["primary"]) # Pastki chiziq
+    
+    _txt(slide, 1.0, 1.5, 11.333, 0.5, subject.upper(), size=18, bold=True, rgb=th["primary"])
+    _txt(slide, 1.0, 2.2, 11.333, 2.0, topic, size=44, bold=True, rgb=th["text"], font="Georgia")
+    
+    _rect(slide, 1.0, 4.5, 2.0, 0.08, th["primary"])
+    
+    _txt(slide, 1.0, 4.8, 10.0, 0.5, "Qisqa tavsif: taqdimotning asosiy g'oyasi shu yerda yoziladi", size=16, rgb=(100,100,100))
+    
+    _txt(slide, 1.0, 5.8, 10.0, 0.5, f"Tayyorlovchi: {author if author else 'Ism Familiya'}", size=16, bold=True, rgb=th["dark"])
+    _txt(slide, 10.0, 6.5, 2.5, 0.3, f"{BOT_USERNAME}", size=10, rgb=(150,150,150), align=PP_ALIGN.RIGHT)
 
-# ===== 2. Mundarija slayd =====
-def _agenda(prs, slides_content, lang, th, accent_bright, total, topic, subject):
+def _slide_toc(prs, th, sc):
     slide = prs.slides.add_slide(prs.slide_layouts[6])
     _set_bg(slide, th["bg"])
-    _rect(slide, 0, 0, 13.333, 0.08, accent_bright)
-    lbl = _lbl(lang)
-    subj = subject_name(subject, lang)
-    _txt(slide, 0.83, 0.56, 11.67, 0.35, f"{subj.upper()}  ·  {str(topic)[:40].upper()}", size=13, bold=True, rgb=accent_bright, font="Noto Sans")
-    _txt(slide, 0.83, 1.0, 11.0, 0.7, lbl["agenda"], size=34, bold=True, rgb=th["primary"], font=th["title_font"])
-    _line(slide, 0.83, 1.9, 0.83, accent_bright, h=0.04)
-    _rect(slide, 0.83, 2.4, 11.67, 3.9, (255,255,255), line_rgb=accent_bright, line_w=1.2, rounded=True)
-    _rect(slide, 0.83, 2.4, 11.67, 0.62, accent_bright)
-    _txt(slide, 1.1, 2.52, 11.0, 0.4, lbl["overview"].upper(), size=18, bold=True, rgb=(255,255,255), font="Noto Sans")
-    titles = []
-    for sd in (slides_content or []):
-        t = (sd.get("title") if isinstance(sd, dict) else None) or ""
-        if t and t not in titles:
-            titles.append(t)
-    if len(titles) < 6:
-        titles = _pad_bullets(titles, 6, topic, lbl)
-    n_items = min(len(titles), 8)
-    half = (n_items + 1) // 2
-    col_w = 5.3
-    for col in range(2):
-        items = titles[col*half:(col+1)*half]
-        x = 1.1 + col * (col_w + 0.4)
-        tb = slide.shapes.add_textbox(Inches(x), Inches(3.25), Inches(col_w), Inches(2.9))
-        tf = tb.text_frame; tf.word_wrap = True
-        for i, t in enumerate(items):
-            p = tf.paragraphs[0] if i==0 else tf.add_paragraph()
-            p.line_spacing = 1.2; p.space_after = Pt(8)
-            num = col*half + i + 1
-            r1 = p.add_run(); r1.text = f"{num:02d}.  "; r1.font.name=th["title_font"]; r1.font.size=Pt(16); r1.font.bold=True; r1.font.color.rgb=_rgb(accent_bright)
-            r2 = p.add_run(); r2.text = str(t)[:55]; r2.font.name="Noto Sans"; r2.font.size=Pt(15); r2.font.color.rgb=_rgb((43,43,43))
-    _footer(slide, th, 2, total, topic, subject, lang)
+    _txt(slide, 0.8, 0.8, 10, 0.8, "Taqdimot mazmuni", size=36, bold=True, rgb=th["primary"], font="Georgia")
+    _txt(slide, 0.8, 1.8, 10, 0.4, "BO'LIMLAR — 6 TA BO'LIM", size=14, bold=True, rgb=th["primary"])
+    
+    for i in range(2):
+        for j in range(3):
+            idx = i*3 + j
+            title, _ = _get_sd(sc, idx+2, f"Bo'lim {idx+1}")
+            x = 0.8 + j * 4.1
+            y = 2.8 + i * 2.0
+            _rect(slide, x, y, 3.8, 1.5, th["light"])
+            _txt(slide, x+0.2, y+0.2, 3.4, 0.4, f"0{idx+1}", size=20, bold=True, rgb=th["primary"])
+            _txt(slide, x+0.2, y+0.7, 3.4, 0.6, title, size=14, bold=True, rgb=th["text"])
 
-# ===== Kontent layoutlari =====
-def _layout_A(slide, th, accent_bright, title, bullets, images, img_idx, lbl, topic):
-    b = _pad_bullets(bullets, 5, topic, lbl)
-    img_path = images[img_idx % len(images)] if images else None
-    if not _pic(slide, img_path, 0.69, 2.01, 3.33, 4.58):
-        _rect(slide, 0.69, 2.01, 3.33, 4.58, th["primary"])
-        _txt(slide, 0.85, 3.8, 3.0, 1.0, lbl["detail"].upper(), size=16, bold=True, rgb=accent_bright, font="Noto Sans", align=PP_ALIGN.CENTER)
-    _txt(slide, 0.69, 6.62, 3.33, 0.3, f"{lbl['sources']}: {BOT_USERNAME}", size=11, rgb=(120,120,120), font="Noto Sans")
-    _txt(slide, 4.44, 2.01, 8.19, 0.45, str(b[0])[:70], size=17, bold=True, rgb=th["primary"], font="Noto Sans")
-    _line(slide, 4.44, 2.52, 8.19, (220,220,220), h=0.02)
-    _bullets(slide, 4.44, 2.7, 8.19, 3.3, b[1:5], size=15, rgb=(43,43,43))
-    _rect(slide, 4.44, 6.15, 8.19, 0.62, th["bg"], line_rgb=accent_bright, line_w=1.0)
-    _txt(slide, 4.64, 6.28, 7.8, 0.4, f"“{str(b[-1])[:90]}”", size=12, italic=True, rgb=th["primary"], font="Noto Sans")
-
-def _layout_B(slide, th, accent_bright, title, bullets, images, img_idx, lbl, topic):
-    b = _pad_bullets(bullets, 6, topic, lbl)
-    img_path = images[img_idx % len(images)] if images else None
-    if not _pic(slide, img_path, 0.69, 2.01, 7.22, 4.17):
-        _rect(slide, 0.69, 2.01, 7.22, 4.17, th["primary"])
-        _txt(slide, 0.85, 3.7, 6.8, 1.0, lbl["overview"].upper(), size=18, bold=True, rgb=accent_bright, font="Noto Sans", align=PP_ALIGN.CENTER)
-    _txt(slide, 0.69, 6.22, 7.22, 0.3, f"{lbl['detail']} — {str(title)[:50]}", size=11, rgb=(120,120,120), font="Noto Sans")
-    _rect(slide, 8.33, 2.01, 4.31, 4.17, (255,255,255), line_rgb=accent_bright, line_w=1.0, rounded=True)
-    _rect(slide, 8.33, 2.01, 4.31, 0.5, accent_bright)
-    _txt(slide, 8.5, 2.1, 4.0, 0.35, lbl["key_facts"], size=14, bold=True, rgb=(255,255,255), font="Noto Sans")
-    _bullets(slide, 8.55, 2.65, 3.9, 3.4, b[:5], size=13, rgb=(43,43,43), bullet_char="▸")
-
-def _layout_C(slide, th, accent_bright, title, bullets, lbl, topic):
-    b = _pad_bullets(bullets, 8, topic, lbl)
-    _rect(slide, 0.69, 2.01, 5.56, 4.58, (255,255,255), line_rgb=accent_bright, line_w=1.0, rounded=True)
-    _rect(slide, 0.69, 2.01, 5.56, 0.55, accent_bright)
-    _txt(slide, 0.9, 2.12, 5.2, 0.35, lbl["key_point"].upper(), size=15, bold=True, rgb=(255,255,255), font="Noto Sans")
-    _txt(slide, 0.95, 2.75, 5.1, 3.7, str(b[0])[:400], size=15, rgb=(43,43,43), font="Noto Sans", line_spacing=1.4)
-    tb = slide.shapes.add_textbox(Inches(6.81), Inches(2.01), Inches(5.83), Inches(4.58))
-    tf = tb.text_frame; tf.word_wrap = True
-    for i, it in enumerate(b[1:7]):
-        p = tf.paragraphs[0] if i==0 else tf.add_paragraph()
-        p.line_spacing = 1.25; p.space_after = Pt(10)
-        r1 = p.add_run(); r1.text = f"{i+1:02d}   "; r1.font.name=th["title_font"]; r1.font.size=Pt(18); r1.font.bold=True; r1.font.color.rgb=_rgb(accent_bright)
-        r2 = p.add_run(); r2.text = str(it)[:90]; r2.font.name="Noto Sans"; r2.font.size=Pt(15); r2.font.color.rgb=_rgb((43,43,43))
-
-def _layout_D(slide, th, accent_bright, title, bullets, lbl, topic):
-    b = _pad_bullets(bullets, 6, topic, lbl)
-    nums = ["01","02","03","04","05","06"]
-    xs = [0.69, 4.79, 8.89]; ys = [2.01, 4.31]
-    idx = 0
-    for y in ys:
-        for x in xs:
-            _rect(slide, x, y, 3.75, 2.08, (255,255,255), line_rgb=accent_bright, line_w=1.0, rounded=True)
-            col = accent_bright if idx % 2 == 0 else th["primary"]
-            _txt(slide, x+0.25, y+0.2, 3.25, 0.7, nums[idx], size=32, bold=True, rgb=col, font=th["title_font"])
-            _line(slide, x+0.25, y+0.95, 0.6, accent_bright, h=0.03)
-            _txt(slide, x+0.25, y+1.08, 3.25, 0.9, str(b[idx])[:80], size=12, rgb=(60,60,60), font="Noto Sans", line_spacing=1.2)
-            idx += 1
-
-def _layout_E(slide, th, accent_bright, title, bullets, lbl, topic):
-    b = _pad_bullets(bullets, 6, topic, lbl)
-    xs = [0.69, 3.78, 6.87, 9.96]
-    step_word = lbl["timeline"].split()[0][:8]
-    for i, x in enumerate(xs):
-        _rect(slide, x, 2.01, 2.78, 1.94, (255,255,255), line_rgb=accent_bright, line_w=1.0, rounded=True)
-        _rect(slide, x, 2.01, 2.78, 0.49, accent_bright)
-        _txt(slide, x+0.15, 2.1, 2.5, 0.35, f"{step_word} {i+1}", size=14, bold=True, rgb=(255,255,255), font="Noto Sans", align=PP_ALIGN.CENTER)
-        _txt(slide, x+0.18, 2.62, 2.45, 1.25, str(b[i])[:110], size=12, rgb=(50,50,50), font="Noto Sans", line_spacing=1.2)
-    _rect(slide, 0.69, 4.31, 11.94, 2.22, th["bg"], line_rgb=accent_bright, line_w=1.2, rounded=True)
-    _txt(slide, 0.95, 4.45, 11.4, 0.4, lbl["comparison"].upper(), size=16, bold=True, rgb=th["primary"], font="Noto Sans")
-    _line(slide, 0.95, 4.9, 1.0, accent_bright, h=0.03)
-    _bullets(slide, 0.95, 5.05, 5.6, 1.4, b[4:5], size=14, rgb=(43,43,43), bullet_char="▸")
-    _bullets(slide, 6.8, 5.05, 5.6, 1.4, b[5:6], size=14, rgb=(43,43,43), bullet_char="▸")
-
-def _layout_F(slide, th, accent_bright, title, bullets, lbl, topic):
-    b = _pad_bullets(bullets, 5, topic, lbl)
-    rows, cols = 5, 2
-    tbl_shape = slide.shapes.add_table(rows, cols, Inches(0.69), Inches(2.01), Inches(11.94), Inches(4.3))
-    tbl = tbl_shape.table
-    tbl.columns[0].width = Inches(3.5); tbl.columns[1].width = Inches(8.44)
-    headers = [lbl["key_point"], lbl["detail"]]
-    for c in range(cols):
-        cell = tbl.cell(0, c)
-        cell.fill.solid(); cell.fill.fore_color.rgb = _rgb(th["primary"])
-        tf = cell.text_frame; tf.word_wrap = True
-        p = tf.paragraphs[0]; r = p.add_run(); r.text = headers[c]
-        r.font.name="Noto Sans"; r.font.size=Pt(14); r.font.bold=True; r.font.color.rgb=_rgb((255,255,255))
-    for r_i in range(1, rows):
-        item = str(b[r_i-1]) if r_i-1 < len(b) else ""
-        label, sep, rest = item.partition(":")
-        vals = [label.strip()[:40] if sep else lbl["key_point"]+f" {r_i}", (rest.strip() if sep else item)[:120]]
-        for c in range(cols):
-            cell = tbl.cell(r_i, c)
-            cell.fill.solid()
-            cell.fill.fore_color.rgb = _rgb((245,247,250) if r_i % 2 else (255,255,255))
-            tf = cell.text_frame; tf.word_wrap = True
-            p = tf.paragraphs[0]; r = p.add_run(); r.text = vals[c]
-            r.font.name="Noto Sans"; r.font.size=Pt(13); r.font.bold=(c==0); r.font.color.rgb=_rgb((40,40,40))
-    _txt(slide, 0.69, 6.4, 11.94, 0.3, f"{lbl['table_note']} — {str(title)[:50]}", size=11, rgb=(120,120,120), font="Noto Sans", italic=True)
-
-# ===== Yakuniy slayd =====
-def _closing(prs, topic, subject, lang, th, accent_bright, slides_content, author, total):
+def _slide_section(prs, th, num, title, subtitle=""):
     slide = prs.slides.add_slide(prs.slide_layouts[6])
-    _set_bg(slide, th["dark_close"])
-    lbl = _lbl(lang)
-    _txt(slide, 1.11, 1.11, 11.0, 0.4, f"{subject_name(subject, lang).upper()}  ·  {str(topic)[:40].upper()}",
-         size=14, bold=True, rgb=accent_bright, font="Noto Sans")
-    _txt(slide, 1.11, 1.75, 11.0, 0.9, lbl["conclusion"], size=44, bold=True, rgb=(255,255,255), font=th["title_font"])
-    _line(slide, 1.11, 3.05, 1.39, accent_bright, h=0.05)
-    _rect(slide, 1.11, 3.4, 11.11, 2.5, (255,255,255), line_rgb=accent_bright, line_w=1.2, rounded=True)
-    concl = []
-    if slides_content:
-        last = slides_content[-1]
-        if isinstance(last, dict):
-            concl = _extract_bullets(last)[:4]
-    concl = _pad_bullets(concl, 4, topic, lbl)
-    tb = slide.shapes.add_textbox(Inches(1.4), Inches(3.6), Inches(10.6), Inches(2.1))
-    tf = tb.text_frame; tf.word_wrap = True
-    for i, c in enumerate(concl):
-        p = tf.paragraphs[0] if i==0 else tf.add_paragraph()
-        p.line_spacing = 1.3; p.space_after = Pt(8)
-        r1 = p.add_run(); r1.text = "✓  "; r1.font.name="Noto Sans"; r1.font.size=Pt(15); r1.font.bold=True; r1.font.color.rgb=_rgb(accent_bright)
-        r2 = p.add_run(); r2.text = str(c)[:130]; r2.font.name="Noto Sans"; r2.font.size=Pt(15); r2.font.color.rgb=_rgb((40,40,40))
-    _txt(slide, 1.11, 6.15, 11.11, 0.6, lbl["thankyou"], size=28, bold=True, rgb=(255,255,255), font=th["title_font"], align=PP_ALIGN.CENTER)
-    _txt(slide, 1.11, 6.95, 11.11, 0.3, f"{lbl['created_by']} {BOT_USERNAME}", size=11, rgb=th["light_text"], font="Noto Sans", align=PP_ALIGN.CENTER)
+    _set_bg(slide, th["primary"])
+    _txt(slide, 1.0, 2.0, 5, 1.5, f"0{num}", size=90, bold=True, rgb=th["bg"])
+    _txt(slide, 1.2, 3.8, 8, 1.0, title, size=40, bold=True, rgb=th["bg"])
+    if subtitle:
+        _txt(slide, 1.2, 4.8, 8, 0.5, subtitle, size=18, rgb=th["light"])
 
-# ===== ASOSIY FUNKSIYA (interfeys saqlanadi) =====
+def _slide_img_text(prs, th, title, content, images, img_idx):
+    slide = prs.slides.add_slide(prs.slide_layouts[6])
+    _set_bg(slide, th["bg"])
+    _txt(slide, 0.8, 0.6, 11.7, 0.8, title, size=32, bold=True, rgb=th["primary"], font="Georgia")
+    
+    img = images[img_idx % len(images)] if images else None
+    if not _pic(slide, img, 0.8, 2.0, 5.5, 4.2):
+        _rect(slide, 0.8, 2.0, 5.5, 4.2, th["light"])
+        _txt(slide, 0.8, 3.8, 5.5, 0.5, "[ RASM / SXEMA JOYI ]", size=14, bold=True, rgb=(150,150,150), align=PP_ALIGN.CENTER)
+    
+    _txt(slide, 0.8, 6.3, 5.5, 0.3, "Shakl 1 · Rasm izohi", size=11, rgb=(150,150,150), align=PP_ALIGN.CENTER)
+    
+    bullets = "\n\n".join([f"• {c}" for c in content[:5]])
+    _txt(slide, 7.0, 2.0, 5.5, 4.5, bullets, size=16, rgb=th["text"])
+
+def _slide_two_col(prs, th, title, content, col_a="Birinchi guruh", col_b="Ikkinchi guruh"):
+    slide = prs.slides.add_slide(prs.slide_layouts[6])
+    _set_bg(slide, th["bg"])
+    _txt(slide, 0.8, 0.6, 11.7, 0.8, title, size=32, bold=True, rgb=th["primary"], font="Georgia")
+    
+    mid = max(1, len(content)//2)
+    txt_a = content[:mid]
+    txt_b = content[mid:] if len(content) > mid else ["Qo'shimcha ma'lumotlar."]
+    
+    _rect(slide, 0.8, 1.8, 5.5, 0.6, th["primary"])
+    _txt(slide, 0.8, 1.9, 5.5, 0.4, col_a, size=18, bold=True, rgb=(255,255,255), align=PP_ALIGN.CENTER)
+    _rect(slide, 0.8, 2.4, 5.5, 4.0, th["light"])
+    _txt(slide, 1.0, 2.6, 5.1, 3.6, "\n\n".join([f"• {c}" for c in txt_a]), size=15, rgb=th["text"])
+    
+    _rect(slide, 7.0, 1.8, 5.5, 0.6, th["primary"])
+    _txt(slide, 7.0, 1.9, 5.5, 0.4, col_b, size=18, bold=True, rgb=(255,255,255), align=PP_ALIGN.CENTER)
+    _rect(slide, 7.0, 2.4, 5.5, 4.0, th["light"])
+    _txt(slide, 7.2, 2.6, 5.1, 3.6, "\n\n".join([f"• {c}" for c in txt_b]), size=15, rgb=th["text"])
+
+def _slide_stats(prs, th, title, content):
+    slide = prs.slides.add_slide(prs.slide_layouts[6])
+    _set_bg(slide, th["bg"])
+    _txt(slide, 0.8, 0.6, 11.7, 0.8, title, size=32, bold=True, rgb=th["primary"], font="Georgia")
+    
+    for i in range(3):
+        x = 0.8 + i * 4.1
+        _rect(slide, x, 2.5, 3.8, 3.5, th["light"])
+        val = ["4 ta", "15 daq", "100%"][i]
+        lbl = ["Asosiy bo'lim", "Tavsiya etilgan vaqt", "Tahrirlanadigan"][i]
+        _txt(slide, x, 3.0, 3.8, 1.0, val, size=48, bold=True, rgb=th["primary"], align=PP_ALIGN.CENTER)
+        _txt(slide, x, 4.2, 3.8, 0.5, lbl, size=18, bold=True, rgb=th["text"], align=PP_ALIGN.CENTER)
+        desc = content[i] if i < len(content) else "Qo'shimcha ma'lumot"
+        _txt(slide, x+0.2, 4.8, 3.4, 1.0, desc[:100], size=13, rgb=(100,100,100), align=PP_ALIGN.CENTER)
+
+def _slide_process(prs, th, title, content):
+    slide = prs.slides.add_slide(prs.slide_layouts[6])
+    _set_bg(slide, th["bg"])
+    _txt(slide, 0.8, 0.6, 11.7, 0.8, title, size=32, bold=True, rgb=th["primary"], font="Georgia")
+    
+    steps = ["1. BOSQICH", "2. BOSQICH", "3. BOSQICH", "4. BOSQICH"]
+    for i in range(4):
+        x = 0.8 + i * 3.0
+        _rect(slide, x, 2.0, 2.8, 0.6, th["primary"])
+        _txt(slide, x, 2.1, 2.8, 0.4, steps[i], size=14, bold=True, rgb=(255,255,255), align=PP_ALIGN.CENTER)
+        _rect(slide, x, 2.6, 2.8, 2.5, th["light"], line_rgb=th["primary"])
+        text = content[i] if i < len(content) else "Ma'lumot"
+        _txt(slide, x+0.1, 2.8, 2.6, 2.0, text[:150], size=13, rgb=th["text"])
+        
+    _rect(slide, 0.8, 5.4, 11.7, 1.0, th["light"], line_rgb=th["primary"])
+    _txt(slide, 1.0, 5.5, 11.3, 0.8, "Qisqa xulosa yoki izoh: Bu yerda jarayon bo'yicha umumlashtirilgan xulosa yoziladi.", size=14, rgb=th["text"])
+
+def _slide_quote(prs, th, title, content):
+    slide = prs.slides.add_slide(prs.slide_layouts[6])
+    _set_bg(slide, th["primary"])
+    _txt(slide, 1.0, 1.0, 11.3, 0.5, "MUHIM G'OYA", size=16, bold=True, rgb=th["light"])
+    _txt(slide, 1.0, 2.0, 11.3, 2.0, title, size=40, bold=True, rgb=(255,255,255), align=PP_ALIGN.CENTER, font="Georgia")
+    text = content[0] if content else "Bu yerga iqtibos yoki muhim g'oya yoziladi."
+    _txt(slide, 1.0, 4.0, 11.3, 1.5, f'"{text}"', size=24, italic=True, rgb=th["light"], align=PP_ALIGN.CENTER)
+    _txt(slide, 1.0, 5.5, 11.3, 0.5, "— Muallif nomi, manba", size=18, rgb=(255,255,255), align=PP_ALIGN.RIGHT)
+
+def _slide_grid_2x2(prs, th, title, content):
+    slide = prs.slides.add_slide(prs.slide_layouts[6])
+    _set_bg(slide, th["bg"])
+    _txt(slide, 0.8, 0.6, 11.7, 0.8, title, size=32, bold=True, rgb=th["primary"], font="Georgia")
+    
+    for i in range(4):
+        r, c = i // 2, i % 2
+        x = 0.8 + c * 6.0
+        y = 2.0 + r * 2.4
+        _rect(slide, x, y, 5.7, 2.0, th["light"])
+        _txt(slide, x+0.2, y+0.2, 5.3, 0.5, f"Xususiyat {i+1}", size=18, bold=True, rgb=th["primary"])
+        txt = content[i] if i < len(content) else "Qisqa tavsif."
+        _txt(slide, x+0.2, y+0.8, 5.3, 1.0, txt[:120], size=14, rgb=th["text"])
+
+def _slide_table(prs, th, title, content):
+    slide = prs.slides.add_slide(prs.slide_layouts[6])
+    _set_bg(slide, th["bg"])
+    _txt(slide, 0.8, 0.6, 11.7, 0.8, title, size=32, bold=True, rgb=th["primary"], font="Georgia")
+    
+    rows, cols = 5, 4
+    table = slide.shapes.add_table(rows, cols, Inches(0.8), Inches(2.0), Inches(11.7), Inches(4.0)).table
+    headers = ["Xususiyat", "Guruh A", "Guruh B", "Xulosa"]
+    for c in range(cols):
+        cell = table.cell(0, c)
+        cell.text = headers[c]
+        cell.fill.solid(); cell.fill.fore_color.rgb = _rgb(th["primary"])
+        for p in cell.text_frame.paragraphs:
+            for r in p.runs:
+                r.font.bold = True; r.font.color.rgb = _rgb((255,255,255))
+                
+    for r in range(1, rows):
+        for c in range(cols):
+            cell = table.cell(r, c)
+            cell.text = content[(r-1)*cols + c] if (r-1)*cols + c < len(content) else "Qiymat"
+            cell.fill.solid(); cell.fill.fore_color.rgb = _rgb(th["light"] if r%2==0 else (255,255,255))
+
+def _slide_timeline(prs, th, title, content):
+    slide = prs.slides.add_slide(prs.slide_layouts[6])
+    _set_bg(slide, th["bg"])
+    _txt(slide, 0.8, 0.6, 11.7, 0.8, title, size=32, bold=True, rgb=th["primary"], font="Georgia")
+    _txt(slide, 0.8, 1.5, 11.7, 0.4, "TARIXIY JADVAL", size=14, bold=True, rgb=th["primary"])
+    
+    _rect(slide, 0.8, 3.2, 11.7, 0.1, th["primary"])
+    years = ["2020", "2022", "2024", "2026"]
+    for i in range(4):
+        x = 1.5 + i * 3.0
+        _rect(slide, x, 3.05, 0.4, 0.4, th["primary"])
+        _txt(slide, x-0.5, 2.5, 1.5, 0.5, years[i], size=24, bold=True, rgb=th["primary"], align=PP_ALIGN.CENTER)
+        text = content[i] if i < len(content) else "Voqea"
+        _txt(slide, x-1.2, 3.6, 3.0, 1.5, text[:100], size=14, rgb=th["text"], align=PP_ALIGN.CENTER)
+
+def _slide_facts(prs, th, title, content):
+    slide = prs.slides.add_slide(prs.slide_layouts[6])
+    _set_bg(slide, th["bg"])
+    _txt(slide, 0.8, 0.6, 11.7, 0.8, title, size=32, bold=True, rgb=th["primary"], font="Georgia")
+    for i in range(6):
+        r, c = i // 3, i % 3
+        x = 0.8 + c * 4.1
+        y = 2.0 + r * 2.4
+        _rect(slide, x, y, 3.8, 2.0, th["light"])
+        _txt(slide, x+0.2, y+0.2, 3.4, 0.5, f"0{i+1}", size=24, bold=True, rgb=th["primary"])
+        txt = content[i] if i < len(content) else "Fakt ma'lumoti."
+        _txt(slide, x+0.2, y+0.8, 3.4, 1.0, txt[:100], size=14, rgb=th["text"])
+
+def _slide_chart(prs, th, title, content):
+    slide = prs.slides.add_slide(prs.slide_layouts[6])
+    _set_bg(slide, th["bg"])
+    _txt(slide, 0.8, 0.6, 11.7, 0.8, title, size=32, bold=True, rgb=th["primary"], font="Georgia")
+    _txt(slide, 0.8, 2.0, 5.0, 4.0, "\n\n".join([f"• {c}" for c in content[:4]]), size=16, rgb=th["text"])
+    _rect(slide, 6.5, 2.0, 6.0, 4.0, th["light"])
+    _txt(slide, 6.5, 3.8, 6.0, 0.5, "[ GRAFIK / DIAGRAMMA JOYI ]", size=14, bold=True, rgb=(150,150,150), align=PP_ALIGN.CENTER)
+
+def _slide_refs(prs, th, title, content):
+    slide = prs.slides.add_slide(prs.slide_layouts[6])
+    _set_bg(slide, th["bg"])
+    _txt(slide, 0.8, 0.6, 11.7, 0.8, title, size=32, bold=True, rgb=th["primary"], font="Georgia")
+    refs = "1. Muallif. Kitob nomi. Nashriyot, yil.\n2. Muallif. Maqola nomi. Jurnal nomi, son, yil.\n3. Veb-sayt manzili — tashrif buyurilgan sana.\n4. Konferentsiya materiali, yil.\n5. Darslik yoki o'quv qo'llanma."
+    if content and len(content) > 1:
+        refs = "\n".join([f"{i+1}. {c}" for i, c in enumerate(content[:6])])
+    _txt(slide, 0.8, 2.0, 11.7, 4.5, refs, size=16, rgb=th["text"])
+
+def _slide_conclusion(prs, th, title, content):
+    slide = prs.slides.add_slide(prs.slide_layouts[6])
+    _set_bg(slide, th["bg"])
+    _txt(slide, 0.8, 0.6, 11.7, 0.8, "XULOSA • SUMMARY", size=20, bold=True, rgb=th["primary"])
+    _txt(slide, 0.8, 1.5, 11.7, 0.8, title, size=32, bold=True, rgb=th["text"], font="Georgia")
+    
+    bullets = content[:4] if content else ["Asosiy xulosalar."]
+    _txt(slide, 0.8, 2.8, 11.7, 2.5, "\n\n".join([f"✓ {c}" for c in bullets]), size=18, rgb=th["text"])
+    _txt(slide, 0.8, 5.8, 11.7, 1.0, "E'tiboringiz uchun rahmat! Savollaringiz bormi?", size=24, bold=True, rgb=th["primary"], align=PP_ALIGN.CENTER)
+
+# ================= ASOSIY GENERATOR =================
+
 def generate_pptx(topic, subject, lang, design_key, slide_count, slides_content, images=None, author=""):
     prs = Presentation()
     prs.slide_width = Inches(13.333)
     prs.slide_height = Inches(7.5)
-
-    theme_key = select_theme(subject, design_key)
-    th = DESIGNS.get(theme_key) or DESIGNS.get("temurid") or {
-        "bg":(255,250,240),"primary":(27,42,65),"secondary":(120,120,120),"accent":(201,162,39),
-        "title_font":"Playfair Display","body_font":"Noto Sans","style":"temurid",
-        "dark_close":(27,42,65),"light_text":(220,225,230),
-    }
-    accent_bright = th.get("accent_bright", th["accent"])
-    lbl = _lbl(lang)
-
-    total = int(slide_count) if slide_count else 10
-    if total < 5: total = 10
-    if total > 30: total = 25
-
-    img_list = images if isinstance(images, list) else ([images] if images else [])
-    img_idx = 1
-
-    _cover(prs, topic, subject, lang, th, accent_bright, img_list, author)
-    _agenda(prs, slides_content, lang, th, accent_bright, total, topic, subject)
-
-    content_count = total - 3
-    layouts = ["A","B","C","D","E","F"]
+    
+    # design_key "10", "15", "20" yoki "25" bo'ladi
+    t_key = str(slide_count) if str(slide_count) in THEMES else "10"
+    th = THEMES[t_key]
     sc = slides_content or []
-    for i in range(content_count):
-        slide = prs.slides.add_slide(prs.slide_layouts[6])
-        _set_bg(slide, th["bg"])
-        sd = sc[i] if i < len(sc) else (sc[-1] if sc else {"title": topic, "content": []})
-        stitle = (sd.get("title") if isinstance(sd, dict) else None) or f"{lbl['detail']} {i+1}"
-        bullets = _extract_bullets(sd)
-        eyebrow = f"{subject_name(subject, lang).upper()}  ·  {lbl['detail'].upper()} {i+3:02d}"
-        _content_header(slide, th, eyebrow, str(stitle)[:70], accent_bright)
-        L = layouts[i % len(layouts)]
-        if L == "A":
-            _layout_A(slide, th, accent_bright, stitle, bullets, img_list, img_idx, lbl, topic); img_idx += 1
-        elif L == "B":
-            _layout_B(slide, th, accent_bright, stitle, bullets, img_list, img_idx, lbl, topic); img_idx += 1
-        elif L == "C":
-            _layout_C(slide, th, accent_bright, stitle, bullets, lbl, topic)
-        elif L == "D":
-            _layout_D(slide, th, accent_bright, stitle, bullets, lbl, topic)
-        elif L == "E":
-            _layout_E(slide, th, accent_bright, stitle, bullets, lbl, topic)
-        else:
-            _layout_F(slide, th, accent_bright, stitle, bullets, lbl, topic)
-        _footer(slide, th, i + 3, total, topic, subject, lang)
+    imgs = images if isinstance(images, list) else ([images] if images else [])
+    
+    # ================= 10 SLAYD (GOLD) =================
+    if t_key == "10":
+        _slide_cover(prs, th, topic, subject, author)
+        _slide_toc(prs, th, sc)
+        
+        t, c = _get_sd(sc, 2); _slide_img_text(prs, th, t, c, imgs, 1)
+        t, c = _get_sd(sc, 3); _slide_two_col(prs, th, t, c, "Birinchi guruh", "Ikkinchi guruh")
+        t, c = _get_sd(sc, 4); _slide_stats(prs, th, t, c)
+        t, c = _get_sd(sc, 5); _slide_process(prs, th, t, c)
+        t, c = _get_sd(sc, 6); _slide_quote(prs, th, t, c)
+        t, c = _get_sd(sc, 7); _slide_two_col(prs, th, t, c, "Variant A", "Variant B")
+        
+        _slide_refs(prs, th, "Foydalanilgan adabiyotlar", [])
+        t, c = _get_sd(sc, 9, "Xulosa"); _slide_conclusion(prs, th, t, c)
 
-    _closing(prs, topic, subject, lang, th, accent_bright, sc, author, total)
+    # ================= 15 SLAYD (GREEN) =================
+    elif t_key == "15":
+        _slide_cover(prs, th, topic, subject, author)
+        _slide_toc(prs, th, sc)
+        
+        _slide_section(prs, th, 1, "Nazariy asoslar", "Mavzuning teoriyasi va tarixi")
+        t, c = _get_sd(sc, 3); _slide_img_text(prs, th, t, c, imgs, 1)
+        t, c = _get_sd(sc, 4); _slide_two_col(prs, th, t, c, "Birinchi tur", "Ikkinchi tur")
+        t, c = _get_sd(sc, 5); _slide_stats(prs, th, t, c)
+        t, c = _get_sd(sc, 6); _slide_table(prs, th, t, c)
+        
+        _slide_section(prs, th, 2, "Amaliy qism", "Tadqiqot va natijalar")
+        t, c = _get_sd(sc, 8); _slide_process(prs, th, t, c)
+        t, c = _get_sd(sc, 9); _slide_grid_2x2(prs, th, t, c)
+        t, c = _get_sd(sc, 10); _slide_quote(prs, th, t, c)
+        t, c = _get_sd(sc, 11); _slide_two_col(prs, th, t, c, "Variant A", "Variant B")
+        t, c = _get_sd(sc, 12); _slide_chart(prs, th, t, c)
+        
+        _slide_refs(prs, th, "Foydalanilgan adabiyotlar", [])
+        t, c = _get_sd(sc, 14, "Xulosa"); _slide_conclusion(prs, th, t, c)
 
+    # ================= 20 SLAYD (WINE) =================
+    elif t_key == "20":
+        _slide_cover(prs, th, topic, subject, author)
+        _slide_toc(prs, th, sc)
+        
+        _slide_section(prs, th, 1, "Kirish va mavzuning ahamiyati", "Mavzuning ahamiyati va tarixi")
+        t, c = _get_sd(sc, 3); _slide_img_text(prs, th, t, c, imgs, 1)
+        t, c = _get_sd(sc, 4); _slide_two_col(prs, th, t, c, "Konsept A", "Konsept B")
+        t, c = _get_sd(sc, 5); _slide_timeline(prs, th, t, c)
+        t, c = _get_sd(sc, 6); _slide_stats(prs, th, t, c)
+        
+        _slide_section(prs, th, 2, "Tahlil va tadqiqot natijalari", "Metodika va natijalar")
+        t, c = _get_sd(sc, 8); _slide_table(prs, th, t, c)
+        t, c = _get_sd(sc, 9); _slide_process(prs, th, t, c)
+        t, c = _get_sd(sc, 10); _slide_chart(prs, th, t, c)
+        t, c = _get_sd(sc, 11); _slide_grid_2x2(prs, th, t, c)
+        
+        _slide_section(prs, th, 3, "Muhokama va xulosa", "Natijalarni baholash")
+        t, c = _get_sd(sc, 13); _slide_two_col(prs, th, t, c, "Variant A", "Variant B")
+        t, c = _get_sd(sc, 14); _slide_quote(prs, th, t, c)
+        t, c = _get_sd(sc, 15); _slide_facts(prs, th, t, c)
+        t, c = _get_sd(sc, 16); _slide_two_col(prs, th, t, c, "Afzalliklar", "Cheklovlar")
+        t, c = _get_sd(sc, 17); _slide_img_text(prs, th, t, c, imgs, 2)
+        
+        _slide_refs(prs, th, "Foydalanilgan adabiyotlar", [])
+        t, c = _get_sd(sc, 19, "Xulosa"); _slide_conclusion(prs, th, t, c)
+
+    # ================= 25 SLAYD (TEAL) =================
+    else:
+        _slide_cover(prs, th, topic, subject, author)
+        _slide_toc(prs, th, sc)
+        
+        _slide_section(prs, th, 1, "Kirish", "Mavzuning ahamiyati va maqsadi")
+        t, c = _get_sd(sc, 3); _slide_img_text(prs, th, t, c, imgs, 1)
+        t, c = _get_sd(sc, 4); _slide_two_col(prs, th, t, c, "Asosiy maqsad", "Vazifalar")
+        t, c = _get_sd(sc, 5); _slide_timeline(prs, th, t, c)
+        t, c = _get_sd(sc, 6); _slide_stats(prs, th, t, c)
+        
+        _slide_section(prs, th, 2, "Nazariy asoslar", "Tushunchalar va tasniflash")
+        t, c = _get_sd(sc, 8); _slide_img_text(prs, th, t, c, imgs, 2)
+        t, c = _get_sd(sc, 9); _slide_two_col(prs, th, t, c, "Guruh A", "Guruh B")
+        t, c = _get_sd(sc, 10); _slide_table(prs, th, t, c)
+        t, c = _get_sd(sc, 11); _slide_grid_2x2(prs, th, t, c)
+        
+        _slide_section(prs, th, 3, "Tadqiqot va tahlil", "Metodika va natijalar")
+        t, c = _get_sd(sc, 13); _slide_process(prs, th, t, c)
+        t, c = _get_sd(sc, 14); _slide_chart(prs, th, t, c)
+        t, c = _get_sd(sc, 15); _slide_chart(prs, th, t, c)
+        t, c = _get_sd(sc, 16); _slide_table(prs, th, t, c)
+        t, c = _get_sd(sc, 17); _slide_grid_2x2(prs, th, t, c)
+        t, c = _get_sd(sc, 18); _slide_facts(prs, th, t, c)
+        
+        _slide_section(prs, th, 4, "Muhokama va xulosa", "Natijalarni baholash")
+        t, c = _get_sd(sc, 20); _slide_two_col(prs, th, t, c, "Variant A", "Variant B")
+        t, c = _get_sd(sc, 21); _slide_quote(prs, th, t, c)
+        t, c = _get_sd(sc, 22); _slide_img_text(prs, th, t, c, imgs, 3)
+        
+        _slide_refs(prs, th, "Foydalanilgan adabiyotlar", [])
+        t, c = _get_sd(sc, 24, "Xulosa"); _slide_conclusion(prs, th, t, c)
+
+    # Saqlash
     buf = io.BytesIO()
     prs.save(buf)
     buf.seek(0)
