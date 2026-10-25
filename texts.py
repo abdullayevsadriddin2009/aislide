@@ -1,4 +1,4 @@
-# ===== 3 til uchun matnlar: UZ / RU / EN =====
+# ===== 6 til uchun matnlar: UZ / RU / EN / TR / DE / FR =====
 TEXTS = {
     "uz": {
         # --- Til tanlash ---
@@ -57,6 +57,15 @@ TEXTS = {
         "design_selected_slides": "✨ <b>{design}</b> tanlandi.\n📊 Nechta slayd?",
         "choose_option": "Parametrni tanlang:",
         "enter_author": "👤 Muallif ma'lumotlarini yozing:\n\nMasalan:\n<i>Aliyev Valijon\n211-guruh</i>\n\nDiplom/kurs ishi uchun qo'shimcha qatorlar:\n<i>Ilmiy rahbar: dos. Aliyev A.A.</i>\n\n(Agar bo'lmasa, «-» yozing yoki o'tkazib yuboring)",
+        
+        # --- REFERAT UCHUN MAXSUS SAVOLLAR ---
+        "ref_ask_subject": "📚 Referat qaysi fan bo'yicha?\n<i>Masalan: Informatika va axborot texnologiyalari</i>",
+        "ref_ask_institution": "🏛 O'quv muassasasi (Universitet/Institut) nomini kiriting:",
+        "ref_ask_faculty": "🏢 Fakultet nomini kiriting (yo'q bo'lsa «-» yozing):",
+        "ref_ask_dept": "📑 Kafedra nomini kiriting (yo'q bo'lsa «-» yozing):",
+        "ref_ask_author": "👤 Muallif (Ijro etuvchi) ma'lumotlarini kiriting:\n<i>Masalan: Abdullayev Sardor, 101-guruh</i>",
+        "ref_ask_checker": "👨‍🏫 Tekshiruvchi (O'qituvchi) ma'lumotlarini kiriting:\n<i>Masalan: Rahimov Q., dotsent</i>",
+
         "confirm_order": "📋 <b>Buyurtma</b>\n\nXizmat: {service}\nMavzu: {topic}\nMuallif: {author}\nParametr: {param}\nNarx: {price} so'm\n{free_note}\n\nTasdiqlaysizmi?",
         "free_label": "🎁 BEPUL!",
         "generating": "⏳ Yaratilmoqda... Iltimos, kuting (bu bir necha daqiqa olishi mumkin).",
@@ -122,7 +131,7 @@ TEXTS = {
         "sub_plan_line": "⭐ <b>{name}</b> — {price} so'm / 30 kun",
         # --- Fayl nomlari ---
         "fname_slide": "presentation",
-        "fname_referat": "essay",
+        "fname_referat": "referat",
         "fname_mustaqil": "assignment",
         "fname_kurs": "coursework",
         "fname_diplom": "thesis",
@@ -180,6 +189,15 @@ TEXTS = {
         "design_selected_slides": "✨ Выбран: <b>{design}</b>.\n📊 Сколько слайдов?",
         "choose_option": "Выберите параметр:",
         "enter_author": "👤 Введите данные автора:\n\nНапример:\n<i>Иванов Иван\nгруппа 211</i>\n\nДля диплома/курсовой дополнительные строки:\n<i>Научный руководитель: к.и.н. Петров А.А.</i>\n\n(Если нет — напишите «-» или пропустите)",
+
+        # --- REFERAT UCHUN MAXSUS SAVOLLAR ---
+        "ref_ask_subject": "📚 По какому предмету реферат?\n<i>Например: Информатика и информационные технологии</i>",
+        "ref_ask_institution": "🏛 Введите название учебного заведения (Университет/Институт):",
+        "ref_ask_faculty": "🏢 Введите название факультета (если нет, напишите «-»):",
+        "ref_ask_dept": "📑 Введите название кафедры (если нет, напишите «-»):",
+        "ref_ask_author": "👤 Введите данные автора (исполнителя):\n<i>Например: Иванов Иван, группа 101</i>",
+        "ref_ask_checker": "👨‍🏫 Введите данные проверяющего (преподавателя):\n<i>Например: Петров П.П., доцент</i>",
+
         "confirm_order": "📋 <b>Заказ</b>\n\nУслуга: {service}\nТема: {topic}\nАвтор: {author}\nПараметр: {param}\nЦена: {price} сум\n{free_note}\n\nПодтверждаете?",
         "free_label": "🎁 БЕСПЛАТНО!",
         "generating": "⏳ Создаётся... Пожалуйста, подождите (может занять несколько минут).",
@@ -239,7 +257,7 @@ TEXTS = {
         "pay_visa": "💳 VISA/Mastercard",
         "sub_plan_line": "⭐ <b>{name}</b> — {price} сум / 30 дней",
         "fname_slide": "presentation",
-        "fname_referat": "essay",
+        "fname_referat": "referat",
         "fname_mustaqil": "assignment",
         "fname_kurs": "coursework",
         "fname_diplom": "thesis",
@@ -297,6 +315,15 @@ TEXTS = {
         "design_selected_slides": "✨ Selected: <b>{design}</b>.\n📊 How many slides?",
         "choose_option": "Choose an option:",
         "enter_author": "👤 Enter author details:\n\nExample:\n<i>John Smith\nGroup 211</i>\n\nFor thesis/coursework extra lines:\n<i>Scientific advisor: Dr. Johnson A.B.</i>\n\n(If none, type «-» or skip)",
+        
+        # --- REFERAT UCHUN MAXSUS SAVOLLAR ---
+        "ref_ask_subject": "📚 Which subject is the essay for?\n<i>Example: Computer Science and IT</i>",
+        "ref_ask_institution": "🏛 Enter the name of the educational institution (University/Institute):",
+        "ref_ask_faculty": "🏢 Enter the faculty name (type «-» if none):",
+        "ref_ask_dept": "📑 Enter the department name (type «-» if none):",
+        "ref_ask_author": "👤 Enter author (student) details:\n<i>Example: John Smith, Group 101</i>",
+        "ref_ask_checker": "👨‍🏫 Enter checker (teacher) details:\n<i>Example: Dr. Johnson A.B., Associate Professor</i>",
+
         "confirm_order": "📋 <b>Order</b>\n\nService: {service}\nTopic: {topic}\nAuthor: {author}\nParam: {param}\nPrice: {price} so'm\n{free_note}\n\nConfirm?",
         "free_label": "🎁 FREE!",
         "generating": "⏳ Generating... Please wait (may take a few minutes).",
@@ -412,6 +439,15 @@ TEXTS = {
         "design_selected_slides": "✨ <b>{design}</b>. 📊 Kaç slayt?",
         "choose_option": "Parametre seçin:",
         "enter_author": "👤 Yazar bilgileri:",
+        
+        # --- REFERAT UCHUN MAXSUS SAVOLLAR ---
+        "ref_ask_subject": "📚 Rapor hangi ders için?\n<i>Örnek: Bilişim Teknolojileri</i>",
+        "ref_ask_institution": "🏛 Eğitim kurumunun adını girin (Üniversite/Enstitü):",
+        "ref_ask_faculty": "🏢 Fakülte adını girin (yoksa «-» yazın):",
+        "ref_ask_dept": "📑 Bölüm adını girin (yoksa «-» yazın):",
+        "ref_ask_author": "👤 Yazar (öğrenci) bilgilerini girin:\n<i>Örnek: Ahmet Yılmaz, 101. Grup</i>",
+        "ref_ask_checker": "👨‍🏫 Kontrol eden (öğretmen) bilgilerini girin:\n<i>Örnek: Dr. Mehmet Öz, Doçent</i>",
+
         "confirm_order": "📋 <b>Sipariş</b>\n\nHizmet: {service}\nKonu: {topic}\nYazar: {author}\nParametre: {param}\nFiyat: {price} som\n{free_note}\n\nOnay?",
         "free_label": "🎁 ÜCRETSİZ!",
         "generating": "⏳ Oluşturuluyor...",
@@ -489,6 +525,15 @@ TEXTS = {
         "design_selected_slides": "✨ <b>{design}</b>. 📊 Wie viele Folien?",
         "choose_option": "Parameter wählen:",
         "enter_author": "👤 Autoreninfo:",
+        
+        # --- REFERAT UCHUN MAXSUS SAVOLLAR ---
+        "ref_ask_subject": "📚 Für welches Fach ist das Referat?\n<i>Beispiel: Informatik und IT</i>",
+        "ref_ask_institution": "🏛 Name der Bildungseinrichtung (Universität/Institut):",
+        "ref_ask_faculty": "🏢 Name der Fakultät (falls keine, «-» eingeben):",
+        "ref_ask_dept": "📑 Name des Lehrstuhls (falls keiner, «-» eingeben):",
+        "ref_ask_author": "👤 Autorendaten (Student):\n<i>Beispiel: Max Mustermann, Gruppe 101</i>",
+        "ref_ask_checker": "👨‍🏫 Prüferdaten (Lehrer):\n<i>Beispiel: Dr. Hans Müller, Dozent</i>",
+
         "confirm_order": "📋 <b>Bestellung</b>\n\nDienst: {service}\nThema: {topic}\nAutor: {author}\nParameter: {param}\nPreis: {price} Sum\n{free_note}\n\nBestätigen?",
         "free_label": "🎁 KOSTENLOS!",
         "generating": "⏳ Wird erstellt...",
@@ -566,6 +611,15 @@ TEXTS = {
         "design_selected_slides": "✨ <b>{design}</b>. 📊 Combien de diapositives ?",
         "choose_option": "Choisissez le paramètre :",
         "enter_author": "👤 Infos de l'auteur :",
+        
+        # --- REFERAT UCHUN MAXSUS SAVOLLAR ---
+        "ref_ask_subject": "📚 Pour quelle matière est l'exposé ?\n<i>Exemple : Informatique et TI</i>",
+        "ref_ask_institution": "🏛 Entrez le nom de l'établissement (Université/Institut) :",
+        "ref_ask_faculty": "🏢 Entrez le nom de la faculté (tapez «-» si aucune) :",
+        "ref_ask_dept": "📑 Entrez le nom du département (tapez «-» si aucun) :",
+        "ref_ask_author": "👤 Entrez les détails de l'auteur (étudiant) :\n<i>Exemple : Jean Dupont, Groupe 101</i>",
+        "ref_ask_checker": "👨‍🏫 Entrez les détails du vérificateur (enseignant) :\n<i>Exemple : Dr. Pierre Martin, Professeur</i>",
+
         "confirm_order": "📋 <b>Commande</b>\n\nService : {service}\nSujet : {topic}\nAuteur : {author}\nParamètre : {param}\nPrix : {price} soum\n{free_note}\n\nConfirmer ?",
         "free_label": "🎁 GRATUIT !",
         "generating": "⏳ Création en cours...",
