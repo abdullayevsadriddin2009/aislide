@@ -1,35 +1,26 @@
-# AI Chat va esse tuzatishi
+# Esse reja va matn tuzilmasi — tuzatish paketi
 
-## Almashtiriladigan fayllar
+## Almashtiriladigan asosiy fayllar
 
-ZIP ichidagi fayllarni GitHub loyihasidagi aynan shu yo‘llarga joylashtirib, eski fayllarni almashtiring:
+GitHub loyihasida faqat quyidagi to‘rtta faylni almashtiring:
 
 1. `ai_api.py`
-2. `handlers/user.py`
-3. `handlers/admin.py`
-4. `docx_generator.py`
-5. `keyboards.py`
-6. `handlers/creation.py`
+2. `docx_generator.py`
+3. `keyboards.py`
+4. `handlers/creation.py`  (shu fayl `handlers` papkasida qoladi)
 
-Papka yo‘llarini saqlang: `handlers/user.py`, `handlers/admin.py`, `handlers/creation.py` `handlers` papkasi ichida turadi.
+`tests/` ichidagi ikkita fayl — avtomatik tekshiruvlar uchun. `README_ESSAY_PLAN_FIX_UZ.md` — yo‘riqnoma.
 
-## Nima tuzatildi
+## Nima tuzatildi?
 
-- AI Chat javobni foydalanuvchi so‘rov yozgan tilda beradi; bot interfeysining tili javob tilini majburlamaydi.
-- Google AI API ishlatilganda ham `systemInstruction` uzatiladi.
-- AI chatdagi uzun matn ichida “help”, “chat”, “balance”, “create” kabi so‘zlar uchrasa, bot endi buni menyu buyrug‘i deb qabul qilmaydi. Menyu tugmalari to‘liq matn bilan solishtiriladi.
-- Juda uzun AI javoblari 3800 belgilik qismlarga bo‘linib jo‘natiladi.
-- Admin panel tugmalari ham to‘liq nom bilan tekshiriladi, shuning uchun admin AI chatda uzoq matn yuborganda boshqaruv amallari tasodifan ochilmaydi.
-- Esse uch qismda yaratiladi: Kirish, Asosiy qism (3 argument paragrafi), Xulosa. Kirish qismida dolzarblik, mavzuni qayta ifodalash va tezis; asosiy qismda ikki argument/qarshi fikr va shaxsiy munosabat; xulosada umumlashtirish, tezisni qayta tasdiqlash va yechim bo‘ladi.
-- Standart esse tanlovi 320/350 so‘z atrofida berilib, foydalanuvchi kiritgan uzunroq hajmlar ham proporsional saqlanadi.
-- Esse Word hujjatida qo‘shimcha umumiy iqtibos va hikmat bo‘limlari olib tashlandi, sarlavhalar tanlangan 6 tildan birida chiqadi.
+- Esse hujjatining titul ma’lumotlaridan keyin `REJA` sarlavhasi va aniq 5 band chiqadi: kirish rejasi, asosiy qism uchun 3 band, xulosa rejasi.
+- Rejadan keyin esse matni bevosita boshlanadi. Matn ichida `I. KIRISH QISMI`, `II. ASOSIY QISM`, `III. XULOSA QISMI` kabi bo‘lim sarlavhalari qo‘yilmaydi.
+- AI javobida aralash til, juda qisqa javob yoki takrorlanadigan/g‘alati matn aniqlansa, bir marta qayta yozdiriladi. Qayta urinishi ham sifatsiz bo‘lsa, buzilgan matn o‘rniga shu tildagi ehtiyotkor zaxira matn qo‘llanadi.
+- 200 so‘z tanlovi qo‘shildi. Kod avval so‘z sonini kamida 320 ga ko‘tarib yuborardi; endi 200 tanlansa, taxminiy taqsimot 40 so‘z kirish, 120 so‘z 3 ta asosiy paragrafga, 40 so‘z xulosaga bo‘ladi.
+- Fan nomida `تاريخ` kabi keng tarqalgan arabcha nomlar tanlangan tilga tarjima qilinadi.
 
-## Deploy
+## Yuklash va tekshirish
 
-Barcha oltita faylni bitta commit qilib GitHub’ga push qiling. Render’da deploy avtomatik boshlanadi. Render logida `ImportError` yoki `SyntaxError` chiqmasligini, keyin botda quyidagilarni sinang:
+`ai_api.py`, `docx_generator.py`, `keyboards.py`, `handlers/creation.py` fayllarini birgalikda almashtiring va bitta commit bilan GitHub’ga yuboring. `handlers/admin.py` va `handlers/user.py` ni bu patch uchun almashtirmang — oldingi referal/balans tuzatishlari saqlansin.
 
-1. AI Chat’da inglizcha savol yuboring — javob inglizcha bo‘lishi kerak.
-2. AI Chat’da uzun matn ichida “help”, “create”, “balance” yoki “chat” so‘zlari bilan savol yuboring — suhbat holatidan chiqmasligi kerak.
-3. Esse yarating: Word hujjatida faqat Kirish, Asosiy qism, Xulosa sarlavhalari va so‘ralgan mazmun bo‘lishi kerak.
-
-Bu paket AI provayderning real vaqtdagi mavjudligini kafolatlamaydi; faqat kod yo‘nalishidagi yuqoridagi muammolarni tuzatadi.
+Lokal tekshiruvda DOCX xizmatlari uchun 3 ta test va esse sifat nazorati uchun 3 ta test muvaffaqiyatli o‘tdi. Taqdimot shablonlarining to‘liq testi ushbu tuzatish doirasiga kirmaydi.
