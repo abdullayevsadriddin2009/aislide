@@ -28,63 +28,84 @@ MAX_CHUNK_PAGES = 3
 LONG_SERVICES = ("diplom", "kurs", "referat", "maqola")
 
 API_LIST = [
+    # ============ GROQ (2 kalit, 4 model) ============
     {
         "name": "Groq 1 (asosiy)",
         "base_url": "https://api.groq.com/openai/v1",
         "api_key": os.getenv("GROQ_KEY_1", ""),
         "type": "openai",
-        "models": [
-            "qwen/qwen3.8-27b",
-            "openai/gpt-oss-120b",
-            "openai/gpt-oss-20b"
-        ]
+        "models": ["qwen/qwen3.8-27b", "openai/gpt-oss-120b", "openai/gpt-oss-20b", "allam-2-7b"]
     },
     {
         "name": "Groq 2",
         "base_url": "https://api.groq.com/openai/v1",
         "api_key": os.getenv("GROQ_KEY_2", ""),
         "type": "openai",
+        "models": ["qwen/qwen3.8-27b", "openai/gpt-oss-120b", "openai/gpt-oss-20b", "allam-2-7b"]
+    },
+
+    # ============ CLOUDFLARE (24 model, hammasi 200) ============
+    {
+        "name": "Cloudflare AI (zaxira)",
+        "base_url": "https://api.cloudflare.com/client/v4/accounts/283bb72354435f9cfd19a80c3edc93e0/ai/run",
+        "api_key": os.getenv("CLOUDFLARE_KEY", ""),
+        "type": "cloudflare",
         "models": [
-            "qwen/qwen3.8-27b",
-            "openai/gpt-oss-120b",
-            "openai/gpt-oss-20b"
+            # eng kuchlilar birinchi
+            "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+            "@cf/nvidia/nemotron-3-120b-a12b",
+            "@cf/openai/gpt-oss-120b",
+            "@cf/meta/llama-4-scout-17b-16e-instruct",
+            "@cf/mistralai/mistral-small-3.1-24b-instruct",
+            "@cf/deepseek-ai/deepseek-r1-distill-qwen-32b",
+            "@cf/qwen/qwen2.5-coder-32b-instruct",
+            "@cf/qwen/qwq-32b",
+            "@cf/qwen/qwen3.8-27b",
+            "@cf/qwen/qwen3-30b-a3b-fp8",
+            "@cf/aisingapore/gemma-sea-lion-v4-27b-it",
+            "@cf/zai-org/glm-4.7-flash",
+            "@cf/google/gemma-4-26b-a4b-it",
+            "@cf/meta/llama-3.1-8b-instruct-fp8",
+            "@cf/ibm-granite/granite-4.0-h-micro",
+            "@cf/google/gemma-7b-it-lora",
+            "@cf/mistral/mistral-7b-instruct-v0.2-lora",
+            "@cf/meta/llama-3.2-3b-instruct",
+            "@cf/meta-llama/llama-2-7b-chat-hf-lora",
+            "@cf/google/gemma-2b-it-lora",
+            "@cf/meta/llama-3.2-1b-instruct",
+            # quyidagilar ishlaydi lekin chat emas (ohirga qo'yildi):
+            "@cf/meta/llama-guard-3-8b",        # moderation/guard
+            "@cf/daily-co/phonellm-mini-alpha-2" # voice/telefon
         ]
     },
-   {"name": "Cloudflare AI (zaxira)",
-     "base_url": "https://api.cloudflare.com/client/v4/accounts/{account_id}/ai/run",
-     "account_id": os.getenv("CLOUDFLARE_ACCOUNT_ID", ""),
-     "api_key": os.getenv("CLOUDFLARE_KEY", ""), "type": "cloudflare",
-     "models": ["@cf/meta/llama-3-8b-instruct", "@cf/meta/llama-3.1-8b-instruct",
-                "@cf/mistral/mistral-7b-instruct-v0.2", "@cf/google/gemma-7b-it-lora"]},
+
+    # ============ GOOGLE (2 kalit = 2 barobar quota, 10 model) ============
     {
-        "name": "OpenRouter",
-        "base_url": "https://openrouter.ai/api/v1",
-        "api_key": os.getenv("OPENROUTER_KEY", ""),
-        "type": "openai",
-        "models": [
-            "qwen/qwen3.8-27b",
-            "openai/gpt-oss-120b",
-            "meta-llama/llama-3.2-3b-instruct"
-        ]
-    },
-    {
-        "name": "Google AI",
+        "name": "Google AI 1",
         "base_url": "https://generativelanguage.googleapis.com/v1beta",
         "api_key": os.getenv("GOOGLE_KEY_1", ""),
         "type": "google",
         "models": [
-            "gemini-2.0-flash-exp",
-            "gemini-1.5-flash",
-            "gemini-1.5-flash-8b"
+            "gemini-3.6-flash", "gemini-3.5-flash", "gemini-2.5-flash",
+            "gemini-3-flash-preview", "gemini-3.5-flash-lite",
+            "gemini-3.1-flash-lite", "gemini-3.1-flash-lite-preview",
+            "gemini-flash-lite-latest", "gemma-4-31b-it", "gemma-4-26b-a4b-it"
         ]
     },
     {
-        "name": "Local FreeLLMAPI",
-        "base_url": AI_API_URL,
-        "api_key": os.getenv("AI_API_KEY", ""),
-        "type": "openai",
-        "models": [AI_MODEL, "gpt-3.5-turbo", "llama3"]
-    },
+        "name": "Google AI 2",
+        "base_url": "https://generativelanguage.googleapis.com/v1beta",
+        "api_key": os.getenv("GOOGLE_KEY_2", ""),
+        "type": "google",
+        "models": [
+            "gemini-3.6-flash", "gemini-3.5-flash", "gemini-2.5-flash",
+            "gemini-3-flash-preview", "gemini-3.5-flash-lite",
+            "gemini-3.1-flash-lite", "gemini-3.1-flash-lite-preview",
+            "gemini-flash-lite-latest", "gemma-4-31b-it", "gemma-4--26b-a4b-it"
+        ]
+    }
+    # OpenRouter o'chirilgan (kalit o'lik)
+    # Local FreeLLMAPI o'chirilgan (Render'da yo'q)
 ]
 
 CURRENT_API_INDEX = 0
