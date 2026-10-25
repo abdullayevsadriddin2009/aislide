@@ -1,69 +1,54 @@
-# 🤖 Ai Slide Bot — @aislidebot analogi
+# Talaba AI Slide Bot
 
-AI orqali slayd, referat, kurs ishi, maqola va boshqa o'quv materiallarini yaratuvchi Telegram bot.
-@aislidebotning to'liq analogi — tugmalar, xizmatlar, balans, referal, admin panel hammasi bilan.
+Telegram bot for creating academic documents and PowerPoint presentations. The current source has 9 active services: presentation, report, independent assignment, coursework, diploma work, essay, test, article, and thesis/abstract.
 
-## ✅ Imkoniyatlar
-- **18 ta xizmat**: slayd, referat, mustaqil ish, kurs ishi, diplom, AI rasm, insho, krossvord, flesh-karta, test, rezyume, maqola, tezis, infografika, tinglash mashqlari, saralash o'yini, podkast, ovozli tabriknoma
-- **3 til**: O'zbekcha, Русский, English
-- **Balans tizimi**: so'mda hisob, to'ldirish (chek orqali admin tasdig'i bilan)
-- **Referal tizimi**: do'st taklif qilish → to'lovdan foiz bonus (admin sozlaydi)
-- **Obuna rejalar**: 3 ta paket (29k / 99k / 199k so'm, 30 kun)
-- **Sozlamalar**: til, sahifa soni, premium rejim
-- **Admin panel (bot ichida)**: statistika, broadcast, chek tasdiqlash, foydalanuvchi qidirish + balans tuzatish, referal foiz, to'lov rekvizitlari
-- **Web admin panel**: brauzer orqali dashboard (http://IP:8080, parol: admin123)
-- **AI API integratsiyasi**: `http://127.0.0.1:31415` ga ulanadi; API ishlamasa namunaviy kontent generatsiya qiladi (bot har doim ishlaydi)
-- **Hozircha BEPUL rejim** (FREE_MODE=1) — keyinchalik /pull rejimga o'tkazish mumkin
+## Main features
 
-## 🚀 Ishga tushirish
+- 6 supported output languages: Uzbek, Russian, English, Turkish, German, and French.
+- Presentation generator with 3 separate designs: Timurid navy/gold, scientific green, and minimal premium.
+- Presentation slide count is selected separately from the design. All 3 styles support 5, 7, 10, 12, 15, 18, 20, 25, and 30 slides.
+- Presentations include a cover, localized agenda, body slides, and final summary/thanks slide.
+- DOCX templates use academic page layout and localized headings. PDF export uses LibreOffice when installed.
+- Required service options are requested before creation: page/word/question count, output language, title-page information when applicable, author, format, and presentation design.
+- Balance, referrals, Telegram admin tools, and a web-admin panel.
+
+## Setup
+
+Python 3.11 or newer is recommended.
+
 ```bash
-pip3 install -r requirements.txt
-python3 run.py
+python -m venv .venv
+# Windows: .venv\\Scripts\\activate
+# Linux/macOS: source .venv/bin/activate
+pip install -r requirements.txt
 ```
 
-## ⚙️ Konfiguratsiya
-Barcha sozlamalar `config.py` faylida (yoki muhit o'zgaruvchilari orqali):
-- `BOT_TOKEN` — bot tokeni (allaqachon o'rnatilgan)
-- `ADMIN_ID` — admin Telegram ID (allaqachon o'rnatilgan)
-- `AI_API_URL` / `AI_API_KEY` — mahalliy AI server (allaqachon o'rnatilgan)
-- `FREE_MODE=1` — bepul rejim (pulli qilish uchun 0 qiling)
-- `WEB_ADMIN_PORT=8080`, `WEB_ADMIN_PASSWORD=admin123`
+Copy `.env.example` to `.env` and fill in your own values. Do not commit `.env` or upload it to a public repository.
 
-## 📋 Buyruqlar
-| Buyruq | Tavsif |
-|---|---|
-| /start | Botni ishga tushirish |
-| /help | Yordam |
-| /balance | Balans |
-| /price | Narxlar |
-| /buy | Balans to'ldirish |
-| /chekyubor | Chek yuborish |
-| /referral | Referal havola |
-| /settings | Sozlamalar |
-| /reset | Qayta ishga tushirish |
-| /admin | Admin panel (faqat admin) |
+Required configuration:
 
-## 📁 Loyiha tuzilishi
-```
-aislide_bot/
-├── run.py              # asosiy fayl
-├── config.py           # konfiguratsiya
-├── services.py         # xizmatlar va narxlar
-├── texts.py            # 3 tilli matnlar
-├── states.py           # FSM state'lar
-├── database.py         # SQLite baza
-├── ai_api.py           # AI API + fallback generator
-├── keyboards.py        # barcha tugmalar
-├── admin_web.py        # Flask web admin panel
-├── handlers/
-│   ├── user.py         # foydalanuvchi handlerlari
-│   ├── creation.py     # yaratish oqimi (FSM)
-│   └── admin.py        # admin handlerlari
-└── requirements.txt
+- `BOT_TOKEN` — a fresh Telegram bot token from BotFather.
+- `ADMIN_ID` — Telegram numeric ID of the bot administrator.
+- `AI_BASE_URL` and `AI_API_KEY` — a valid compatible AI endpoint and its key.
+- `WEB_ADMIN_PASSWORD` — a strong, unique web-admin password.
+- `WEB_ADMIN_SECRET_KEY` — a long, random secret, different from the AI API key.
+
+Then run the generator smoke tests and start the bot:
+
+```bash
+python -m unittest discover -s tests -v
+python run.py
 ```
 
-## 🔄 Pulli rejimga o'tkazish
-`config.py` da `FREE_MODE = "0"` qiling yoki muhit o'zgaruvchisi `FREE_MODE=0` belgilang. Shundan so'ng har bir buyurtma balansdan yechiladi.
+If `BOT_TOKEN` is empty, the bot deliberately does not start. Configure credentials before running it.
 
-## 🧪 AI API
-`ai_api.py` avval `http://127.0.0.1:31415/generate` ga so'rov yuboradi (Bearer token bilan). Agar server javob bermasa, `generate_fallback()` namunaviy hujjat yaratadi. O'z API'ingizni ulash uchun `call_ai_api()` funksiyasini moslang.
+## Deployment notes
+
+- On Render, configure environment variables in the service dashboard. Never put tokens in source code.
+- SQLite files are not persistent on a typical ephemeral service filesystem. Attach a persistent disk and set `DATA_DIR` to its mount path, or move to a managed database before relying on production balances/orders.
+- PDF conversion requires LibreOffice on Linux. If it is unavailable, the bot may return the DOCX version instead.
+- For bot API providers, use an endpoint and key that you control and have verified. Do not assume every OpenAI-compatible service supports the same request format.
+
+## Security
+
+Credentials that were hard-coded in an older copy of this project should be treated as exposed. Revoke and rotate those values through Telegram/AI provider dashboards before deploying this version. The new source intentionally does not include active credentials.
