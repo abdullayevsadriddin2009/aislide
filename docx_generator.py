@@ -2,6 +2,7 @@
 Har bir xizmat: Titul sahifa → Mundarija → Kirish → Boblar → Xulosa → Adabiyotlar.
 6 til to'liq qo'llab-quvvatlanadi. Har sahifa pastida: 11pt "Yaratildi: @Talaba_AI_SlideBot".
 Til aralashuvi (masalan, ruscha tanlanganda o'zbekcha so'z qolishi) to'liq bartaraf etildi.
+JSON qoldiqlari va keraksiz belgilar to'liq tozalanadi.
 """
 import io
 import re
@@ -409,69 +410,41 @@ def _loc(key, lang, topic=""):
     lang = str(lang).lower()
     return _LOC.get(key, {}).get(lang, _LOC.get(key, {}).get("en", key)).replace("{t}", str(topic)[:40])
 
-# ===== Test Fallback Savollari =====
-_TEST_FB = {
-    "uz": [("Mavzu bo'yicha asosiy tushuncha nima?", ["Asosiy tushuncha", "Ikkinchi variant", "Uchinchi variant", "To'rtinchi variant"]),
-           ("Ushbu soha qaysi yo'nalishga tegishli?", ["Aniq fanlar", "Ijtimoiy fanlar", "Tabiiy fanlar", "Barcha javoblar to'g'ri"]),
-           ("Mavzuning asosiy maqsadi nima?", ["Tahlil qilish", "O'rganish", "Rivojlantirish", "Barchasi to'g'ri"]),
-           ("Qaysi yil muhim bosqich hisoblanadi?", ["2020", "2021", "2022", "2023"]),
-           ("Mavzuga oid qaysi atama mavjud?", ["Atama A", "Atama B", "Atama C", "Barchasi"]),
-           ("Ushbu jarayonning asosiy natijasi nima?", ["Natija A", "Natija B", "Natija C", "Barchasi"]),
-           ("Kim ushbu sohaga hissa qo'shgan?", ["Olim A", "Olim B", "Olim C", "Barchasi"]),
-           ("Mavzuning amaliy ahamiyati qanday?", ["Yuqori", "O'rta", "Past", "Ahamiyatsiz"]),
-           ("Qaysi usul samaraliroq?", ["Usul A", "Usul B", "Usul C", "Barchasi"]),
-           ("Kelajakda qanday o'zgarish kutilmoqda?", ["Yaxshilanish", "O'zgarishsiz", "Yomonlashuv", "Noma'lum"])],
-    "ru": [("Что является основным понятием по теме?", ["Основное понятие", "Второй вариант", "Третий вариант", "Четвертый вариант"]),
-           ("К какому направлению относится эта область?", ["Точные науки", "Социальные науки", "Естественные науки", "Все ответы верны"]),
-           ("Какова основная цель темы?", ["Анализ", "Изучение", "Развитие", "Все вышеперечисленное"]),
-           ("Какой год считается важным этапом?", ["2020", "2021", "2022", "2023"]),
-           ("Какой термин относится к теме?", ["Термин А", "Термин Б", "Термин В", "Все"]),
-           ("Каков основной результат этого процесса?", ["Результат А", "Результат Б", "Результат В", "Все"]),
-           ("Кто внес вклад в эту область?", ["Ученый А", "Ученый Б", "Ученый В", "Все"]),
-           ("Каково практическое значение темы?", ["Высокое", "Среднее", "Низкое", "Незначительное"]),
-           ("Какой метод более эффективен?", ["Метод А", "Метод Б", "Метод В", "Все"]),
-           ("Каких изменений ожидают в будущем?", ["Улучшение", "Без изменений", "Ухудшение", "Неизвестно"])],
-    "en": [("What is the main concept of the topic?", ["Main concept", "Second option", "Third option", "Fourth option"]),
-           ("Which field does this area belong to?", ["Exact sciences", "Social sciences", "Natural sciences", "All answers are correct"]),
-           ("What is the main goal of the topic?", ["Analysis", "Study", "Development", "All of the above"]),
-           ("Which year is considered an important stage?", ["2020", "2021", "2022", "2023"]),
-           ("Which term is related to the topic?", ["Term A", "Term B", "Term C", "All"]),
-           ("What is the main result of this process?", ["Result A", "Result B", "Result C", "All"]),
-           ("Who contributed to this field?", ["Scientist A", "Scientist B", "Scientist C", "All"]),
-           ("What is the practical significance of the topic?", ["High", "Medium", "Low", "Insignificant"]),
-           ("Which method is more effective?", ["Method A", "Method B", "Method C", "All"]),
-           ("What changes are expected in the future?", ["Improvement", "No change", "Deterioration", "Unknown"])],
-    "tr": [("Konunun ana kavramı nedir?", ["Ana kavram", "İkinci seçenek", "Üçüncü seçenek", "Dördüncü seçenek"]),
-           ("Bu alan hangi yöne aittir?", ["Fen bilimleri", "Sosyal bilimler", "Doğa bilimleri", "Tüm cevaplar doğru"]),
-           ("Konunun temel amacı nedir?", ["Analiz", "Çalışma", "Geliştirme", "Yukarıdakilerin hepsi"]),
-           ("Hangi yıl önemli bir aşama olarak kabul edilir?", ["2020", "2021", "2022", "2023"]),
-           ("Konuyla ilgili hangi terim var?", ["Terim A", "Terim B", "Terim C", "Hepsi"]),
-           ("Bu sürecin ana sonucu nedir?", ["Sonuç A", "Sonuç B", "Sonuç C", "Hepsi"]),
-           ("Bu alana kim katkıda bulundu?", ["Bilim insanı A", "Bilim insanı B", "Bilim insanı C", "Hepsi"]),
-           ("Konunun pratik önemi nedir?", ["Yüksek", "Orta", "Düşük", "Önemsiz"]),
-           ("Hangi yöntem daha etkilidir?", ["Yöntem A", "Yöntem B", "Yöntem C", "Hepsi"]),
-           ("Gelecekte hangi değişiklikler bekleniyor?", ["İyileşme", "Değişiklik yok", "Kötüleşme", "Bilinmiyor"])],
-    "de": [("Was ist das Hauptkonzept des Themas?", ["Hauptkonzept", "Zweite Option", "Dritte Option", "Vierte Option"]),
-           ("Zu welchem Bereich gehört dieses Gebiet?", ["Exakte Wissenschaften", "Sozialwissenschaften", "Naturwissenschaften", "Alle Antworten sind richtig"]),
-           ("Was ist das Hauptziel des Themas?", ["Analyse", "Studium", "Entwicklung", "Alles oben Genannte"]),
-           ("Welches Jahr gilt als wichtiger Meilenstein?", ["2020", "2021", "2022", "2023"]),
-           ("Welcher Begriff gehört zum Thema?", ["Begriff A", "Begriff B", "Begriff C", "Alle"]),
-           ("Was ist das Hauptergebnis dieses Prozesses?", ["Ergebnis A", "Ergebnis B", "Ergebnis C", "Alle"]),
-           ("Wer hat zu diesem Bereich beigetragen?", ["Wissenschaftler A", "Wissenschaftler B", "Wissenschaftler C", "Alle"]),
-           ("Welche praktische Bedeutung hat das Thema?", ["Hoch", "Mittel", "Niedrig", "Unbedeutend"]),
-           ("Welche Methode ist effektiver?", ["Methode A", "Methode B", "Methode C", "Alle"]),
-           ("Welche Veränderungen werden in Zukunft erwartet?", ["Verbesserung", "Keine Veränderung", "Verschlechterung", "Unbekannt"])],
-    "fr": [("Quel est le concept principal du sujet ?", ["Concept principal", "Deuxième option", "Troisième option", "Quatrième option"]),
-           ("À quel domaine appartient ce domaine ?", ["Sciences exactes", "Sciences sociales", "Sciences naturelles", "Toutes les réponses sont correctes"]),
-           ("Quel est l'objectif principal du sujet ?", ["Analyse", "Étude", "Développement", "Tout ce qui précède"]),
-           ("Quelle année est considérée comme une étape importante ?", ["2020", "2021", "2022", "2023"]),
-           ("Quel terme est lié au sujet ?", ["Terme A", "Terme B", "Terme C", "Tous"]),
-           ("Quel est le résultat principal de ce processus ?", ["Résultat A", "Résultat B", "Résultat C", "Tous"]),
-           ("Qui a contribué à ce domaine ?", ["Scientifique A", "Scientifique B", "Scientifique C", "Tous"]),
-           ("Quelle est l'importance pratique du sujet ?", ["Élevée", "Moyenne", "Faible", "Insignifiante"]),
-           ("Quelle méthode est plus efficace ?", ["Méthode A", "Méthode B", "Méthode C", "Toutes"]),
-           ("Quels changements sont attendus à l'avenir ?", ["Amélioration", "Aucun changement", "Détérioration", "Inconnu"])]
-}
+# ===== Yordamchi funksiyalar =====
+def _clean_text(text):
+    """AI qaytargan matndan JSON qoldiqlari va ortiqcha belgilarni tozalash."""
+    if not text: return ""
+    
+    # 1. Agar butun matn JSON bo'lsa, undan kerakli qiymatlarni ajratib olish
+    try:
+        data = json.loads(text)
+        extracted = []
+        if isinstance(data, dict):
+            for k, v in data.items():
+                if isinstance(v, str) and len(v) > 20:
+                    extracted.append(v)
+                elif isinstance(v, dict):
+                    for sub_k, sub_v in v.items():
+                        if isinstance(sub_v, str) and len(sub_v) > 20:
+                            extracted.append(sub_v)
+        if extracted:
+            return "\n\n".join(extracted)
+    except Exception:
+        pass
+
+    # 2. Matn ichidagi JSON bloklarini (kalit: qiymat) olib tashlash
+    text = re.sub(r'"[^"]+"\s*:\s*\{[^{}]*\}', '', text)
+    text = re.sub(r'"[^"]+"\s*:\s*"[^"]*"', '', text)
+    text = re.sub(r'\{[^{}]*\}', '', text)
+    text = re.sub(r'\[[^\[\]]*\]', '', text)
+    
+    # 3. Ortiqcha belgilarni tozalash
+    text = text.replace('\\n', '\n').replace('\\"', '"').replace("\\'", "'")
+    text = re.sub(r'[^\x00-\x7F\u0400-\u04FF\u0600-\u06FF\u0100-\u017F\u1E00-\u1EFF\u2018-\u201F\u2022\u00AB\u00BB\u2013\u2014]', '', text)
+    text = re.sub(r'^"|"$', '', text, flags=re.MULTILINE)
+    text = re.sub(r'\n{3,}', '\n\n', text)
+    
+    return text.strip()
 
 def _set_cell_bg(cell, color_hex):
     tcPr = cell._tc.get_or_add_tcPr()
@@ -573,7 +546,7 @@ def _parse_author(author, lbl):
             result.append((labels[i] if i < len(labels) else labels[-1], line))
     return result
 
-# ===== MAXSUS REFERAT YARATISH (Til aralashuvisiz, faqat tanlangan tilda) =====
+# ===== MAXSUS REFERAT YARATISH =====
 def _generate_special_referat(doc, topic, content_text, author, extra_data, lbl, lang):
     """Namunadagi kabi chiroyli va toza Referat yaratish. Barcha matnlar qat'iy tanlangan tilda."""
     data = extra_data or {}
@@ -639,7 +612,7 @@ def _generate_special_referat(doc, topic, content_text, author, extra_data, lbl,
     
     doc.add_page_break()
 
-    # 2. MUNDARIJA (Dinamik tarzda tarjima qilinadi)
+    # 2. MUNDARIJA
     _add_heading(doc, lbl["toc"], level=1, center=True)
     
     chapters = _chapters_for("referat", lang)
@@ -660,12 +633,32 @@ def _generate_special_referat(doc, topic, content_text, author, extra_data, lbl,
         r.font.size = Pt(14); r.font.name = "Times New Roman"
     doc.add_page_break()
 
-    # 3. ASOSIY MATN
-    lines = content_text.split("\n")
+    # 3. ASOSIY MATN (Tozalangan)
+    clean_content = _clean_text(content_text)
+    lines = clean_content.split("\n")
+    
+    # Agar matn juda qisqa bo'lsa yoki bo'sh bo'lsa, zaxira matn qo'shamiz
+    if len(clean_content) < 100:
+        _add_heading(doc, lbl["intro"], level=1, center=True)
+        _add_para(doc, _loc("relevance", lang, topic))
+        _add_para(doc, _loc("goal", lang, topic))
+        doc.add_page_break()
+        _add_heading(doc, f'{lbl["chapter"]} 1. {_ph("theor_found", lang)}', level=1)
+        _add_para(doc, _loc("chapter_fb", lang).format(title=_ph("theor_found", lang)))
+        doc.add_page_break()
+        _add_heading(doc, f'{lbl["chapter"]} 2. {_ph("analys_pract", lang)}', level=1)
+        _add_para(doc, _loc("chapter_fb", lang).format(title=_ph("analys_pract", lang)))
+        doc.add_page_break()
+        _add_heading(doc, lbl["conclusion"], level=1, center=True)
+        for pt in [_loc(f"concl{i}", lang, topic) for i in range(1, 5)]: _add_para(doc, pt, indent=False)
+        doc.add_page_break()
+        _add_references(doc, topic, lbl)
+        buf = io.BytesIO(); doc.save(buf); buf.seek(0)
+        return buf
+
     for line in lines:
         line = line.strip()
         if not line: 
-            doc.add_paragraph()
             continue
             
         # Sarlavhalarni aniqlash va formatlash (qat'iy tanlangan tilda)
