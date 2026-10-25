@@ -227,7 +227,7 @@ async def adm_set_price_save(message: Message, state: FSMContext):
     await message.answer(t("adm_price_saved", lang, name=service_name(code, lang), amount=amt))
 
 # ===== Referal bonus =====
-@router.message(F.text.contains("🎁") | F.text.contains("Referal") | F.text.contains("Реферал"))
+@router.message(F.from_user.id == config.ADMIN_ID, F.text == "🎁 Referal bonus")
 async def adm_ref(message: Message, state: FSMContext):
     if not is_admin(message.from_user.id): return
     lang = await _admin_lang()
