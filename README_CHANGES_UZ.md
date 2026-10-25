@@ -1,27 +1,14 @@
-# Yangilangan AI Slide Bot — o‘zgarishlar
+AI Slide Bot — Render import hotfix
 
-## Yangi taqdimot generatori
-- 3 dizayn: **Temuriylar (ko‘k/oltin)**, **Ilmiy tabiat (yashil)** va **Minimal premium**.
-- Dizayn tanlovi slayd sonidan mustaqil. Barcha dizaynlar 5, 7, 10, 12, 15, 18, 20, 25 yoki 30 slayd yaratadi.
-- Taqdimotda muqova, mazmun/reja, asosiy slaydlar va yakuniy xulosa/rahmat sahifasi bo‘ladi.
-- Taqdimot generatoridagi barcha statik matnlar o‘zbek, rus, ingliz, turk, nemis va fransuz tillariga moslangan.
+Bu arxiv faqat bir xil versiyada ishlashi kerak bo‘lgan o‘zaro bog‘liq fayllarni o‘z ichiga oladi.
 
-## Xizmatlar oldindan so‘raydigan ma’lumotlar
-- Taqdimot: mavzu, fan, hujjat tili, slaydlar soni, dizayn va muallif.
-- Referat, mustaqil ish, kurs ishi va diplom ishi: hajm, til, fan, muassasa, fakultet, kafedra/yo‘nalish, muallif va tekshiruvchi/rahbar.
-- Insho, test, maqola va tezis: xizmatga tegishli hajm/so‘z/savol soni, til, fan va muallif.
-- Hujjatlar DOCX va PDF tanlovini qo‘llab-quvvatlaydi (PDF konvertatsiyasi muhitda LibreOffice bo‘lishiga bog‘liq).
+Qo‘llash:
+1. Arxivni kompyuterga yuklab oling va oching.
+2. Ichidagi fayllarni GitHub repozitoriyingizning ildiz papkasiga aynan shu yo‘llar bo‘yicha ko‘chiring va mavjud fayllarni almashtiring.
+3. `handlers/creation.py` `handlers` papkasi ichida qolishi kerak.
+4. Barcha almashtirilgan fayllarni bitta commit qilib GitHub’ga yuboring.
+5. Render’da deploy logini tekshiring.
 
-## Hujjat namunalariga moslash
-- DOCX shriftlari Times New Roman, A4 sahifa va akademik chet maydonlari bilan tayyorlanadi.
-- Titul varaqlari va kompakt sarlavhalar tanlangan tilga moslashtirildi.
-- Yetishmayotgan generator yordamchi funksiyalari va test fallback savollari qo‘shildi.
+Bu hotfix `localize_topic` va `slide_count_kb` importlarining versiya nomuvofiqligini hal qilishga, мөн `creation.py` bilan холбоқ `designs.py`, `states.py`, `texts.py` ва generatorларни бир хил версияга келтиришга қаратилган.
 
-## Maxfiy sozlamalar
-Yangi versiyada maxfiy kalitlar kod ichida saqlanmaydi. Ishga tushirishdan oldin hostingda yoki `.env` faylida quyidagilarni sozlang:
-`BOT_TOKEN`, `ADMIN_ID`, `AI_API_KEY`, `WEB_ADMIN_PASSWORD`, `WEB_ADMIN_SECRET_KEY`.
-
-Oldingi versiyada kod ichida bo‘lgan token yoki API kalitlari oshkor bo‘lgan deb qaralishi kerak. BotFather va tegishli AI provayder orqali ularni yangilang. `.env` faylini Git orqali yuklamang.
-
-## Sinov holati
-Python sintaksisi va generatorlar uchun lokal sinovlar bajarilishi kerak. Telegram handlerlarini to‘liq ishga tushirish uchun `requirements.txt` dagi bog‘liqliklarni o‘rnating va haqiqiy, yangi muhit o‘zgaruvchilarini sozlang.
+Muhim: bu deployning barcha runtime xatolari bartaraf bo‘lganini anglatmaydi. Yangi loglar bo‘lsa, eng oxirgi Traceback qismini tekshirish kerak. `.env` faylini GitHub’ga yuklamang va tokenlarni kodga joylamang.
