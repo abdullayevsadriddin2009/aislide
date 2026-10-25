@@ -43,21 +43,20 @@ API_LIST = [
         "type": "openai",
         "models": ["qwen/qwen3.8-27b", "openai/gpt-oss-120b", "openai/gpt-oss-20b", "allam-2-7b"]
     },
+    {
+        "name": "Cloudflare AI (zaxira)",
+        "base_url": "https://api.cloudflare.com/client/v4/accounts/283bb72354435f9cfd19a80c3edc93e0/ai/run",
+        "api_key": os.getenv("CLOUDFLARE_KEY", ""),
+        "type": "cloudflare",
+        "models": [
+            "@cf/meta/llama-3.1-8b-instruct",
+            "@cf/meta/llama-3.2-3b-instruct",
+            "@cf/qwen/qwen3.8-27b",
+            "@cf/google/gemma-7b-it-lora"
+        ]
+    },  # ← BU VERGUL AVVAL YO'Q EDI!
 
-  {
-    "name": "Cloudflare AI (zaxira)",
-    "base_url": "https://api.cloudflare.com/client/v4/accounts/283bb72354435f9cfd19a80c3edc93e0/ai/run",
-    "api_key": os.getenv("CLOUDFLARE_KEY", ""),
-    "type": "cloudflare",
-    "models": [
-        "@cf/meta/llama-3.1-8b-instruct",
-        "@cf/meta/llama-3.2-3b-instruct",
-        "@cf/qwen/qwen3.8-27b",
-        "@cf/google/gemma-7b-it-lora"
-    ]
-}
-
-    # ============ GOOGLE (2 kalit = 2 barobar quota, 10 model) ============
+    # ============ GOOGLE (2 kalit = 2 barobar quota) ============
     {
         "name": "Google AI 1",
         "base_url": "https://generativelanguage.googleapis.com/v1beta",
@@ -79,11 +78,10 @@ API_LIST = [
             "gemini-3.6-flash", "gemini-3.5-flash", "gemini-2.5-flash",
             "gemini-3-flash-preview", "gemini-3.5-flash-lite",
             "gemini-3.1-flash-lite", "gemini-3.1-flash-lite-preview",
-            "gemini-flash-lite-latest", "gemma-4-31b-it", "gemma-4--26b-a4b-it"
+            "gemini-flash-lite-latest", "gemma-4-31b-it", "gemma-4-26b-a4b-it"
+            # Avval: "gemma-4--26b-a4b-it" → ikkita chiziqcha bor edi, tuzatildi
         ]
     }
-    # OpenRouter o'chirilgan (kalit o'lik)
-    # Local FreeLLMAPI o'chirilgan (Render'da yo'q)
 ]
 
 CURRENT_API_INDEX = 0
