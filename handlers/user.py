@@ -1,4 +1,5 @@
 from aiogram import Router, F, types
+import re
 from aiogram.filters import Command, CommandStart, CommandObject
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.fsm.context import FSMContext
@@ -130,8 +131,9 @@ async def cmd_start(message: Message, command: CommandObject, state: FSMContext)
         pass
 
 # ===== Tilni o'zgartirish tugmasi =====
-@router.message(F.text.contains("Tilni") | F.text.contains("язык") | F.text.contains("anguage") | F.text.contains("🌐"))
-async def btn_change_lang(message: Message):
+@router.message(F.text.in_(btn_all("btn_lang")))
+async def btn_change_lang(message: Message, state: FSMContext):
+    await state.clear()
     await message.answer(t("choose_bot_lang", "uz"), reply_markup=bot_lang_kb())
 
 @router.message(Command("help"))
@@ -225,7 +227,7 @@ _BALANCE_WORDS = ["Balans", "Баланс", "Balance", "balance"]
 _REFERRAL_WORDS = ["Referal", "Реферал", "Referral", "referral"]
 _HELP_WORDS = ["Yordam", "Помощь", "Help", "help"]
 
-@router.message(F.text.contains("Yaratish") | F.text.contains("Создать") | F.text.contains("Create") | F.text.contains("Начать"))
+@router.message(F.text.in_(btn_all("btn_create")))
 async def btn_create(message: Message, state: FSMContext):
     if not await _is_subscribed(message.bot, message.from_user.id):
         lang = await _lang(message.from_user.id)
@@ -237,7 +239,7 @@ async def btn_create(message: Message, state: FSMContext):
 
 # ===== 💬 AI CHAT =====
 @router.message(Command("chat"))
-@router.message(F.text.contains("AI Chat") | F.text.contains("ИИ Чат") | F.text.contains("Chat") | F.text.contains("Чат"))
+@router.message(F.text.in_(btn_all("btn_chat")))
 async def btn_chat(message: Message, state: FSMContext):
     if not await _is_subscribed(message.bot, message.from_user.id):
         lang = await _lang(message.from_user.id)
@@ -249,46 +251,68 @@ async def btn_chat(message: Message, state: FSMContext):
 
 @router.message(Chat.active)
 async def chat_handle(message: Message, state: FSMContext):
-    txt = message.text or ""
+    txt = (message.text or "").strip()
     lang = await _lang(message.from_user.id)
-    # Asosiy menyu tugmasi bosilsa — chat rejimidan chiqish
-    menu_words = _BALANCE_WORDS + _REFERRAL_WORDS + _CREATE_WORDS + _HELP_WORDS + _CHAT_WORDS + ["Tilni", "язык", "anguage"]
-    if any(k.lower() in txt.lower() for k in menu_words):
-        await state.clear()
-        if any(k.lower() in txt.lower() for k in _BALANCE_WORDS):
-            await cmd_balance(message); return
-        if any(k.lower() in txt.lower() for k in _REFERRAL_WORDS):
-            await cmd_referral(message, state); return
-        if any(k.lower() in txt.lower() for k in _CREATE_WORDS):
+    normalized = re.sub(r"\s+", " ", txt)
+
+    # Only an exact reply-keyboard label is a menu action. Keywords inside a long user prompt
+    # (for example "help", "create", "balance", or "chat") must stay inside AI chat.
+    menu_keys = ("btn_balance", "btn_referral", "btn_create", "btn_help", "btn_chat", "btn_lang")
+    matched_key = next((key for key in menu_keys if normalized in {x.strip() for x in btn_all(key)}), None)
+    if matched_key:
+        if matched_key == "btn_balance":
+            await state.clear(); await cmd_balance(message); return
+        if matched_key == "btn_referral":
+            await state.clear(); await cmd_referral(message, state); return
+        if matched_key == "btn_create":
             await btn_create(message, state); return
-        if any(k.lower() in txt.lower() for k in _HELP_WORDS):
-            await cmd_help(message); return
-        if any(k.lower() in txt.lower() for k in _CHAT_WORDS):
-            await btn_chat(message, state); return
-        return
+        if matched_key == "btn_help":
+            await state.clear(); await cmd_help(message); return
+        if matched_key == "btn_chat":
+            await state.set_state(Chat.active)
+            await message.answer(t("chat_start", lang)); return
+        if matched_key == "btn_lang":
+            await state.clear()
+            await message.answer(t("choose_bot_lang", lang), reply_markup=bot_lang_kb()); return
+
     from ai_api import chat_answer
     thinking = await message.answer(t("chat_thinking", lang))
-    answer = await chat_answer(message.text, user_lang=lang)
-    try:
-        if answer:
-            await thinking.edit_text(answer[:4000])
-        else:
-            await thinking.edit_text(t("chat_failed", lang))
-    except Exception:
-        if answer:
-            await message.answer(answer[:4000])
-        else:
-            await message.answer(t("chat_failed", lang))
+    answer = await chat_answer(txt, user_lang=lang)
+    if not answer:
+        await thinking.edit_text(t("chat_failed", lang))
+        return
 
-@router.message(F.text.contains("Balans") | F.text.contains("Баланс") | F.text.contains("Balance"))
+    # Telegram messages have a 4096-character limit; send long answers in chunks rather than
+    # silently cutting the answer off. Keep plain text to avoid parse-mode failures on AI output.
+    chunks = []
+    remaining = answer.strip()
+    limit = 3800
+    while len(remaining) > limit:
+        cut = remaining.rfind("\n", 0, limit)
+        if cut < limit // 2:
+            cut = remaining.rfind(" ", 0, limit)
+        if cut < limit // 2:
+            cut = limit
+        chunks.append(remaining[:cut].strip())
+        remaining = remaining[cut:].strip()
+    if remaining:
+        chunks.append(remaining)
+    try:
+        await thinking.edit_text(chunks[0], parse_mode=None)
+    except Exception:
+        await message.answer(chunks[0], parse_mode=None)
+    for chunk in chunks[1:]:
+        await message.answer(chunk, parse_mode=None)
+
+@router.message(F.text.in_(btn_all("btn_balance")))
 async def btn_balance(message: Message):
     await cmd_balance(message)
 
-@router.message(F.text.contains("Referal") | F.text.contains("Реферал") | F.text.contains("Referral"))
+@router.message(F.text.in_(btn_all("btn_referral")))
 async def btn_referral(message: Message, state: FSMContext):
     await cmd_referral(message, state)
 
-@router.message(F.text.contains("Yordam") | F.text.contains("Помощь") | F.text.contains("Help"))
+@router.message(F.text.in_(btn_all("btn_help")))
 async def btn_help(message: Message):
     await cmd_help(message)
 
