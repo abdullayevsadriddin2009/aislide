@@ -44,40 +44,18 @@ API_LIST = [
         "models": ["qwen/qwen3.8-27b", "openai/gpt-oss-120b", "openai/gpt-oss-20b", "allam-2-7b"]
     },
 
-    # ============ CLOUDFLARE (24 model, hammasi 200) ============
-    {
-        "name": "Cloudflare AI (zaxira)",
-        "base_url": "https://api.cloudflare.com/client/v4/accounts/283bb72354435f9cfd19a80c3edc93e0/ai/run",
-        "api_key": os.getenv("CLOUDFLARE_KEY", ""),
-        "type": "cloudflare",
-        "models": [
-            # eng kuchlilar birinchi
-            "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
-            "@cf/nvidia/nemotron-3-120b-a12b",
-            "@cf/openai/gpt-oss-120b",
-            "@cf/meta/llama-4-scout-17b-16e-instruct",
-            "@cf/mistralai/mistral-small-3.1-24b-instruct",
-            "@cf/deepseek-ai/deepseek-r1-distill-qwen-32b",
-            "@cf/qwen/qwen2.5-coder-32b-instruct",
-            "@cf/qwen/qwq-32b",
-            "@cf/qwen/qwen3.8-27b",
-            "@cf/qwen/qwen3-30b-a3b-fp8",
-            "@cf/aisingapore/gemma-sea-lion-v4-27b-it",
-            "@cf/zai-org/glm-4.7-flash",
-            "@cf/google/gemma-4-26b-a4b-it",
-            "@cf/meta/llama-3.1-8b-instruct-fp8",
-            "@cf/ibm-granite/granite-4.0-h-micro",
-            "@cf/google/gemma-7b-it-lora",
-            "@cf/mistral/mistral-7b-instruct-v0.2-lora",
-            "@cf/meta/llama-3.2-3b-instruct",
-            "@cf/meta-llama/llama-2-7b-chat-hf-lora",
-            "@cf/google/gemma-2b-it-lora",
-            "@cf/meta/llama-3.2-1b-instruct",
-            # quyidagilar ishlaydi lekin chat emas (ohirga qo'yildi):
-            "@cf/meta/llama-guard-3-8b",        # moderation/guard
-            "@cf/daily-co/phonellm-mini-alpha-2" # voice/telefon
-        ]
-    },
+  {
+    "name": "Cloudflare AI (zaxira)",
+    "base_url": "https://api.cloudflare.com/client/v4/accounts/283bb72354435f9cfd19a80c3edc93e0/ai/run",
+    "api_key": os.getenv("CLOUDFLARE_KEY", ""),
+    "type": "cloudflare",
+    "models": [
+        "@cf/meta/llama-3.1-8b-instruct",
+        "@cf/meta/llama-3.2-3b-instruct",
+        "@cf/qwen/qwen3.8-27b",
+        "@cf/google/gemma-7b-it-lora"
+    ]
+}
 
     # ============ GOOGLE (2 kalit = 2 barobar quota, 10 model) ============
     {
