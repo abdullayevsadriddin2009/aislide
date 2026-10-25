@@ -2,7 +2,7 @@ from aiogram.types import (ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMa
 from texts import t
 from services import SERVICES, service_name
 # Eski dizaynlarga tegishli importlar olib tashlandi
-from designs import SUBJECT_KEYS, subject_name, LANGUAGES
+from designs import SUBJECT_KEYS, subject_name, LANGUAGES, DESIGNS, design_name
 
 # ===== Asosiy menyu =====
 def main_kb(lang="uz"):
@@ -80,6 +80,9 @@ def option_kb_for(service, lang="uz"):
     elif ot == "questions":
         for v in [10, 20, 30, 50]:
             rows.append([InlineKeyboardButton(text=f"✅ {t('questions_label', lang, n=v)}", callback_data=f"opt:questions:{v}")])
+    elif ot == "words":
+        for v in [250, 500, 750, 1000, 1500, 2000]:
+            rows.append([InlineKeyboardButton(text=f"✍️ {t('words_label', lang, n=v)}", callback_data=f"opt:words:{v}")])
     rows.append([InlineKeyboardButton(text=t("btn_cancel", lang), callback_data="cancel")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
@@ -90,6 +93,8 @@ def option_label(service, options, lang="uz"):
         return t("pages_label", lang, n=options.get("pages", 10))
     if ot == "questions":
         return t("questions_label", lang, n=options.get("questions", 10))
+    if ot == "words":
+        return t("words_label", lang, n=options.get("words", 250))
     return "—"
 
 # ===== Tasdiqlash =====
@@ -113,15 +118,36 @@ def subjects_kb(detected_key, lang="uz"):
         rows.append(row)
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
-# ===== YANGI: Taqdimot shablonlarini tanlash =====
+# ===== Taqdimot slaydlar soni =====
+def slide_count_kb(lang="uz"):
+    rows = []
+    counts = (5, 7, 10, 12, 15, 18, 20, 25, 30)
+    labels = {
+        "uz": "{n} ta slayd", "ru": "{n} слайдов", "en": "{n} slides",
+        "tr": "{n} slayt", "de": "{n} Folien", "fr": "{n} diapositives",
+    }
+    for i in range(0, len(counts), 3):
+        row = [InlineKeyboardButton(
+            text=f"📊 {labels.get(lang, labels['en']).format(n=n)}",
+            callback_data=f"scnt:{n}"
+        ) for n in counts[i:i+3]]
+        rows.append(row)
+    rows.append([InlineKeyboardButton(text=t("btn_cancel", lang), callback_data="cancel")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+# ===== Taqdimot dizayni: 3 ta mustaqil variant =====
 def template_kb(lang="uz"):
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🥇 Gold Shablon (10 slayd)", callback_data="tmpl:10")],
-        [InlineKeyboardButton(text="🟢 Green Shablon (15 slayd)", callback_data="tmpl:15")],
-        [InlineKeyboardButton(text="🍷 Wine Shablon (20 slayd)", callback_data="tmpl:20")],
-        [InlineKeyboardButton(text="🌊 Teal Shablon (25 slayd)", callback_data="tmpl:25")],
-        [InlineKeyboardButton(text=t("btn_cancel", lang), callback_data="cancel")],
-    ])
+    """Three new presentation designs, with names localized to the selected language."""
+    rows = []
+    for key in ("modern", "nature", "elegant"):
+        design = DESIGNS[key]
+        label = design_name(key, lang)
+        rows.append([InlineKeyboardButton(
+            text=f"{design['emoji']} {label}",
+            callback_data=f"tmpl:{key}"
+        )])
+    rows.append([InlineKeyboardButton(text=t("btn_cancel", lang), callback_data="cancel")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 # ===== Chek ko'rib chiqish =====
 def check_review_kb(check_id, lang="uz"):
