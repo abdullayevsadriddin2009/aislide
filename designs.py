@@ -1,91 +1,27 @@
-# ===== Dizayn shablonlari (PPTX uchun rang palitralari) — 6 tilda =====
-# Ikki asosiy tema (foydalanuvchi namunaviy fayllariga to'liq mos):
-#   "temurid" — To'q ko'k #1B2A41 + Oltin #C9A227 (Amir Temur shabloni)
-#   "biolog"  — To'q yashil #1B4332 + Yashil #4ADE80 (Hujayra shabloni)
+# ===== Yangi taqdimot dizaynlari (faqat 3 ta faol variant) =====
 DESIGNS = {
-    "temurid": {
+    "modern": {
         "emoji": "🏛️",
-        "name_uz": "Temuriylar (ko'k+oltin)", "name_ru": "Тимуриды (синий+золото)", "name_en": "Timurid (navy+gold)",
-        "name_tr": "Timuri (lacivert+altın)", "name_de": "Timurid (marine+gold)", "name_fr": "Timouride (bleu+or)",
-        "bg": (255, 250, 240), "primary": (27, 42, 65), "secondary": (120, 120, 120),
-        "accent": (201, 162, 39), "title_font": "Playfair Display", "body_font": "Noto Sans",
-        "style": "timurid", "dark_close": (27, 42, 65), "light_text": (220, 225, 230),
-    },
-    "biolog": {
-        "emoji": "🌿",
-        "name_uz": "Tabiat (yashil)", "name_ru": "Природа (зелёный)", "name_en": "Nature (green)",
-        "name_tr": "Doğa (yeşil)", "name_de": "Natur (grün)", "name_fr": "Nature (vert)",
-        "bg": (250, 255, 250), "primary": (27, 42, 65), "secondary": (120, 120, 120),
-        "accent": (45, 106, 79), "title_font": "Playfair Display", "body_font": "Noto Sans",
-        "style": "biolog", "dark_close": (27, 67, 50), "light_text": (210, 230, 215),
-        "accent_bright": (74, 222, 128),
-    },
-    "marmar": {
-        "emoji": "🪨",
-        "name_uz": "Marmar", "name_ru": "Мрамор", "name_en": "Marble",
-        "name_tr": "Mermer", "name_de": "Marmor", "name_fr": "Marbre",
-        "bg": (250, 248, 245), "primary": (60, 60, 65), "secondary": (160, 150, 140),
-        "accent": (180, 160, 140), "title_font": "Playfair Display", "body_font": "Noto Sans",
-        "style": "elegant", "dark_close": (60, 60, 65), "light_text": (230, 228, 225),
-    },
-    "oltin": {
-        "emoji": "✨",
-        "name_uz": "Oltin", "name_ru": "Золотой", "name_en": "Golden",
-        "name_tr": "Altın", "name_de": "Gold", "name_fr": "Or",
-        "bg": (255, 252, 240), "primary": (80, 60, 20), "secondary": (180, 140, 40),
-        "accent": (212, 175, 55), "title_font": "Playfair Display", "body_font": "Noto Sans",
-        "style": "luxury", "dark_close": (80, 60, 20), "light_text": (245, 240, 220),
-    },
-    "davlat": {
-        "emoji": "🏛️",
-        "name_uz": "Davlat", "name_ru": "Государственный", "name_en": "Official",
-        "name_tr": "Resmi", "name_de": "Offiziell", "name_fr": "Officiel",
-        "bg": (245, 247, 250), "primary": (20, 40, 80), "secondary": (60, 90, 140),
-        "accent": (180, 140, 40), "title_font": "Playfair Display", "body_font": "Noto Sans",
-        "style": "official", "dark_close": (20, 40, 80), "light_text": (220, 228, 240),
-    },
-    "minimal": {
-        "emoji": "⬛",
-        "name_uz": "Minimal", "name_ru": "Минимализм", "name_en": "Minimalist",
-        "name_tr": "Minimal", "name_de": "Minimal", "name_fr": "Minimaliste",
-        "bg": (255, 255, 255), "primary": (20, 20, 20), "secondary": (100, 100, 100),
-        "accent": (20, 20, 20), "title_font": "Playfair Display", "body_font": "Noto Sans",
-        "style": "minimal", "dark_close": (20, 20, 20), "light_text": (230, 230, 230),
+        "name_uz": "Temuriylar — ko‘k va oltin", "name_ru": "Тимуриды — синий и золото", "name_en": "Timurid — navy and gold",
+        "name_tr": "Timurlu — lacivert ve altın", "name_de": "Timuriden — Marineblau und Gold", "name_fr": "Timouride — bleu nuit et or",
     },
     "nature": {
         "emoji": "🌿",
-        "name_uz": "Tabiat", "name_ru": "Природа", "name_en": "Nature",
-        "name_tr": "Doğa", "name_de": "Natur", "name_fr": "Nature",
-        "bg": (245, 250, 245), "primary": (30, 70, 40), "secondary": (80, 130, 90),
-        "accent": (45, 106, 79), "title_font": "Playfair Display", "body_font": "Noto Sans",
-        "style": "fresh", "dark_close": (27, 67, 50), "light_text": (210, 230, 215),
-        "accent_bright": (74, 222, 128),
+        "name_uz": "Ilmiy tabiat — yashil", "name_ru": "Научная природа — зелёный", "name_en": "Scientific nature — green",
+        "name_tr": "Bilimsel doğa — yeşil", "name_de": "Wissenschaftliche Natur — Grün", "name_fr": "Nature scientifique — vert",
     },
-    "ai_dark": {
-        "emoji": "🌌",
-        "name_uz": "AI Dizayn", "name_ru": "ИИ-дизайн", "name_en": "AI Design",
-        "name_tr": "AI Tasarım", "name_de": "KI-Design", "name_fr": "Design IA",
-        "bg": (245, 247, 252), "primary": (20, 40, 80), "secondary": (100, 140, 220),
-        "accent": (40, 90, 180), "title_font": "Playfair Display", "body_font": "Noto Sans",
-        "style": "modern", "dark_close": (15, 20, 35), "light_text": (200, 220, 255),
-    },
-    "burgundiya": {
-        "emoji": "🍷",
-        "name_uz": "Burgundiya", "name_ru": "Бургундия", "name_en": "Burgundy",
-        "name_tr": "Bordo", "name_de": "Burgund", "name_fr": "Bourgogne",
-        "bg": (252, 245, 245), "primary": (90, 20, 35), "secondary": (140, 50, 60),
-        "accent": (128, 0, 32), "title_font": "Playfair Display", "body_font": "Noto Sans",
-        "style": "classic", "dark_close": (90, 20, 35), "light_text": (240, 225, 228),
+    "elegant": {
+        "emoji": "✨",
+        "name_uz": "Minimal premium", "name_ru": "Минимализм премиум", "name_en": "Minimal premium",
+        "name_tr": "Minimal premium", "name_de": "Minimal Premium", "name_fr": "Minimal premium",
     },
 }
 
+
 def design_name(key, lang="uz"):
-    d = DESIGNS.get(key, DESIGNS["minimal"])
-    lang = str(lang).lower()
-    for k in (f"name_{lang}", "name_en", "name_uz", "name_ru"):
-        if d.get(k):
-            return d[k]
-    return key
+    """Return one of the three active, localized presentation design names."""
+    design = DESIGNS.get(key, DESIGNS["modern"])
+    return design.get(f"name_{str(lang).lower()}", design["name_en"])
 
 # Fanlar (subjects) — 6 tilda
 SUBJECTS = {
@@ -139,27 +75,19 @@ def lang_full_name(code, ui_lang="uz"):
     ui_lang = str(ui_lang).lower() if ui_lang in ALL_LANGS else "uz"
     return LANG_NAMES_FULL.get(code, {}).get(ui_lang, code)
 
-# Slayd soni + narx (so'm) — foydalanuvchi talabiga ko'ra 10/15/20/25 asosiy
+# Slayd soni va standart narxlar (so‘m). Dizayn tanlovi slayd sonidan mustaqil.
 SLIDE_COUNTS = [
     (10, 3000), (15, 4000), (20, 5000), (25, 6000),
     (5, 2000), (7, 2000), (12, 3000), (18, 4000), (30, 7000),
 ]
 
-# Fan asosida tema (temurid yoki biolog) tanlash — namunaviy 2 faylga mos
-def select_theme(subject_key, design_key=None):
-    """science fanlari → biolog (yashil); qolganlari → temurid (ko'k+oltin)."""
-    science = {"biologiya", "fizika", "kimyo", "matematika", "it", "tibbiyot"}
-    if design_key in ("biolog", "nature"):
-        return "biolog"
-    if design_key in ("temurid", "davlat", "oltin", "burgundiya", "marmar", "minimal", "ai_dark"):
-        return "temurid"
-    if subject_key in science:
-        return "biolog"
-    return "temurid"
+def select_theme(subject_key=None, design_key=None):
+    """Return a valid new design key; never auto-override the user's choice."""
+    return design_key if design_key in DESIGNS else "modern"
 
-def suggest_design(subject_key):
-    """Fan asosida dizayn tavsiya qilish — 2 asosiy tema."""
-    return select_theme(subject_key)
+def suggest_design(subject_key=None):
+    """Compatibility default; the bot now asks the user to choose explicitly."""
+    return "modern"
 
 def detect_subject_key(topic):
     """Mavzudan fan kalitini aniqlash."""
