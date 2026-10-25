@@ -1,14 +1,17 @@
-AI Slide Bot — Render import hotfix
+AISLIDE BOT — RUNTIME HOTFIX
 
-Bu arxiv faqat bir xil versiyada ishlashi kerak bo‘lgan o‘zaro bog‘liq fayllarni o‘z ichiga oladi.
+Ushbu patch 2 ta mavjud faylni almashtiradi:
+1. handlers/admin.py
+2. handlers/user.py
 
-Qo‘llash:
-1. Arxivni kompyuterga yuklab oling va oching.
-2. Ichidagi fayllarni GitHub repozitoriyingizning ildiz papkasiga aynan shu yo‘llar bo‘yicha ko‘chiring va mavjud fayllarni almashtiring.
-3. `handlers/creation.py` `handlers` papkasi ichida qolishi kerak.
-4. Barcha almashtirilgan fayllarni bitta commit qilib GitHub’ga yuboring.
-5. Render’da deploy logini tekshiring.
+Tuzatishlar:
+- Asosiy menyudagi "🎁 Referal" tugmasi admin panelidagi "🎁 Referal bonus" handleriga tushib qolmasligi uchun admin handler faqat ADMIN_ID va aniq admin tugmasiga bog'landi.
+- /balance va balans tugmasi foydalanuvchini bazadan topa olmasa TypeError bilan to'xtamasligi uchun db.ensure_user() va himoya tekshiruvlari qo'shildi.
 
-Bu hotfix `localize_topic` va `slide_count_kb` importlarining versiya nomuvofiqligini hal qilishga, мөн `creation.py` bilan холбоқ `designs.py`, `states.py`, `texts.py` ва generatorларни бир хил версияга келтиришга қаратилган.
+Qo'llash:
+1. ZIP ni oching.
+2. handlers/admin.py ni GitHub dagi handlers/admin.py bilan almashtiring.
+3. handlers/user.py ni GitHub dagi handlers/user.py bilan almashtiring.
+4. Ikkala faylni bitta commit bilan push qiling va Render redeployni kuting.
 
-Muhim: bu deployning barcha runtime xatolari bartaraf bo‘lganini anglatmaydi. Yangi loglar bo‘lsa, eng oxirgi Traceback qismini tekshirish kerak. `.env` faylini GitHub’ga yuklamang va tokenlarni kodga joylamang.
+MUHIM: TelegramConflictError boshqa alohida bot nusxasi ham shu token bilan getUpdates chaqirayotganini bildiradi. Bu patch uni o'zi bartaraf etmaydi. Bot shu token bilan ishlayotgan boshqa Render service, lokal kompyuter, Replit/AlwaysData yoki eski hosting jarayonini to'xtating. Bir vaqtning o'zida faqat bitta polling nusxasi ishlasin.
