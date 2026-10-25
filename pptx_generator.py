@@ -46,7 +46,8 @@ def _rect(slide, x, y, w, h, fill_rgb, line_rgb=None, rounded=False):
         pass
     return sp
 
-def _txt(slide, x, y, w, h, text, size=16, bold=False, rgb=(40,40,40), font="Arial", align=PP_ALIGN.LEFT, anchor=MSO_ANCHOR.TOP):
+# ✅ XATO TUZATILDI: italic va line_spacing parametrlari qo'shildi
+def _txt(slide, x, y, w, h, text, size=16, bold=False, rgb=(40,40,40), font="Arial", align=PP_ALIGN.LEFT, anchor=MSO_ANCHOR.TOP, italic=False, line_spacing=1.2):
     tb = slide.shapes.add_textbox(Inches(x), Inches(y), Inches(w), Inches(h))
     tf = tb.text_frame
     tf.word_wrap = True
@@ -56,12 +57,13 @@ def _txt(slide, x, y, w, h, text, size=16, bold=False, rgb=(40,40,40), font="Ari
     for i, ln in enumerate(lines):
         p = tf.paragraphs[0] if i == 0 else tf.add_paragraph()
         p.alignment = align
-        p.line_spacing = 1.2
+        p.line_spacing = line_spacing
         r = p.add_run()
         r.text = ln
         r.font.name = font
         r.font.size = Pt(size)
         r.font.bold = bold
+        r.font.italic = italic
         r.font.color.rgb = _rgb(rgb)
     return tb
 
