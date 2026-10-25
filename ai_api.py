@@ -28,7 +28,6 @@ MAX_CHUNK_PAGES = 3
 LONG_SERVICES = ("diplom", "kurs", "referat", "maqola")
 
 API_LIST = [
-    # ============ GROQ (2 kalit, 4 model) ============
     {
         "name": "Groq 1 (asosiy)",
         "base_url": "https://api.groq.com/openai/v1",
@@ -45,18 +44,15 @@ API_LIST = [
     },
     {
         "name": "Cloudflare AI (zaxira)",
-        "base_url": "https://api.cloudflare.com/client/v4/accounts/283bb72354435f9cfd19a80c3edc93e0/ai/run",
+        "base_url": "https://api.cloudflare.com/client/v4/accounts/283bb72354435f9cfd19a80c3edc93e0/ai/v1",
         "api_key": os.getenv("CLOUDFLARE_KEY", ""),
-        "type": "cloudflare",
+        "type": "openai",
         "models": [
             "@cf/meta/llama-3.1-8b-instruct",
             "@cf/meta/llama-3.2-3b-instruct",
-            "@cf/qwen/qwen3.8-27b",
-            "@cf/google/gemma-7b-it-lora"
+            "@cf/qwen/qwen3.8-27b"
         ]
-    },  # ← BU VERGUL AVVAL YO'Q EDI!
-
-    # ============ GOOGLE (2 kalit = 2 barobar quota) ============
+    },
     {
         "name": "Google AI 1",
         "base_url": "https://generativelanguage.googleapis.com/v1beta",
@@ -79,7 +75,6 @@ API_LIST = [
             "gemini-3-flash-preview", "gemini-3.5-flash-lite",
             "gemini-3.1-flash-lite", "gemini-3.1-flash-lite-preview",
             "gemini-flash-lite-latest", "gemma-4-31b-it", "gemma-4-26b-a4b-it"
-            # Avval: "gemma-4--26b-a4b-it" → ikkita chiziqcha bor edi, tuzatildi
         ]
     }
 ]
