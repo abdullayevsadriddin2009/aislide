@@ -972,6 +972,95 @@ def _parse_essay_sections(content_text):
     return parts[0], parts[1], parts[2]
 
 
+ESSAY_PLAN_TITLES = {
+    "uz": "REJA",
+    "ru": "ПЛАН",
+    "en": "OUTLINE",
+    "tr": "PLAN",
+    "de": "GLIEDERUNG",
+    "fr": "PLAN",
+}
+
+
+def _fallback_essay_plan(topic, lang="uz"):
+    topic = str(topic or "mavzu").strip()
+    plans = {
+        "uz": [
+            f"Kirish: {topic} mavzusining mazmuni va ahamiyatini ochib berish.",
+            "Birinchi asosiy fikr: mavzuning kelib chiqishi va asosiy xususiyatlari.",
+            "Ikkinchi asosiy fikr: mavzuning ta’siri va tegishli misollar.",
+            "Uchinchi asosiy fikr: turli qarashlarni baholash va shaxsiy munosabat.",
+            "Xulosa: asosiy fikrlarni umumlashtirish va yakuniy saboq.",
+        ],
+        "ru": [
+            f"Введение: раскрыть содержание и значение темы «{topic}».",
+            "Первый основной тезис: происхождение темы и её главные особенности.",
+            "Второй основной тезис: влияние темы и соответствующие примеры.",
+            "Третий основной тезис: оценка разных взглядов и личная позиция.",
+            "Заключение: обобщить аргументы и сформулировать итог.",
+        ],
+        "en": [
+            f"Introduction: explain the meaning and significance of {topic}.",
+            "First main point: the topic’s background and key characteristics.",
+            "Second main point: its impact and relevant examples.",
+            "Third main point: assess different views and state a personal position.",
+            "Conclusion: summarize the arguments and draw a final lesson.",
+        ],
+        "tr": [
+            f"Giriş: {topic} konusunun anlamını ve önemini açıklamak.",
+            "Birinci ana fikir: konunun geçmişi ve temel özellikleri.",
+            "İkinci ana fikir: etkileri ve uygun örnekler.",
+            "Üçüncü ana fikir: farklı görüşleri değerlendirmek ve kişisel tutumu belirtmek.",
+            "Sonuç: savları özetlemek ve genel bir çıkarım yapmak.",
+        ],
+        "de": [
+            f"Einleitung: Bedeutung und Inhalt des Themas {topic} erläutern.",
+            "Erster Hauptgedanke: Hintergrund und wichtigste Merkmale des Themas.",
+            "Zweiter Hauptgedanke: Auswirkungen und passende Beispiele.",
+            "Dritter Hauptgedanke: verschiedene Ansichten prüfen und die eigene Position begründen.",
+            "Schluss: Argumente zusammenfassen und eine Schlussfolgerung ziehen.",
+        ],
+        "fr": [
+            f"Introduction : expliquer le sens et l’importance du sujet {topic}.",
+            "Première idée principale : contexte et caractéristiques du sujet.",
+            "Deuxième idée principale : effets du sujet et exemples pertinents.",
+            "Troisième idée principale : comparer les points de vue et présenter sa position.",
+            "Conclusion : résumer les arguments et tirer un bilan.",
+        ],
+    }
+    return plans.get(str(lang).lower(), plans["uz"])
+
+
+def _essay_plan_items(outline, topic, lang):
+    items = []
+    for raw in str(outline or "").splitlines():
+        line = re.sub(r"^\s*(?:\d+[.)]|[-*•])\s*", "", raw).strip()
+        if line and line.lower().rstrip(":") not in {"reja", "plan", "outline", "план", "gliederung", "taslak"}:
+            items.append(line)
+    if len(items) != 5 or any(len(line) > 260 for line in items):
+        items = _fallback_essay_plan(topic, lang)
+    return items
+
+
+def _remove_essay_section_headings(text):
+    """Remove any model-added Introduction/Main body/Conclusion labels from the essay text."""
+    heading = re.compile(
+        r"^\s*(?:#{1,6}\s*)?(?:(?:I{1,3}|[123])[.)]?\s*)?"
+        r"(?:KIRISH(?:\s+QISMI)?(?:\s*\([^)]*\))?|ASOSIY\s+QISM(?:\s*\([^)]*\))?|"
+        r"XULOSA(?:\s+QISMI)?(?:\s*\([^)]*\))?|INTRODUCTION|MAIN\s+BODY|CONCLUSION|"
+        r"ВВЕДЕНИЕ|ОСНОВНАЯ\s+ЧАСТЬ|ЗАКЛЮЧЕНИЕ|GİRİŞ(?:\s+BÖLÜMÜ)?|ANA\s+BÖLÜM|SONUÇ(?:\s+BÖLÜMÜ)?|"
+        r"EINLEITUNG|HAUPTTEIL|SCHLUSS|DÉVELOPPEMENT)\s*:??\s*$",
+        flags=re.IGNORECASE,
+    )
+    kept = []
+    for line in str(text or "").splitlines():
+        line = re.sub(r"^\s*[`*#]+\s*|\s*[`*#]+\s*$", "", line).strip()
+        if heading.match(line):
+            continue
+        kept.append(line)
+    return re.sub(r"\n\s*\n\s*\n+", "\n\n", "\n".join(kept)).strip()
+
+
 def _generate_essay(doc, topic, lang, content_text, author, lbl, extra_data=None):
     extra_data = extra_data or {}
     _add_compact_academic_header(
@@ -980,32 +1069,28 @@ def _generate_essay(doc, topic, lang, content_text, author, lbl, extra_data=None
         checker_label="supervisor_label", show_city_year=True
     )
     lc = str(lang).lower()
-    labels = ESSAY_SECTION_LABELS.get(lc, ESSAY_SECTION_LABELS["en"])
-    target_words = int(extra_data.get("essay_target_words", 320) or 320)
-    if target_words > 360:
-        titles = {
-            "uz": {"intro": labels["intro_plain"], "body": labels["body_plain"], "conclusion": labels["conclusion_plain"]},
-            "ru": {"intro": labels["intro_plain"], "body": labels["body_plain"], "conclusion": labels["conclusion_plain"]},
-            "en": {"intro": labels["intro_plain"], "body": labels["body_plain"], "conclusion": labels["conclusion_plain"]},
-            "tr": {"intro": labels["intro_plain"], "body": labels["body_plain"], "conclusion": labels["conclusion_plain"]},
-            "de": {"intro": labels["intro_plain"], "body": labels["body_plain"], "conclusion": labels["conclusion_plain"]},
-            "fr": {"intro": labels["intro_plain"], "body": labels["body_plain"], "conclusion": labels["conclusion_plain"]},
-        }.get(lc, labels)
-    else:
-        titles = labels
+    plan_title = ESSAY_PLAN_TITLES.get(lc, "OUTLINE")
+    outline = extra_data.get("essay_outline", "")
+    plan_items = _essay_plan_items(outline, topic, lc)
+
+    # Keep the cover information separate; the outline precedes the essay itself.
+    doc.add_page_break()
+    _add_heading(doc, plan_title, level=1, center=True)
+    for index, item in enumerate(plan_items, 1):
+        _add_para(doc, f"{index}. {item}", indent=False)
 
     intro_text, body_text, conclusion_text = _parse_essay_sections(content_text)
-    _add_heading(doc, titles["intro"], level=1, center=True)
-    _add_para(doc, intro_text or _loc("essay_intro", lang, topic))
+    intro_text = _remove_essay_section_headings(intro_text)
+    body_text = _remove_essay_section_headings(body_text)
+    conclusion_text = _remove_essay_section_headings(conclusion_text)
 
-    _add_heading(doc, titles["body"], level=1, center=True)
+    # As requested, the essay starts directly after the plan: no INTRODUCTION/MAIN BODY/CONCLUSION headings.
+    _add_para(doc, intro_text or _loc("essay_intro", lang, topic))
     body_paragraphs = [p.strip() for p in re.split(r"\n\s*\n|\n", body_text) if p.strip()]
     if not body_paragraphs:
         body_paragraphs = [_loc("essay_main_fb", lang, topic)]
     for paragraph in body_paragraphs[:3]:
-        _add_para(doc, paragraph)
-
-    _add_heading(doc, titles["conclusion"], level=1, center=True)
+        _add_para(doc, _remove_essay_section_headings(paragraph))
     _add_para(doc, conclusion_text or _loc("essay_concl_fb", lang, topic))
     buf = io.BytesIO(); doc.save(buf); buf.seek(0)
     return buf
