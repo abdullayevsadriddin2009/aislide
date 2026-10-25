@@ -13,7 +13,7 @@ def main_kb(lang="uz"):
         [KeyboardButton(text=t("btn_lang", lang))],
     ], resize_keyboard=True)
 
-# ===== Admin menyu — tugmalarda 3 til kalit so'zlari bor (filter ishlashi uchun) =====
+# ===== Admin menyu =====
 def admin_kb(lang="uz"):
     return ReplyKeyboardMarkup(keyboard=[
         [KeyboardButton(text="📊 Statistika"), KeyboardButton(text="📢 Broadcast")],
@@ -38,7 +38,7 @@ def balance_kb(lang="uz"):
         [InlineKeyboardButton(text=t("btn_subs", lang), callback_data="subs")],
     ])
 
-# ===== Bot tilini tanlash (start da) — 6 TIL =====
+# ===== Bot tilini tanlash =====
 def bot_lang_kb():
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🇺🇿 O'zbekcha", callback_data="blang:uz"),
@@ -49,7 +49,7 @@ def bot_lang_kb():
          InlineKeyboardButton(text="🇫🇷 Français", callback_data="blang:fr")],
     ])
 
-# ===== Hujjat tilini tanlash (yaratishda) =====
+# ===== Hujjat tilini tanlash =====
 def languages_kb(lang="uz"):
     rows = []
     row = []
@@ -113,7 +113,7 @@ def subjects_kb(detected_key, lang="uz"):
         rows.append(row)
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
-# ===== YANGI: Taqdimot shablonlarini tanlash (Dizayn va slayd soni o'rniga) =====
+# ===== YANGI: Taqdimot shablonlarini tanlash =====
 def template_kb(lang="uz"):
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🥇 Gold Shablon (10 slayd)", callback_data="tmpl:10")],
