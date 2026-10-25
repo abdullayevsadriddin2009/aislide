@@ -127,12 +127,12 @@ ALL_LANGS = ("uz", "ru", "en", "tr", "de", "fr")
 def _lang_name(code): return LANG_NAMES.get(str(code).lower(), "o'zbek")
 
 SYSTEM_PROMPTS = {
-    "uz": "Siz akademik matn yozuvchi mutaxassissiz. ABSOLYUT HAMMA NARSANI faqat o'zbek tilida yozing! Boshqa tildan bitta so'z ham aralashmasin. Javobni faqat JSON formatida qaytaring.",
-    "ru": "Вы академический эксперт. ПИШИТЕ АБСОЛЮТНО ВСЁ только на русском языке! Ни одного слова на другом языке. Отвечайте только в формате JSON.",
-    "en": "You are an academic expert. Write ABSOLUTELY EVERYTHING in English only! No words from any other language. Return only in JSON format.",
-    "tr": "Sen akademik uzmansın. MUTLAKA HER ŞEYİ sadece Türkçe yaz! Başka dilden tek kelime bile karışmasın. Sadece JSON formatında yanıt ver.",
-    "de": "Sie sind ein akademischer Experte. Schreiben Sie ABSOLUT ALLES nur auf Deutsch! Kein einziges Wort aus einer anderen Sprache. Antworten Sie nur im JSON-Format.",
-    "fr": "Vous êtes un expert académique. Écrivez ABSOLUMENT TOUT en français uniquement ! Aucun mot d'une autre langue. Répondez uniquement au format JSON.",
+    "uz": "Siz akademik matn yozuvchi mutaxassissiz. ABSOLYUT HAMMA NARSANI faqat o'zbek tilida yozing! Boshqa tildan bitta so'z ham aralashmasin.",
+    "ru": "Вы академический эксперт. ПИШИТЕ АБСОЛЮТНО ВСЁ только на русском языке! Ни одного слова на другом языке.",
+    "en": "You are an academic expert. Write ABSOLUTELY EVERYTHING in English only! No words from any other language.",
+    "tr": "Sen akademik uzmansın. MUTLAKA HER ŞEYİ sadece Türkçe yaz! Başka dilden tek kelime bile karışmasın.",
+    "de": "Sie sind ein akademischer Experte. Schreiben Sie ABSOLUT ALLES nur auf Deutsch! Kein einziges Wort aus einer anderen Sprache.",
+    "fr": "Vous êtes un expert académique. Écrivez ABSOLUMENT TOUT en français uniquement ! Aucun mot d'une autre langue.",
 }
 
 def detect_topic_lang(topic):
@@ -180,6 +180,33 @@ def _is_lang_mixed(text, lang):
 def _pure_language_system(lang_code):
     lc = str(lang_code).lower()
     return SYSTEM_PROMPTS.get(lc, SYSTEM_PROMPTS["en"])
+
+
+async def localize_topic(topic, lang="uz"):
+    """Translate a user-entered topic to the requested document language.
+
+    Proper names and standard technical names are preserved. If translation fails,
+    return the original topic rather than stopping document generation.
+    """
+    original = str(topic or "").strip()
+    lc = str(lang or "en").lower()
+    language_names = {"uz": "Uzbek", "ru": "Russian", "en": "English", "tr": "Turkish", "de": "German", "fr": "French"}
+    if not original or lc not in language_names:
+        return original
+    prompt = (
+        f"Translate this academic topic/title into {language_names[lc]}. Preserve people, place, "
+        "organization, brand and official product names where appropriate. Do not add commentary, "
+        "quotes, labels, or explanations. If it is already in the target language, return it unchanged. "
+        f"Return only the translated title:\n{original}"
+    )
+    try:
+        result = await _chat_complete(prompt, system=f"You are a professional translator. Output only {language_names[lc]} text, with no other language unless it is a proper noun.", max_tokens=120)
+        result = clean_ai_text(str(result or "")).strip().strip('"“”`')
+        if result and not result.startswith("⚠️") and len(result) <= max(250, len(original) * 4):
+            return result
+    except Exception as exc:
+        _log(f"Topic localization failed: {exc}")
+    return original
 
 async def wikipedia_fetch(topic, max_chars=4000, full=False, gen_lang="uz"):
     langs = wiki_langs_for_topic(topic, gen_lang)
@@ -272,7 +299,8 @@ async def _generate_section(service, topic, sec_title, sec_pages, sec_desc, lang
                   f"Shartlar: (1) faqat yangi ma'lumot; (2) takrorlama; (3) betlarni to'ldir; (4) faktlar qo'sh.")
         txt = await _chat_complete(prompt, system=_pure_language_system(lang), max_tokens=4096)
         if not txt or "⚠️" in txt:
-            txt = f"{sec_title} bo'yicha batafsil ma'lumot. {topic} mavzusida tahlil va xulosalar."
+            loc = _FALLBACK_COPY.get(str(lang).lower(), _FALLBACK_COPY["en"])
+            txt = f"{sec_title}. {topic}: {loc['body']} {loc['analysis']}"
         if _is_lang_mixed(txt, lang):
             txt2 = await _chat_complete(prompt + f"\nDIQQAT: FAQAT {_lang_name(lang)} tilida yozing!", system=_pure_language_system(lang), max_tokens=4096)
             if txt2 and "⚠️" not in txt2: txt = txt2
@@ -297,26 +325,35 @@ async def generate(service, topic, options, lang="uz"):
     if service == "insho":
         wiki = await wikipedia_fetch(topic, max_chars=3000, gen_lang=lang)
         wb = wiki_block(wiki)
-        system = _pure_language_system(lang) + """ Siz badiiy va falsafiy essey yozadigan mohir adibsiz. 
-QAT'IY QOIDA: Hech qanday sarlavha (KIRISH, ASOSIY QISM, XULOSA) yozmang! Raqamlar (1, 2, 3) yoki ro'yxat (nuqtalar) ishlatmang! Faqat oddiy abzaslardan iborat badiiy matn yozing."""
+        target_words = max(100, min(3000, int(options.get("words", 250) or 250)))
+        intro_words = max(20, round(target_words * 0.2))
+        body_words = max(40, round(target_words * 0.6))
+        conclusion_words = max(20, target_words - intro_words - body_words)
+        system = _pure_language_system(lang) + """ You are an expert essay writer. Write only in the selected language. Do not use headings, numbered lists, or bullet points; write normal paragraphs only."""
 
-        prompt_k = f"Mavzu: {topic}. Inshoning kirish qismini yozing. Kamida 70-80 so'z bo'lsin. Hech qanday sarlavha yozmang, to'g'ridan-to'g'ri matnni boshlang. {wb}"
+        prompt_k = f"Topic: {topic}. Write the opening paragraph of an essay in {lang}, about {intro_words} words. Do not add a heading. {wb}"
         kirish = await _chat_complete(prompt_k, system=system, max_tokens=1000)
         if _is_lang_mixed(kirish, lang) or not kirish:
             kirish = await _chat_complete(prompt_k + f"\nFAQAT {_lang_name(lang)} TILIDA YOZING!", system=system, max_tokens=1000)
-        if not kirish or kirish.startswith("⚠️"): kirish = f"{topic} haqida o'ylar. Bu mavzu insoniyat uchun muhim ahamiyatga ega."
+        if not kirish or kirish.startswith("⚠️"):
+            loc = _FALLBACK_COPY.get(str(lang).lower(), _FALLBACK_COPY["en"])
+            kirish = f"{topic}. {loc['body']}"
 
-        prompt_a = f"Mavzu: {topic}. Inshoning asosiy qismi uchun 3 ta mazmunli abzas yozing. Jami hajmi 300-400 so'z bo'lsin. Raqamlar (1,2,3) yoki sarlavhalar ishlatmang! Faqat 3 ta abzasni bering. {wb}"
+        prompt_a = f"Topic: {topic}. Write the main part of the essay in 2-4 meaningful paragraphs, about {body_words} words total. Do not use headings, numbering or bullet points. Write only in {lang}. {wb}"
         asosiy = await _chat_complete(prompt_a, system=system, max_tokens=2000)
         if _is_lang_mixed(asosiy, lang) or not asosiy:
             asosiy = await _chat_complete(prompt_a + f"\nFAQAT {_lang_name(lang)} TILIDA YOZING!", system=system, max_tokens=2000)
-        if not asosiy or asosiy.startswith("⚠️"): asosiy = f"{topic} ning bugungi kundagi o'rni va ahamiyati haqida fikrlar. Ushbu masala yuzasidan turli qarashlar mavjud."
+        if not asosiy or asosiy.startswith("⚠️"):
+            loc = _FALLBACK_COPY.get(str(lang).lower(), _FALLBACK_COPY["en"])
+            asosiy = f"{loc['analysis']} {loc['relevance']} {loc['body']}"
 
-        prompt_x = f"Mavzu: {topic}. Inshoning xulosa qismini yozing. Kamida 70-80 so'z bo'lsin. Hech qanday sarlavha yozmang, faqat yakuniy fikrni yozing."
+        prompt_x = f"Topic: {topic}. Write the concluding paragraph of the essay in {lang}, about {conclusion_words} words. Do not add a heading. Write only in {lang}."
         xulosa = await _chat_complete(prompt_x, system=system, max_tokens=1000)
         if _is_lang_mixed(xulosa, lang) or not xulosa:
             xulosa = await _chat_complete(prompt_x + f"\nFAQAT {_lang_name(lang)} TILIDA YOZING!", system=system, max_tokens=1000)
-        if not xulosa or xulosa.startswith("⚠️"): xulosa = f"Xulosa o'rnida shuni aytish mumkinki, {topic} mavzusi biz uchun katta saboq bo'lib xizmat qiladi."
+        if not xulosa or xulosa.startswith("⚠️"):
+            loc = _FALLBACK_COPY.get(str(lang).lower(), _FALLBACK_COPY["en"])
+            xulosa = f"{loc['conclusion']}: {loc['relevance']}"
 
         result = f"{kirish}\n\n{asosiy}\n\n{xulosa}"
         real = bool(kirish and asosiy and xulosa and not kirish.startswith("⚠️"))
@@ -355,7 +392,8 @@ async def _generate_test(service, topic, options, lang):
         if txt and "⚠️" not in txt: 
             all_questions.append(txt)
         await asyncio.sleep(0.5)
-    result = "\n\n".join(all_questions) + "\n\nJAVOBLAR KALITI: (TO'G'RI) belgilangan variant."
+    answer_key = {"uz": "JAVOBLAR KALITI: to‘g‘ri javob ✓ bilan belgilangan.", "ru": "КЛЮЧ ОТВЕТОВ: правильный вариант отмечен символом ✓.", "en": "ANSWER KEY: the correct option is marked with ✓.", "tr": "CEVAP ANAHTARI: doğru seçenek ✓ ile işaretlenmiştir.", "de": "LÖSUNGSSCHLÜSSEL: Die richtige Option ist mit ✓ markiert.", "fr": "CORRIGÉ : la bonne réponse est marquée par ✓."}.get(str(lang).lower(), "ANSWER KEY: the correct option is marked with ✓.")
+    result = "\n\n".join(all_questions) + "\n\n" + answer_key
     return result, bool(all_questions)
 
 # ====== SLAYDLAR GENERATSIYASI (Yangi shablonlar uchun QAT'IY struktura) ======
@@ -368,22 +406,29 @@ async def generate_slides_structured(topic, subject, lang, count):
               f" Siz professional taqdimot tuzuvchisiz. Javobni FAQAT {ln} tilida yozing! "
               f"Javobni faqat JSON massiv ko'rinishida qaytaring.")
 
-    prompt = f"""Mavzu: {topic}. Fan: {subject}.
-Aynan {count} ta slayddan iborat professional taqdimot tuzing.
-1-slayd: Muqova (Sarlavha va qisqa ta'rif).
-2-slayd: Mundarija (6 ta bo'lim ro'yxati).
-{count}-slayd: Xulosa (Asosiy xulosalar).
-Qolgan {count-3} ta slayd mavzuning turli mantiqiy qismlariga (nazariya, tarix, tahlil, bosqichlar, iqtibos, jadval ma'lumotlari va h.k.) bag'ishlansin.
+    prompt = f"""Topic: {topic}. Subject: {subject}.
+Create exactly {count} CONTENT slides for a professional presentation. The title/cover slide is created separately by the PowerPoint template, so do not return a cover slide or a table-of-contents slide.
 
-QAT'IY QOIDALAR:
-1. Javobingiz faqat va faqat JSON massiv bo'lsin.
-2. Massiv ichida aynan {count} ta element bo'lishi shart!
-3. Har bir slaydning "content" qismida kamida 3 ta va ko'pi bilan 5 ta to'liq, mazmunli gap bo'lsin. Hech qanday bo'sh joy yoki "Ma'lumot" so'zi qolmasin!
-4. Agar slaydda yillar (masalan, 1370, 1405) yoki raqamlar bo'lsa, ularni aniq yozing.
+STRICT LANGUAGE RULES:
+1. Write every title and every content sentence only in the selected language ({ln}).
+2. Translate the topic and section headings into {ln} where appropriate. Keep proper names, official product names, and standard technical terms only when they should not be translated.
+3. Do not insert Uzbek, English, Russian, or any other language as decoration or filler when it is not the selected language.
+4. All slide titles, labels and sentences must be natural and grammatically correct in {ln}.
+
+CONTENT RULES:
+1. Return only a valid JSON array with exactly {count} objects.
+2. Each object must contain the keys "title" and "content".
+3. The content array must contain 3-5 concise, meaningful sentences suitable for a slide.
+4. Cover distinct aspects such as background, concepts, evidence, practical uses, comparison and implications. Do not repeat the same generic text.
+5. The final content slide must present a concise conclusion and practical recommendations in {ln}; make its title a natural localized equivalent of “Conclusion”.
+6. Do not invent citations or claim a source was consulted unless the source is explicitly supplied.
+7. If relevant dates or numbers are known, state them accurately.
+
+Reference material (use only to check facts; do not copy its language if different from {ln}):
 {wb}
 
-JSON formati:
-[{{"title": "Sarlavha 1", "content": ["Gap 1", "Gap 2", "Gap 3"]}}, {{"title": "Sarlavha 2", "content": ["Gap 1", "Gap 2", "Gap 3"]}}]"""
+JSON example (translate the example's sample wording into {ln} in the actual response):
+[{{"title":"Section title","content":["Sentence one.","Sentence two.","Sentence three."]}}]"""
 
     txt = await _chat_complete(prompt, system=system, max_tokens=4500)
     parsed = _extract_json(txt)
@@ -393,8 +438,13 @@ JSON formati:
     if parsed and isinstance(parsed, list):
         all_text = " ".join([str(s.get("title", "")) + " " + " ".join(s.get("content", [])) for s in parsed if isinstance(s, dict)])
         if _is_lang_mixed(all_text, lang):
-            txt = await _chat_complete(prompt + f"\nDIQQAT: FAQAT {ln} tilida yozing! Boshqa til aralashmasin!", system=system, max_tokens=4500)
-            parsed = _extract_json(txt)
+            retry_txt = await _chat_complete(prompt + f"\nFINAL LANGUAGE CHECK: rewrite every title and sentence only in {ln}. Remove any phrases in other languages.", system=system, max_tokens=4500)
+            retry_parsed = _extract_json(retry_txt)
+            retry_text = " ".join([str(item.get("title", "")) + " " + " ".join(item.get("content", [])) for item in retry_parsed if isinstance(item, dict)]) if isinstance(retry_parsed, list) else ""
+            if retry_parsed and isinstance(retry_parsed, list) and not _is_lang_mixed(retry_text, lang):
+                parsed = retry_parsed
+            else:
+                parsed = None
             
         if parsed and isinstance(parsed, list):
             for s in parsed:
@@ -406,28 +456,26 @@ JSON formati:
                         "content": [clean_ai_text(str(c)) for c in cl]
                     })
     
-    # Qat'iy nazorat: Agar AI kam yoki ko'p slayd qaytarsa, {count} ga tenglashtiramiz
+    # Keep count exact without inserting text from another language.
+    used_fallback = not bool(all_slides)
     if not all_slides:
         all_slides = _fallback_slides(topic, count, lang)
     else:
+        if len(all_slides) < count:
+            used_fallback = True
         while len(all_slides) < count:
             idx = len(all_slides) + 1
-            all_slides.append({
-                "title": f"{topic}: {idx}-qism tahlili",
-                "content": [
-                    f"{topic} mavzusining ushbu qismida asosiy nazariy qarashlar va amaliy jihatlar o'rganiladi.",
-                    "Tahlil davomida tarixiy ma'lumotlar va zamonaviy yondashuvlar qiyoslanadi.",
-                    "Mavzuning bugungi kundagi ahamiyati va kelajakdagi istiqbollari yoritiladi."
-                ]
-            })
+            title_fallback, body_fallback = _localized_slide_fallback(topic, lang, idx)
+            all_slides.append({"title": title_fallback, "content": body_fallback})
         all_slides = all_slides[:count]
 
     out = []
     for i, s in enumerate(all_slides):
         cl = s.get("content", [])
         if isinstance(cl, str): cl = [p.strip() for p in cl.split("\n") if p.strip()]
-        while len(cl) < 3: 
-            cl.append(f"{topic} bo'yicha qo'shimcha tahliliy ma'lumotlar.")
+        while len(cl) < 3:
+            _, body_fallback = _localized_slide_fallback(topic, lang, i + 1)
+            cl.append(body_fallback[len(cl) % len(body_fallback)])
         
         out.append({
             "slide_number": i+1,
@@ -435,7 +483,7 @@ JSON formati:
             "content": cl[:6],
             "wiki_source": wiki["url"] if wiki["found"] else None
         })
-    return out, True
+    return out, not used_fallback
 
 SEARCH_MAP = {
     "alisher navoiy": "Alisher Navoi portrait poet", "navoiy": "Alisher Navoi writer poet",
@@ -648,34 +696,51 @@ FB = {
     "fr": {"sections": ["Introduction", "Histoire", "Partie principale 1", "Partie principale 2", "Analyse", "Conclusion"],
         "slide_sections": ["Introduction", "Histoire", "Analyse", "Résultats", "Conclusion"]}
 }
-def _fb(lang): return FB.get(str(lang).lower(), FB["en"])
+def _fb(lang):
+    return FB.get(str(lang).lower(), FB["en"])
+
+
+_FALLBACK_COPY = {
+    "uz": {"part": "Qism", "body": "Ushbu bo‘lim mavzuning muhim jihatlarini yoritadi.", "analysis": "Asosiy dalillar va amaliy misollar tahlil qilinadi.", "relevance": "Mavzuning ahamiyati va mumkin bo‘lgan qo‘llanilishi ko‘rib chiqiladi.", "contents": "Mundarija", "conclusion": "Xulosa"},
+    "ru": {"part": "Раздел", "body": "В этом разделе раскрываются важные аспекты темы.", "analysis": "Анализируются основные аргументы и практические примеры.", "relevance": "Рассматриваются значение темы и возможные области применения.", "contents": "Содержание", "conclusion": "Заключение"},
+    "en": {"part": "Section", "body": "This section explains important aspects of the topic.", "analysis": "Key arguments and practical examples are analyzed.", "relevance": "The topic’s significance and possible applications are discussed.", "contents": "Contents", "conclusion": "Conclusion"},
+    "tr": {"part": "Bölüm", "body": "Bu bölüm konunun önemli yönlerini açıklar.", "analysis": "Temel savlar ve uygulamalı örnekler incelenir.", "relevance": "Konunun önemi ve olası kullanım alanları ele alınır.", "contents": "İçindekiler", "conclusion": "Sonuç"},
+    "de": {"part": "Abschnitt", "body": "Dieser Abschnitt erläutert wichtige Aspekte des Themas.", "analysis": "Zentrale Argumente und praktische Beispiele werden analysiert.", "relevance": "Die Bedeutung des Themas und mögliche Anwendungen werden erörtert.", "contents": "Inhalt", "conclusion": "Fazit"},
+    "fr": {"part": "Section", "body": "Cette section présente les aspects importants du sujet.", "analysis": "Les arguments clés et les exemples pratiques sont analysés.", "relevance": "L’importance du sujet et ses applications possibles sont examinées.", "contents": "Sommaire", "conclusion": "Conclusion"},
+}
+
+
+def _localized_slide_fallback(topic, lang, index=1):
+    loc = _FALLBACK_COPY.get(str(lang).lower(), _FALLBACK_COPY["en"])
+    if index == 1:
+        title = loc["part"] + " 1"
+    else:
+        title = f"{loc['part']} {index}"
+    return title, [f"{topic}: {loc['body']}", loc["analysis"], loc["relevance"]]
+
 
 def _fallback_text(service, topic, options, lang, bob_count=10):
-    fb = _fb(lang); sections = list(fb["sections"])
-    while len(sections) < bob_count: sections.insert(len(sections)-2, "Qism" if lang=="uz" else "Part")
-    return f"{topic}\n\n" + "\n\n".join([f"{sec}\n{topic} bo'yicha ma'lumot." for sec in sections[:bob_count]])
+    fb = _fb(lang)
+    loc = _FALLBACK_COPY.get(str(lang).lower(), _FALLBACK_COPY["en"])
+    sections = list(fb["sections"])
+    while len(sections) < bob_count:
+        sections.insert(max(0, len(sections) - 2), loc["part"])
+    return f"{topic}\n\n" + "\n\n".join(f"{section}\n{topic}: {loc['body']} {loc['analysis']}" for section in sections[:bob_count])
+
 
 def _fallback_slides(topic, count, lang):
     fb = _fb(lang)
-    secs = fb["slide_sections"]
+    loc = _FALLBACK_COPY.get(str(lang).lower(), _FALLBACK_COPY["en"])
     out = []
     for i in range(count):
         if i == 0:
-            title = f"{topic}"
+            title = topic
         elif i == 1:
-            title = "Mundarija" if lang == "uz" else ("Содержание" if lang == "ru" else "Contents")
+            title = loc["contents"]
         elif i == count - 1:
-            title = "Xulosa" if lang == "uz" else ("Заключение" if lang == "ru" else "Conclusion")
+            title = loc["conclusion"]
         else:
-            title = secs[i % len(secs)]
-            
-        out.append({
-            "slide_number": i + 1,
-            "title": title,
-            "content": [
-                f"{topic} bo'yicha asosiy ma'lumotlar va tahlillar.",
-                "Ushbu qismda mavzuning muhim jihatlari yoritiladi.",
-                "Amaliy ahamiyati va keyingi qadamlar belgilab olinadi."
-            ]
-        })
+            title = fb["slide_sections"][i % len(fb["slide_sections"])]
+        _, content = _localized_slide_fallback(topic, lang, i + 1)
+        out.append({"slide_number": i + 1, "title": title, "content": content})
     return out
