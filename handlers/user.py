@@ -163,12 +163,26 @@ async def cmd_price(message: Message):
 
 @router.message(Command("balance"))
 async def cmd_balance(message: Message):
-    if not await _is_subscribed(message.bot, message.from_user.id):
-        lang = await _lang(message.from_user.id)
-        await _sub_message(message.bot, message, lang); return
     uid = message.from_user.id
-    lang = await _lang(uid)
+    # Menyu tugmasi /balance dan oldin bosilganda ham foydalanuvchi bazada bo'lishi kerak.
+    # ensure_user INSERT OR IGNORE ishlatadi, mavjud foydalanuvchi ma'lumotlarini o'zgartirmaydi.
+    u = await db.ensure_user(
+        uid,
+        message.from_user.username,
+        message.from_user.first_name,
+    )
+    if not u:
+        await message.answer("⚠️ Hisob ma'lumotlarini yuklab bo'lmadi. /start buyrug'ini yuborib qayta urinib ko'ring.")
+        return
+    lang = u["lang"] if u["lang"] in ("uz", "ru", "en", "tr", "de", "fr") else "uz"
+    if not await _is_subscribed(message.bot, uid):
+        await _sub_message(message.bot, message, lang)
+        return
+    # O'qishni yangilab olamiz; ensure_user dan keyin row yo'q bo'lsa ham qulamaymiz.
     u = await db.get_user(uid)
+    if not u:
+        await message.answer("⚠️ Hisob ma'lumotlari topilmadi. /start buyrug'ini yuborib qayta urinib ko'ring.")
+        return
     orders = await db.order_count(uid)
     refs, earned = await db.referral_stats(uid)
     deposited = await db.total_deposited(uid)
