@@ -81,7 +81,7 @@ def option_kb_for(service, lang="uz"):
         for v in [10, 20, 30, 50]:
             rows.append([InlineKeyboardButton(text=f"✅ {t('questions_label', lang, n=v)}", callback_data=f"opt:questions:{v}")])
     elif ot == "words":
-        for v in [320, 350, 500, 750, 1000, 1500, 2000]:
+        for v in [200, 250, 320, 350, 500, 750, 1000, 1500, 2000]:
             rows.append([InlineKeyboardButton(text=f"✍️ {t('words_label', lang, n=v)}", callback_data=f"opt:words:{v}")])
     rows.append([InlineKeyboardButton(text=t("btn_cancel", lang), callback_data="cancel")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
