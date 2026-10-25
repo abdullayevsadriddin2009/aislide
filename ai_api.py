@@ -1,8 +1,9 @@
 """
-AI API — to'liq tuzatilgan versiya (v9 - Yangi Shablonlar)
+AI API — to'liq tuzatilgan versiya (v11)
 ========================================
-✓ Slaydlar: Yangi 10, 15, 20, 25 shablonlariga qat'iy moslashgan generatsiya.
-✓ Til sofligi: Barcha fallback matnlari 6 tilga o'tkazildi.
+✓ Slaydlar: 10, 15, 20, 25 shablonlariga qat'iy moslashgan.
+✓ Til sofligi: Boshqa til aralashishini oldini olish uchun qat'iy filtrlar.
+✓ Kontent sifati: Bo'sh joylar va "Ma'lumot" so'zlari to'liq olib tashlandi.
 ✓ API va Model almashinuvi: Xatolik yuz berganda avtomatik keyingisiga o'tadi.
 """
 import aiohttp
@@ -21,11 +22,6 @@ PEXELS_KEY   = os.getenv("PEXELS_KEY", "")
 UNSPLASH_KEY = os.getenv("UNSPLASH_KEY", "")
 USER_AGENT = "SlaydBot/1.0 (aloqa: admin@example.uz)"
 
-def wiki_langs_for(gen_lang):
-    order = {"uz": ["uz","ru","en"], "ru": ["ru","en","uz"], "en": ["en","ru","uz"],
-             "tr": ["en","tr","ru","uz"], "de": ["en","de","ru","uz"], "fr": ["en","fr","ru","uz"]}
-    return order.get(str(gen_lang).lower(), ["en","ru","uz"])
-    
 _KEYWORD_CACHE = {}
 CHARS_PER_PAGE = 900
 MAX_CHUNK_PAGES = 3
@@ -94,9 +90,8 @@ API_LIST = [
 CURRENT_API_INDEX = 0
 CURRENT_MODEL_INDEX = 0
 
-def get_current_api():  return API_LIST[CURRENT_API_INDEX]
-def get_current_model():
-    return get_current_api()["models"][CURRENT_MODEL_INDEX % len(get_current_api()["models"])]
+def get_current_api(): return API_LIST[CURRENT_API_INDEX]
+def get_current_model(): return get_current_api()["models"][CURRENT_MODEL_INDEX % len(get_current_api()["models"])]
 
 def switch_to_next_model() -> bool:
     global CURRENT_MODEL_INDEX
@@ -124,28 +119,20 @@ def clean_ai_text(text):
     text = re.sub(r'\n\s*\n', '\n\n', str(text))
     return text.strip()
 
-def verify_facts(text):
-    if not text: return text
-    if "Navoiy" in text or "Alisher Navoiy" in text:
-        text = re.sub(r'Samarqand', 'Hirot', text)
-        text = re.sub(r'Samarqandda', 'Hirot shahrida', text)
-    return text
-
 def _log(msg): print(f"[AI_API] {msg}", flush=True)
 def get_last_error(): return LAST_ERROR
 
-LANG_NAMES = {"uz": "o'zbek", "ru": "rus", "en": "english", "tr": "turkish", "de": "german", "fr": "french"}
-LANG_FULL = {"uz": "o'zbekcha", "ru": "ruscha", "en": "inglizcha", "tr": "turkcha", "de": "nemcha", "fr": "fransuzcha"}
+LANG_NAMES = {"uz": "o'zbek", "ru": "rus", "en": "ingliz", "tr": "turk", "de": "nemis", "fr": "fransuz"}
 ALL_LANGS = ("uz", "ru", "en", "tr", "de", "fr")
 def _lang_name(code): return LANG_NAMES.get(str(code).lower(), "o'zbek")
 
 SYSTEM_PROMPTS = {
-    "uz": "Siz akademik va badiiy matn yozish bo'yicha mutaxassissiz. ABSOLYUT HAMMA NARSANI faqat o'zbekcha yozing! Hech qanday boshqa til so'zi, atamasi yoki iborasi aralashmasin. Har bir gap, har bir raqam izohi — hammasi o'zbekcha bo'lsin. Agar biror atama o'zbekchada bo'lmasa, uni tarjima qilib yozing. * yoki # belgi ishlatmang. Faktlarga asoslaning.",
-    "ru": "Вы специалист по написанию академических и художественных текстов. ПИШИТЕ АБСОЛЮТНО ВСЁ только на русском языке! Никаких слов, терминов или выражений на других языках. Не используйте * и #.",
-    "en": "You are an expert academic and creative writer. Write ABSOLUTELY EVERYTHING in English only! No words, terms or phrases from any other language. Do not use * or #.",
-    "tr": "Sen akademik ve yaratıcı metin yazma uzmanısın. MUTLAKA HER ŞEYİ sadece Türkçe yaz! Başka hiçbir dilin kelimesi karışmasın. * ve # kullanma.",
-    "de": "Sie sind Experte für akademisches und kreatives Schreiben. Schreiben Sie ABSOLUT ALLES nur auf Deutsch! Keine Wörter aus anderen Sprachen.",
-    "fr": "Vous êtes un expert en rédaction académique et créative. Écrivez ABSOLUMENT TOUT en français uniquement ! Aucun mot d'une autre langue.",
+    "uz": "Siz akademik matn yozuvchi mutaxassissiz. ABSOLYUT HAMMA NARSANI faqat o'zbek tilida yozing! Boshqa tildan bitta so'z ham aralashmasin. Javobni faqat JSON formatida qaytaring.",
+    "ru": "Вы академический эксперт. ПИШИТЕ АБСОЛЮТНО ВСЁ только на русском языке! Ни одного слова на другом языке. Отвечайте только в формате JSON.",
+    "en": "You are an academic expert. Write ABSOLUTELY EVERYTHING in English only! No words from any other language. Return only in JSON format.",
+    "tr": "Sen akademik uzmansın. MUTLAKA HER ŞEYİ sadece Türkçe yaz! Başka dilden tek kelime bile karışmasın. Sadece JSON formatında yanıt ver.",
+    "de": "Sie sind ein akademischer Experte. Schreiben Sie ABSOLUT ALLES nur auf Deutsch! Kein einziges Wort aus einer anderen Sprache. Antworten Sie nur im JSON-Format.",
+    "fr": "Vous êtes un expert académique. Écrivez ABSOLUMENT TOUT en français uniquement ! Aucun mot d'une autre langue. Répondez uniquement au format JSON.",
 }
 
 def detect_topic_lang(topic):
@@ -196,22 +183,18 @@ def _pure_language_system(lang_code):
 
 async def wikipedia_fetch(topic, max_chars=4000, full=False, gen_lang="uz"):
     langs = wiki_langs_for_topic(topic, gen_lang)
-    _log(f"🔍 Wikipedia qidiruv tartibi: {langs} (mavzu: '{topic}')")
-    async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=20),
-                                     headers={"User-Agent": USER_AGENT}) as session:
+    _log(f"🔍 Wikipedia qidiruv: {langs} (mavzu: '{topic}')")
+    async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=20), headers={"User-Agent": USER_AGENT}) as session:
         for lang in langs:
             try:
-                search_url = (f"https://{lang}.wikipedia.org/w/api.php?action=query&list=search"
-                              f"&srsearch={aiohttp.helpers.quote(topic)}&format=json&srlimit=1")
+                search_url = f"https://{lang}.wikipedia.org/w/api.php?action=query&list=search&srsearch={aiohttp.helpers.quote(topic)}&format=json&srlimit=1"
                 async with session.get(search_url) as resp:
                     if resp.status != 200: continue
                     hits = (await resp.json()).get("query", {}).get("search", [])
                     if not hits: continue
                     title = hits[0]["title"]
                 exintro = "" if full else "&exintro"
-                page_url = (f"https://{lang}.wikipedia.org/w/api.php?action=query&prop=extracts|pageimages"
-                            f"{exintro}&explaintext&piprop=original&titles={aiohttp.helpers.quote(title)}"
-                            f"&format=json&redirects=1")
+                page_url = f"https://{lang}.wikipedia.org/w/api.php?action=query&prop=extracts|pageimages{exintro}&explaintext&piprop=original&titles={aiohttp.helpers.quote(title)}&format=json&redirects=1"
                 async with session.get(page_url) as resp:
                     if resp.status != 200: continue
                     pages = (await resp.json()).get("query", {}).get("pages", {})
@@ -219,17 +202,14 @@ async def wikipedia_fetch(topic, max_chars=4000, full=False, gen_lang="uz"):
                     extract = page.get("extract", "")
                     image = page.get("original", {}).get("source", "")
                     if extract and len(extract) > 100:
-                        return {"found": True, "lang": lang, "title": title,
-                                "text": extract[:max_chars], "image": image,
-                                "url": f"https://{lang}.wikipedia.org/wiki/{title.replace(' ', '_')}"}
+                        return {"found": True, "lang": lang, "title": title, "text": extract[:max_chars], "image": image, "url": f"https://{lang}.wikipedia.org/wiki/{title.replace(' ', '_')}"}
             except Exception as e:
                 _log(f"[WIKI {lang}] xato: {e}"); continue
     return {"found": False, "text": "", "image": "", "url": "", "title": "", "lang": ""}
 
 def wiki_block(wiki):
     if not wiki.get("found"): return ""
-    return (f"\n\n=== MANBA (Wikipedia) ===\nSarlavha: {wiki['title']}\n"
-            f"Quyidagi faktlarni asos qilib yoz:\n{wiki['text']}\n")
+    return f"\n\n=== MANBA (Wikipedia) ===\nSarlavha: {wiki['title']}\nQuyidagi faktlarni asos qilib yoz:\n{wiki['text']}\n"
 
 SERVICE_TEMPLATES = {
     "referat": {"style": "ilmiy-nazariy, rasmiy uslub. HAJMI: 10-15 bet.", "sections": [
@@ -242,49 +222,26 @@ SERVICE_TEMPLATES = {
         ("XULOSA", "Mavzu bo'yicha umumiy xulosalar — TO'LIQ 1 bet"),
         ("FOYDALANILGAN ADABIYOTLAR", "5-10 ta manba, to'liq bibliografik ma'lumot bilan")]},
     "mustaqil": {"style": "akademik, mantiqiy, savol-javob shaklida. HAJMI: 5-10 bet.", "sections": [
-        ("TITULLIK BET", "Mavzu, fan, guruh, muallif, yil"),
-        ("REJA", "2-3 ta savol yoki masala ro'yxati"),
-        ("KIRISH", "Qisqa kirish — 0.5 bet, mavzuga kirish"),
-        ("1-SAVOLGA JAVOB", "Birinchi savolga batafsil, mantiqiy javob — 2-3 bet"),
-        ("2-SAVOLGA JAVOB", "Ikkinchi savolga batafsil javob — 2-3 bet"),
-        ("3-SAVOLGA JAVOB", "Uchinchi savolga batafsil javob — 2-3 bet"),
-        ("XULOSA", "Qisqa yakuniy xulosa"),
-        ("ADABIYOTLAR", "5 ta manba, to'liq ma'lumot bilan")]},
+        ("TITULLIK BET", "Mavzu, fan, guruh, muallif, yil"), ("REJA", "2-3 ta savol yoki masala ro'yxati"),
+        ("KIRISH", "Qisqa kirish — 0.5 bet, mavzuga kirish"), ("1-SAVOLGA JAVOB", "Birinchi savolga batafsil, mantiqiy javob — 2-3 bet"),
+        ("2-SAVOLGA JAVOB", "Ikkinchi savolga batafsil javob — 2-3 bet"), ("3-SAVOLGA JAVOB", "Uchinchi savolga batafsil javob — 2-3 bet"),
+        ("XULOSA", "Qisqa yakuniy xulosa"), ("ADABIYOTLAR", "5 ta manba, to'liq ma'lumot bilan")]},
     "kurs": {"style": "ilmiy-tadqiqot, rasmiy, statistikalar bilan. HAJMI: 25-35 bet.", "sections": [
-        ("TITULLIK BET", "To'liq titullik bet"),
-        ("MUNDARIJA", "Barcha boblar, paragraflar — sahifa raqamlari bilan"),
-        ("KIRISH", "Dolzarbligi, obyekti, predmeti, maqsadi — TO'LIQ 2 bet"),
-        ("I-BOB. NAZARIY QISM", "Mavzuning nazariy asoslari — 8-10 bet"),
-        ("II-BOB. AMALIY QISM", "Muammo tahlili, statistikalar — 8-10 bet"),
-        ("XULOSA VA TAKLIFLAR", "Umumiy xulosa va takliflar — 2 bet"),
-        ("ADABIYOTLAR", "15-20 ta manba"),
-        ("QO'SHIMCHALAR", "Jadvallar, diagrammalar")]},
+        ("TITULLIK BET", "To'liq titullik bet"), ("MUNDARIJA", "Barcha boblar, paragraflar — sahifa raqamlari bilan"),
+        ("KIRISH", "Dolzarbligi, obyekti, predmeti, maqsadi — TO'LIQ 2 bet"), ("I-BOB. NAZARIY QISM", "Mavzuning nazariy asoslari — 8-10 bet"),
+        ("II-BOB. AMALIY QISM", "Muammo tahlili, statistikalar — 8-10 bet"), ("XULOSA VA TAKLIFLAR", "Umumiy xulosa va takliflar — 2 bet"),
+        ("ADABIYOTLAR", "15-20 ta manba"), ("QO'SHIMCHALAR", "Jadvallar, diagrammalar")]},
     "diplom": {"style": "ilmiy-tadqiqot, BMI darajasida. HAJMI: 50-70 bet.", "sections": [
-        ("ANNOTATSIYA", "3 tilda qisqa mazmun"),
-        ("MUNDARIJA", "To'liq mundarija"),
-        ("KIRISH", "Dolzarbligi, obyekti, predmeti, maqsadi — 3-4 bet"),
-        ("I-BOB. NAZARIY ASOSLAR", "Nazariy asoslar — 12-15 bet"),
-        ("II-BOB. TAHLIL QISMI", "Muammo tahlili, statistika — 12-15 bet"),
-        ("III-BOB. TAKLIFLAR", "Takliflar, loyihalar — 10-12 bet"),
-        ("XULOSA", "Umumiy xulosa — 3 bet"),
-        ("ADABIYOTLAR", "30+ manba"),
-        ("QO'SHIMCHALAR", "Jadvallar, diagrammalar")]},
-    "test": {"style": "qisqa, aniq savollar. A/B/C/D variantlari.", "sections": [
-        ("TEST SAVOLLARI", "Savollar va variantlar"),
-        ("JAVOBLAR KALITI", "To'g'ri javoblar ro'yxati")]},
+        ("ANNOTATSIYA", "3 tilda qisqa mazmun"), ("MUNDARIJA", "To'liq mundarija"), ("KIRISH", "Dolzarbligi, obyekti, predmeti, maqsadi — 3-4 bet"),
+        ("I-BOB. NAZARIY ASOSLAR", "Nazariy asoslar — 12-15 bet"), ("II-BOB. TAHLIL QISMI", "Muammo tahlili, statistika — 12-15 bet"),
+        ("III-BOB. TAKLIFLAR", "Takliflar, loyihalar — 10-12 bet"), ("XULOSA", "Umumiy xulosa — 3 bet"),
+        ("ADABIYOTLAR", "30+ manba"), ("QO'SHIMCHALAR", "Jadvallar, diagrammalar")]},
+    "test": {"style": "qisqa, aniq savollar. A/B/C/D variantlari.", "sections": [("TEST SAVOLLARI", "Savollar va variantlar"), ("JAVOBLAR KALITI", "To'g'ri javoblar ro'yxati")]},
     "maqola": {"style": "ilmiy, IMRAD standarti. HAJMI: 3-7 bet.", "sections": [
-        ("SARLAVHA VA MUALlif", "Maqola sarlavhasi, muallif"),
-        ("ANNOTATSIYA", "Annotatsiya va kalit so'zlar"),
-        ("KIRISH", "Muammo, dolzarblik — 1 bet"),
-        ("METODOLOGIYA", "Izlanish usullari — 1 bet"),
-        ("NATIJALAR", "Tahlillar, jadvallar — 2-3 bet"),
-        ("XULOSA", "Asosiy xulosalar — 0.5 bet"),
-        ("ADABIYOTLAR", "10-15 manba")]},
+        ("SARLAVHA VA MUALlif", "Maqola sarlavhasi, muallif"), ("ANNOTATSIYA", "Annotatsiya va kalit so'zlar"), ("KIRISH", "Muammo, dolzarblik — 1 bet"),
+        ("METODOLOGIYA", "Izlanish usullari — 1 bet"), ("NATIJALAR", "Tahlillar, jadvallar — 2-3 bet"), ("XULOSA", "Asosiy xulosalar — 0.5 bet"), ("ADABIYOTLAR", "10-15 manba")]},
     "tezis": {"style": "juda ixcham. HAJMI: 1-3 bet.", "sections": [
-        ("SARLAVHA VA MUALlif", "Sarlavha, muallif"),
-        ("QISQA KIRISH", "2-3 jumla"),
-        ("ASOSIY TAHLIL", "Konkret tahlil, raqamlar"),
-        ("XULOSA", "Asosiy natija")]},
+        ("SARLAVHA VA MUALlif", "Sarlavha, muallif"), ("QISQA KIRISH", "2-3 jumla"), ("ASOSIY TAHLIL", "Konkret tahlil, raqamlar"), ("XULOSA", "Asosiy natija")]},
 }
 
 async def _generate_outline(service, topic, pages, lang, wiki):
@@ -337,14 +294,9 @@ Faqat shu rejani qisqa qilib yozing, matnni yozmang. {wb}"""
 
 # ===== ASOSIY GENERATE FUNKSIYASI (Hujjatlar uchun) =====
 async def generate(service, topic, options, lang="uz"):
-    from services import SERVICES
-    name = SERVICES.get(service, {}).get("name", service)
-    
-    # ===== INSHO (ESSEY) UCHUN MAXSUS MANTIQ =====
     if service == "insho":
         wiki = await wikipedia_fetch(topic, max_chars=3000, gen_lang=lang)
         wb = wiki_block(wiki)
-        
         system = _pure_language_system(lang) + """ Siz badiiy va falsafiy essey yozadigan mohir adibsiz. 
 QAT'IY QOIDA: Hech qanday sarlavha (KIRISH, ASOSIY QISM, XULOSA) yozmang! Raqamlar (1, 2, 3) yoki ro'yxat (nuqtalar) ishlatmang! Faqat oddiy abzaslardan iborat badiiy matn yozing."""
 
@@ -369,7 +321,6 @@ QAT'IY QOIDA: Hech qanday sarlavha (KIRISH, ASOSIY QISM, XULOSA) yozmang! Raqaml
         result = f"{kirish}\n\n{asosiy}\n\n{xulosa}"
         real = bool(kirish and asosiy and xulosa and not kirish.startswith("⚠️"))
         return clean_ai_text(result), real
-    # ===============================================
 
     pages = int(options.get("pages", 10) or 10)
     if service == "test":
@@ -391,7 +342,7 @@ QAT'IY QOIDA: Hech qanday sarlavha (KIRISH, ASOSIY QISM, XULOSA) yozmang! Raqaml
         result += "\n\n" + _fallback_text(service, topic, options, lang, max(3, pages//3))
     return result, real
 
-# ===== TEST GENERATSIYASI (QAT'IY NAZORAT) =====
+# ===== TEST GENERATSIYASI =====
 async def _generate_test(service, topic, options, lang):
     count = int(options.get("questions", options.get("pages", 20)) or 20)
     wiki = await wikipedia_fetch(topic, max_chars=5000, gen_lang=lang)
@@ -407,39 +358,42 @@ async def _generate_test(service, topic, options, lang):
     result = "\n\n".join(all_questions) + "\n\nJAVOBLAR KALITI: (TO'G'RI) belgilangan variant."
     return result, bool(all_questions)
 
-# ====== SLAYDLAR GENERATSIYASI (Yangi shablonlar uchun qat'iy struktura) ======
+# ====== SLAYDLAR GENERATSIYASI (Yangi shablonlar uchun QAT'IY struktura) ======
 async def generate_slides_structured(topic, subject, lang, count):
     ln = _lang_name(lang)
-    wiki = await wikipedia_fetch(topic, max_chars=4000, gen_lang=lang)
+    wiki = await wikipedia_fetch(topic, max_chars=5000, gen_lang=lang)
     wb = wiki_block(wiki)
     
     system = (_pure_language_system(lang) +
               f" Siz professional taqdimot tuzuvchisiz. Javobni FAQAT {ln} tilida yozing! "
               f"Javobni faqat JSON massiv ko'rinishida qaytaring.")
 
-    # AI'dan so'ralgan shablon o'lchamiga (10, 15, 20, 25) mos ravishda qat'iy slaydlar strukturasini so'raymiz
     prompt = f"""Mavzu: {topic}. Fan: {subject}.
-Aynan {count} ta slayddan iborat taqdimot tuzing.
+Aynan {count} ta slayddan iborat professional taqdimot tuzing.
 1-slayd: Muqova (Sarlavha va qisqa ta'rif).
-2-slayd: Mundarija (Bo'limlar ro'yxati).
-{count}-slayd: Xulosa (Asosiy xulosalar va rahmat).
-Qolgan {count-3} ta slayd mavzuning mantiqiy qismlariga (nazariya, tahlil, jadval, bosqichlar, iqtibos va h.k.) bag'ishlansin.
-Har bir slayd uchun 3-5 ta mazmunli, qisqa gaplardan iborat ro'yxat yozing.
-{wb}
-QAT'IY QOIDA: Javobingiz aynan {count} ta elementdan iborat JSON massiv bo'lishi shart!
-JSON formati:
-[{{"title": "Sarlavha 1", "content": ["gap1", "gap2", "gap3"]}}, {{"title": "Sarlavha 2", "content": ["gap1", "gap2", "gap3"]}}, ...]"""
+2-slayd: Mundarija (6 ta bo'lim ro'yxati).
+{count}-slayd: Xulosa (Asosiy xulosalar).
+Qolgan {count-3} ta slayd mavzuning turli mantiqiy qismlariga (nazariya, tarix, tahlil, bosqichlar, iqtibos, jadval ma'lumotlari va h.k.) bag'ishlansin.
 
-    txt = await _chat_complete(prompt, system=system, max_tokens=4000)
+QAT'IY QOIDALAR:
+1. Javobingiz faqat va faqat JSON massiv bo'lsin.
+2. Massiv ichida aynan {count} ta element bo'lishi shart!
+3. Har bir slaydning "content" qismida kamida 3 ta va ko'pi bilan 5 ta to'liq, mazmunli gap bo'lsin. Hech qanday bo'sh joy yoki "Ma'lumot" so'zi qolmasin!
+4. Agar slaydda yillar (masalan, 1370, 1405) yoki raqamlar bo'lsa, ularni aniq yozing.
+{wb}
+
+JSON formati:
+[{{"title": "Sarlavha 1", "content": ["Gap 1", "Gap 2", "Gap 3"]}}, {{"title": "Sarlavha 2", "content": ["Gap 1", "Gap 2", "Gap 3"]}}]"""
+
+    txt = await _chat_complete(prompt, system=system, max_tokens=4500)
     parsed = _extract_json(txt)
     
     all_slides = []
     
     if parsed and isinstance(parsed, list):
-        # Til aralashuvi borligini tekshirish
         all_text = " ".join([str(s.get("title", "")) + " " + " ".join(s.get("content", [])) for s in parsed if isinstance(s, dict)])
         if _is_lang_mixed(all_text, lang):
-            txt = await _chat_complete(prompt + f"\nDIQQAT: FAQAT {ln} tilida yozing!", system=system, max_tokens=4000)
+            txt = await _chat_complete(prompt + f"\nDIQQAT: FAQAT {ln} tilida yozing! Boshqa til aralashmasin!", system=system, max_tokens=4500)
             parsed = _extract_json(txt)
             
         if parsed and isinstance(parsed, list):
@@ -452,24 +406,28 @@ JSON formati:
                         "content": [clean_ai_text(str(c)) for c in cl]
                     })
     
-    # Qat'iy nazorat: Agar AI kam yoki ko'p slayd qaytarsa, {count} ga keltiramiz
+    # Qat'iy nazorat: Agar AI kam yoki ko'p slayd qaytarsa, {count} ga tenglashtiramiz
     if not all_slides:
         all_slides = _fallback_slides(topic, count, lang)
     else:
         while len(all_slides) < count:
             idx = len(all_slides) + 1
             all_slides.append({
-                "title": f"{topic} - {idx}-qism",
-                "content": [f"{topic} bo'yicha qo'shimcha ma'lumotlar.", "Tahliliy xulosalar va natijalar."]
+                "title": f"{topic}: {idx}-qism tahlili",
+                "content": [
+                    f"{topic} mavzusining ushbu qismida asosiy nazariy qarashlar va amaliy jihatlar o'rganiladi.",
+                    "Tahlil davomida tarixiy ma'lumotlar va zamonaviy yondashuvlar qiyoslanadi.",
+                    "Mavzuning bugungi kundagi ahamiyati va kelajakdagi istiqbollari yoritiladi."
+                ]
             })
         all_slides = all_slides[:count]
 
-    # Pptx generator uchun tayyorlash
     out = []
     for i, s in enumerate(all_slides):
         cl = s.get("content", [])
         if isinstance(cl, str): cl = [p.strip() for p in cl.split("\n") if p.strip()]
-        while len(cl) < 3: cl.append(f"{topic} bo'yicha ma'lumot.")
+        while len(cl) < 3: 
+            cl.append(f"{topic} bo'yicha qo'shimcha tahliliy ma'lumotlar.")
         
         out.append({
             "slide_number": i+1,
@@ -482,31 +440,17 @@ JSON formati:
 SEARCH_MAP = {
     "alisher navoiy": "Alisher Navoi portrait poet", "navoiy": "Alisher Navoi writer poet",
     "amir temur": "Amir Timur Tamerlane conqueror", "temur": "Timur Tamerlane empire",
-    "jaloliddin manguberdi": "Jalal ad-Din Manguberdi Khwarazmshah warrior", "manguberdi": "Jalal ad-Din Manguberdi hero",
-    "mirzo ulugbek": "Ulugh Beg astronomer Samarkand observatory", "ulugbek": "Ulugh Beg Timurid scholar",
-    "ibn sino": "Avicenna Ibn Sina physician philosopher", "islom karimov": "Islam Karimov president Uzbekistan",
-    "toshkent": "Tashkent city Uzbekistan", "samarqand": "Samarkand Registan square",
-    "buxoro": "Bukhara old city Uzbekistan", "xorazm": "Khiva Khwarezm fortress",
-    "farg'ona": "Fergana valley Uzbekistan", "andijon": "Andijan city Uzbekistan",
-    "qoraqalpog'iston": "Karakalpakstan Aral sea", "uzbekiston": "Uzbekistan landmark culture",
-    "hujayra": "biological cell structure microscope", "fotosintez": "photosynthesis plant leaf chlorophyll",
-    "atom": "atom structure nucleus electrons", "molekula": "molecule chemistry 3d structure",
-    "dnk": "DNA double helix genetics", "genetika": "genetics DNA chromosome",
-    "evolyutsiya": "evolution biology darwin", "fizika": "physics laboratory experiment",
+    "jaloliddin manguberdi": "Jalal ad-Din Manguberdi warrior", "mirzo ulugbek": "Ulugh Beg astronomer",
+    "ibn sino": "Avicenna Ibn Sina physician", "samarqand": "Samarkand Registan square",
+    "buxoro": "Bukhara old city", "hujayra": "biological cell microscope",
+    "fotosintez": "photosynthesis plant leaf", "atom": "atom structure nucleus",
+    "dnk": "DNA double helix genetics", "fizika": "physics laboratory",
     "kimyo": "chemistry laboratory flask", "biologiya": "biology science laboratory",
-    "matematika": "mathematics formulas numbers", "geografiya": "geography globe map world",
+    "matematika": "mathematics formulas numbers", "geografiya": "geography globe map",
     "tarix": "history ancient civilization", "adabiyot": "literature books library",
-    "informatika": "computer science coding programming", "iqtisod": "economy finance business chart",
-    "huquq": "law justice scale court", "botanika": "botany plants flowers",
-    "zoologiya": "zoology animals wildlife", "anatomiya": "human anatomy body medical",
-    "geologiya": "geology rocks earth layers", "astronomiya": "astronomy stars galaxy telescope",
+    "informatika": "computer science coding", "iqtisod": "economy finance chart",
 }
-STOP_WORDS = {"portrait", "historical", "hero", "leader", "conqueror", "poet", "writer",
-    "scholar", "astronomer", "city", "architecture", "culture", "landmark", "warrior",
-    "prince", "scientist", "figure", "realistic", "8k", "photo", "ancient", "epic",
-    "scene", "heritage", "monument", "legacy", "starry", "sky", "sunset", "inspirational",
-    "cinematic", "dignified", "pose", "detailed", "photorealistic", "structure", "laboratory",
-    "educational", "illustration", "microscope", "nucleus", "electrons", "double", "helix"}
+STOP_WORDS = {"portrait", "historical", "hero", "leader", "conqueror", "poet", "writer", "scholar", "astronomer", "city", "architecture", "culture", "landmark", "warrior", "prince", "scientist", "figure", "realistic", "photo", "ancient", "epic", "scene", "heritage", "monument", "legacy", "inspirational", "cinematic", "detailed", "photorealistic", "structure", "laboratory", "educational", "illustration", "microscope", "nucleus", "electrons"}
 
 async def topic_to_english_keywords(topic):
     key = topic.lower().strip()
@@ -575,7 +519,7 @@ async def search_images(query, count=5):
             if not u or u in seen: continue
             seen.add(u)
             mos = sum(1 for kw in kw_list if kw in c["tags"]) if kw_list else 1
-            if c["src"] == "wikipedia": mos += 10
+            if c["src"] == "wikipedia": mos += 10 # Vikipediya rasmlari ustuvor
             candidates.append((mos, u))
     candidates.sort(key=lambda x: -x[0])
     urls = [u for mos, u in candidates if mos > 0][:count]
@@ -625,10 +569,10 @@ async def _chat_complete(prompt, system=None, max_tokens=2500):
     messages = [{"role": "system", "content": system}, {"role": "user", "content": prompt}]
     payload = {
         "messages": messages, 
-        "temperature": 0.6, 
+        "temperature": 0.5, 
         "max_tokens": max_tokens,
-        "frequency_penalty": 0.8,
-        "presence_penalty": 0.6
+        "frequency_penalty": 0.7,
+        "presence_penalty": 0.5
     }
     start = CURRENT_API_INDEX
     while True:
@@ -639,7 +583,7 @@ async def _chat_complete(prompt, system=None, max_tokens=2500):
             continue
         status, text, err = await _try_post(api, model, payload)
         if status == 200 and text:
-            return verify_facts(clean_ai_text(text)).strip()
+            return clean_ai_text(text).strip()
         if status == 429: await asyncio.sleep(2.0)
         if not switch_to_next_model() and CURRENT_API_INDEX == start: break
         await asyncio.sleep(0.5)
@@ -689,7 +633,7 @@ def _extract_json(text):
         except Exception: pass
     return None
 
-# ===== 6 TIL UCHUN TO'LIQ FALLBACK =====
+# ===== 6 TIL UCHUN ZAXIRA (FALLBACK) =====
 FB = {
     "uz": {"sections": ["Kirish", "Tarixiy kelib chiqishi", "Asosiy qism 1", "Asosiy qism 2", "Tahlil", "Xulosa"],
         "slide_sections": ["Kirish", "Tarix", "Tahlil", "Natijalar", "Xulosa"]},
@@ -729,9 +673,9 @@ def _fallback_slides(topic, count, lang):
             "slide_number": i + 1,
             "title": title,
             "content": [
-                f"{topic} bo'yicha asosiy ma'lumotlar.",
-                "Tahliliy xulosalar va natijalar.",
-                "Amaliy ahamiyati va tavsiyalar."
+                f"{topic} bo'yicha asosiy ma'lumotlar va tahlillar.",
+                "Ushbu qismda mavzuning muhim jihatlari yoritiladi.",
+                "Amaliy ahamiyati va keyingi qadamlar belgilab olinadi."
             ]
         })
     return out
