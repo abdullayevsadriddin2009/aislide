@@ -7,6 +7,7 @@ class Creation(StatesGroup):
     language = State()
     design = State()
     slide_count = State()
+    slide_design = State()
     option = State()
     format = State()
     author = State()   # ✅ Muallif ismi (bir nechta qator bo'lishi mumkin)
