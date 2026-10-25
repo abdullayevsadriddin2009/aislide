@@ -1,14 +1,14 @@
 """DOCX generator — 8 ta xizmat turi uchun to'liq struktura.
 Har bir xizmat: Titul sahifa → Mundarija → Kirish → Boblar → Xulosa → Adabiyotlar.
 6 til to'liq qo'llab-quvvatlanadi. Har sahifa pastida: 11pt "Yaratildi: @Talaba_AI_SlideBot".
-Testlar soni foydalanuvchi tanlagan songa qat'iy tenglashtirilgan.
+Til aralashuvi (masalan, ruscha tanlanganda o'zbekcha so'z qolishi) to'liq bartaraf etildi.
 """
 import io
 import re
+import json
 from docx import Document
 from docx.shared import Pt, RGBColor, Inches, Cm
-from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_LINE_SPACING
-from docx.enum.section import WD_SECTION
+from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml.ns import qn
 from docx.oxml import OxmlElement
 from config import BOT_USERNAME
@@ -27,7 +27,7 @@ L = {
         "city_year": "Toshkent — 2026",
         "toc": "MUNDARIJA", "intro": "KIRISH",
         "relevance": "Mavzuning dolzarbligi:", "goal": "Ishning maqsadi:",
-        "object":": Tadqiqot obyekti:", "subject": "Tadqiqot predmeti:",
+        "object": "Tadqiqot obyekti:", "subject": "Tadqiqot predmeti:",
         "tasks": "Bajarilgan vazifalar:",
         "conclusion": "XULOSA", "conclusion_kurs": "XULOSA VA TAKLIFLAR",
         "conclusion_diplom": "XULOSA VA TAVSIYALAR",
@@ -44,6 +44,7 @@ L = {
         "relevance_thesis": "📌 DOLZARBLIGI VA MAQSADI:",
         "test_title": "QUIZ / BILIMLAR TESTI", "questions_count": "Savollar soni:",
         "level": "Daraja: O'rta", "question": "SAVOL", "skip_author": "Talaba",
+        "faculty_label": "Fakultet:", "subject_label": "Fan:",
     },
     "ru": {
         "ministry": "МИНИСТЕРСТВО ВЫСШЕГО ОБРАЗОВАНИЯ, НАУКИ И ИННОВАЦИЙ РЕСПУБЛИКИ УЗБЕКИСТАН",
@@ -71,6 +72,7 @@ L = {
         "author": "Автор:", "affiliation": "Организация:", "email": "E-mail:",
         "relevance_thesis": "📌 АКТУАЛЬНОСТЬ И ЦЕЛЬ:", "test_title": "ТЕСТ / ПРОВЕРКА ЗНАНИЙ",
         "questions_count": "Количество вопросов:", "level": "Уровень: Средний", "question": "ВОПРОС", "skip_author": "Студент",
+        "faculty_label": "Факультет:", "subject_label": "Предмет:",
     },
     "en": {
         "ministry": "MINISTRY OF HIGHER EDUCATION, SCIENCE AND INNOVATIONS OF THE REPUBLIC OF UZBEKISTAN",
@@ -91,6 +93,7 @@ L = {
         "author": "Author:", "affiliation": "Affiliation:", "email": "E-mail:",
         "relevance_thesis": "📌 RELEVANCE AND GOAL:", "test_title": "QUIZ / KNOWLEDGE TEST",
         "questions_count": "Number of questions:", "level": "Level: Intermediate", "question": "QUESTION", "skip_author": "Student",
+        "faculty_label": "Faculty:", "subject_label": "Subject:",
     },
     "tr": {
         "ministry": "ÖZBEKİSTAN CUMHURİYETİ YÜKSEKÖĞRETİM, BİLİM VE İNOVASYON BAKANLIĞI",
@@ -109,6 +112,7 @@ L = {
         "essay_style": "TARZ: Edebi-Felsefi Deneme", "thesis": "BİLİMSEL TEZ ÖZETİ", "author": "Yazar:", "affiliation": "Kurum:", "email": "E-posta:",
         "relevance_thesis": "📌 GÜNCELLİK VE AMAÇ:", "test_title": "TEST / BİLGİ SINAVI",
         "questions_count": "Soru sayısı:", "level": "Seviye: Orta", "question": "SORU", "skip_author": "Öğrenci",
+        "faculty_label": "Fakülte:", "subject_label": "Ders:",
     },
     "de": {
         "ministry": "MINISTERIUM FÜR HOCHSCHULWESEN, WISSENSCHAFT UND INNOVATION DER REPUBLIK USBEKISTAN",
@@ -127,6 +131,7 @@ L = {
         "thesis": "WISSENSCHAFTLICHE THESE", "author": "Autor:", "affiliation": "Einrichtung:", "email": "E-Mail:",
         "relevance_thesis": "📌 AKTUALITÄT UND ZIEL:", "test_title": "TEST / WISSENSABFRAGE",
         "questions_count": "Anzahl der Fragen:", "level": "Niveau: Mittel", "question": "FRAGE", "skip_author": "Student",
+        "faculty_label": "Fakultät:", "subject_label": "Fach:",
     },
     "fr": {
         "ministry": "MINISTÈRE DE L'ENSEIGNEMENT SUPÉRIEUR, DES SCIENCES ET DE L'INNOVATION DE LA RÉPUBLIQUE D'OUBZÉKISTAN",
@@ -147,6 +152,7 @@ L = {
         "author": "Auteur :", "affiliation": "Affiliation :", "email": "E-mail :", "relevance_thesis": "📌 PERTINENCE ET OBJECTIF :",
         "test_title": "QUIZ / TEST DE CONNAISSANCES", "questions_count": "Nombre de questions :", "level": "Niveau : Intermédiaire",
         "question": "QUESTION", "skip_author": "Étudiant",
+        "faculty_label": "Faculté :", "subject_label": "Matière :",
     },
 }
 
@@ -202,7 +208,7 @@ def _chapters_for(service_code, lang):
         (_ph("rec_eff", lang), [("1", _ph("impl_model", lang)), ("2", _ph("econ_calc", lang))]),
     ]
 
-# ===== To'liq Lokalizatsiya (barcha fallback va matnlar 6 tilda) =====
+# ===== To'liq Lokalizatsiya =====
 _LOC = {
     "relevance": {"uz":"Bugungi kunda {t} mavzusi alohida dolzarblikka ega. Bu soha zamonaviy talablarga muvofiq tez rivojlanmoqda va jamiyatda muhim o'rin tutadi. Ushbu tadqiqotning asosiy sababi — mavzudagi bo'shliqlarni aniqlash va ularni bartaraf etish yo'llarini ishlab chiqish.",
                  "ru":"В настоящее время тема «{t}» имеет особую актуальность. Данная сфера быстро развивается в соответствии с современными требованиями и занимает важное место в обществе. Основная причина данного исследования — выявить пробелы по теме и разработать пути их устранения.",
@@ -403,7 +409,7 @@ def _loc(key, lang, topic=""):
     lang = str(lang).lower()
     return _LOC.get(key, {}).get(lang, _LOC.get(key, {}).get("en", key)).replace("{t}", str(topic)[:40])
 
-# ===== Test Fallback Savollari (6 tilda) =====
+# ===== Test Fallback Savollari =====
 _TEST_FB = {
     "uz": [("Mavzu bo'yicha asosiy tushuncha nima?", ["Asosiy tushuncha", "Ikkinchi variant", "Uchinchi variant", "To'rtinchi variant"]),
            ("Ushbu soha qaysi yo'nalishga tegishli?", ["Aniq fanlar", "Ijtimoiy fanlar", "Tabiiy fanlar", "Barcha javoblar to'g'ri"]),
@@ -567,116 +573,44 @@ def _parse_author(author, lbl):
             result.append((labels[i] if i < len(labels) else labels[-1], line))
     return result
 
-def _add_title_page(doc, service, topic, author, lbl, include_dept=False):
-    service_key = service if service in ("referat","mustaqil","kurs","diplom") else "referat"
-    doc.add_paragraph()
-    p = doc.add_paragraph(); p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    r = p.add_run(lbl["ministry"]); r.font.size = Pt(12); r.font.bold = True; r.font.name = "Times New Roman"
-    doc.add_paragraph()
-    p = doc.add_paragraph(); p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    r = p.add_run(lbl["inst_placeholder"]); r.font.size = Pt(14); r.font.name = "Times New Roman"
-    if include_dept:
-        p = doc.add_paragraph(); p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        r = p.add_run(lbl["dept_placeholder"]); r.font.size = Pt(13); r.font.name = "Times New Roman"
-    for _ in range(4): doc.add_paragraph()
-    p = doc.add_paragraph(); p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    r = p.add_run(lbl[service_key]); r.font.size = Pt(20); r.font.bold = True; r.font.name = "Times New Roman"
-    doc.add_paragraph()
-    p = doc.add_paragraph(); p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    r = p.add_run(f'{lbl["topic_label"]} {topic}'); r.font.size = Pt(16); r.font.bold = True; r.font.name = "Times New Roman"
-    for _ in range(3): doc.add_paragraph()
-    for lab, val in _parse_author(author, lbl):
-        p = doc.add_paragraph(); p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
-        r1 = p.add_run(f"{lab} "); r1.font.size = Pt(14); r1.font.name = "Times New Roman"
-        r2 = p.add_run(val); r2.font.size = Pt(14); r2.font.name = "Times New Roman"
-    for _ in range(4): doc.add_paragraph()
-    p = doc.add_paragraph(); p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    r = p.add_run(lbl["city_year"]); r.font.size = Pt(14); r.font.name = "Times New Roman"
-    doc.add_page_break()
-
-def _add_toc(doc, sections, lbl):
-    _add_heading(doc, lbl["toc"], level=1, center=True)
-    doc.add_paragraph()
-    for title, page in sections:
-        p = doc.add_paragraph()
-        p.paragraph_format.line_spacing = 1.5
-        dots = "." * max(3, 60 - len(title))
-        run = p.add_run(f"{title} {dots} {page}")
-        run.font.size = Pt(13); run.font.name = "Times New Roman"
-    doc.add_page_break()
-
-def _add_references(doc, topic, lbl):
-    _add_heading(doc, lbl["references"], level=1, center=True)
-    lang = lbl.get("_lang", "uz")
-    for ref in [_loc(f"ref{i}", lang, topic) for i in range(1, 6)]:
-        p = doc.add_paragraph(ref)
-        p.paragraph_format.line_spacing = 1.5
-        for run in p.runs: run.font.size = Pt(13); run.font.name = "Times New Roman"
-
-def _add_intro(doc, topic, lbl, include_object=False, content_text=""):
-    lang = lbl.get("_lang", "uz")
-    _add_heading(doc, lbl["intro"], level=1, center=True)
-    _add_label_para(doc, lbl["relevance"], _loc("relevance", lang, topic))
-    _add_label_para(doc, lbl["goal"], _loc("goal", lang, topic))
-    if include_object:
-        _add_label_para(doc, lbl["object"], _loc("object", lang, topic))
-        _add_label_para(doc, lbl["subject"], _loc("subject", lang, topic))
-    if content_text: _add_para(doc, content_text[:600])
-
-def _add_chapter(doc, num, title, body, lbl, subsections=None):
-    lang = lbl.get("_lang", "uz")
-    _add_heading(doc, f'{lbl["chapter"]} {num}. {title}', level=1)
-    if subsections:
-        for sub_num, sub_title in subsections:
-            _add_heading(doc, f"{num}.{sub_num}. {sub_title}", level=2)
-    paras = [p for p in body.split("\n") if p.strip()]
-    for p in paras[:8]: _add_para(doc, p)
-    if not paras: _add_para(doc, _loc("chapter_fb", lang).format(title=title))
-
-def _add_conclusion(doc, topic, lbl, conclusion_key="conclusion"):
-    lang = lbl.get("_lang", "uz")
-    _add_heading(doc, lbl[conclusion_key], level=1, center=True)
-    for pt in [_loc(f"concl{i}", lang, topic) for i in range(1, 5)]: _add_para(doc, pt, indent=False)
-
-
-# ===== MAXSUS REFERAT YARATISH FUNKSIYASI =====
+# ===== MAXSUS REFERAT YARATISH (Til aralashuvisiz, faqat tanlangan tilda) =====
 def _generate_special_referat(doc, topic, content_text, author, extra_data, lbl, lang):
-    """Foydalanuvchi yuborgan namunadagi kabi chiroyli va to'liq Referat yaratish."""
+    """Namunadagi kabi chiroyli va toza Referat yaratish. Barcha matnlar qat'iy tanlangan tilda."""
     data = extra_data or {}
-    subject = data.get("ref_subject", "Fan nomi kiritilmagan")
-    institution = data.get("ref_institution", "O'quv muassasasi")
+    subject = data.get("ref_subject", "")
+    institution = data.get("ref_institution", "")
     faculty = data.get("ref_faculty", "")
     dept = data.get("ref_dept", "")
     checker = data.get("ref_checker", "")
     
     # 1. TITUL VARAQ
     p = doc.add_paragraph(); p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    r = p.add_run("O'ZBEKISTON RESPUBLIKASI OLIY TA'LIM, FAN VA INNOVATSIYALAR VAZIRLIGI")
+    r = p.add_run(lbl["ministry"])
     r.font.size = Pt(12); r.font.bold = True; r.font.name = "Times New Roman"
     
     p = doc.add_paragraph(); p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    r = p.add_run(institution.upper())
+    r = p.add_run(institution.upper() if institution else lbl["inst_placeholder"])
     r.font.size = Pt(14); r.font.bold = True; r.font.name = "Times New Roman"
     
     if faculty and faculty != "-":
         p = doc.add_paragraph(); p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        r = p.add_run(f"Fakultet: {faculty}")
+        r = p.add_run(f'{lbl.get("faculty_label", "Fakultet:")} {faculty}')
         r.font.size = Pt(12); r.font.name = "Times New Roman"
         
     if dept and dept != "-":
         p = doc.add_paragraph(); p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        r = p.add_run(f"Kafedra: {dept}")
+        r = p.add_run(f'{lbl.get("dept_label", "Kafedra:")} {dept}')
         r.font.size = Pt(12); r.font.name = "Times New Roman"
 
     doc.add_paragraph()
     doc.add_paragraph()
     
     p = doc.add_paragraph(); p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    r = p.add_run("REFERAT")
+    r = p.add_run(lbl["referat"])
     r.font.size = Pt(24); r.font.bold = True; r.font.name = "Times New Roman"
     
     p = doc.add_paragraph(); p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    r = p.add_run(f"Fan: {subject}")
+    r = p.add_run(f'{lbl.get("subject_label", "Fan:")} {subject if subject else "-"}')
     r.font.size = Pt(14); r.font.bold = True; r.font.name = "Times New Roman"
     
     p = doc.add_paragraph(); p.alignment = WD_ALIGN_PARAGRAPH.CENTER
@@ -687,12 +621,12 @@ def _generate_special_referat(doc, topic, content_text, author, extra_data, lbl,
     doc.add_paragraph()
     
     p = doc.add_paragraph(); p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
-    r = p.add_run(f"Ijro etuvchi: {author if author else 'Ism Familiya'}")
+    r = p.add_run(f'{lbl["author_label"]} {author if author else lbl["skip_author"]}')
     r.font.size = Pt(14); r.font.name = "Times New Roman"
     
     if checker:
         p = doc.add_paragraph(); p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
-        r = p.add_run(f"Tekshiruvchi: {checker}")
+        r = p.add_run(f'{lbl["checked_label"]} {checker}')
         r.font.size = Pt(14); r.font.name = "Times New Roman"
 
     doc.add_paragraph()
@@ -700,25 +634,24 @@ def _generate_special_referat(doc, topic, content_text, author, extra_data, lbl,
     doc.add_paragraph()
     
     p = doc.add_paragraph(); p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    r = p.add_run("Toshkent — 2026")
+    r = p.add_run(lbl["city_year"])
     r.font.size = Pt(14); r.font.bold = True; r.font.name = "Times New Roman"
     
     doc.add_page_break()
 
-    # 2. MUNDARIJA
-    _add_heading(doc, "MUNDARIJA", level=1, center=True)
-    toc_items = [
-        "KIRISH",
-        "1. AXBOROT TEXNOLOGIYALARI NAZARIY ASOSLARI",
-        "   1.1. Asosiy tushunchalar va tasniflash",
-        "   1.2. Tarixiy rivojlanish bosqichlari",
-        "2. ZAMONAVIY AXBOROT TEXNOLOGIYALARI",
-        "   2.1. Kompyuter tarmoqlari va Internet",
-        "   2.2. Sun'iy intellekt va katta ma'lumotlar",
-        "3. AMALIY QO'LLANILISHI VA KELAJAK",
-        "XULOSA",
-        "FOYDALANILGAN ADABIYOTLAR"
-    ]
+    # 2. MUNDARIJA (Dinamik tarzda tarjima qilinadi)
+    _add_heading(doc, lbl["toc"], level=1, center=True)
+    
+    chapters = _chapters_for("referat", lang)
+    toc_items = [lbl["intro"]]
+    for i, (ct, subs) in enumerate(chapters, 1):
+        toc_items.append(f'{lbl["chapter"]} {i}. {ct}')
+        if subs:
+            for sub_num, sub_title in subs:
+                toc_items.append(f'   {i}.{sub_num}. {sub_title}')
+    toc_items.append(lbl["conclusion"])
+    toc_items.append(lbl["references"])
+    
     for item in toc_items:
         p = doc.add_paragraph()
         p.paragraph_format.line_spacing = 1.5
@@ -735,14 +668,14 @@ def _generate_special_referat(doc, topic, content_text, author, extra_data, lbl,
             doc.add_paragraph()
             continue
             
-        # Sarlavhalarni aniqlash va formatlash
-        if line.upper().startswith("KIRISH") or line.upper() == "KIRISH":
-            _add_heading(doc, "KIRISH", level=1, center=True)
-        elif line.upper().startswith("XULOSA") or line.upper() == "XULOSA":
-            _add_heading(doc, "XULOSA", level=1, center=True)
-        elif "FOYDALANILGAN ADABIYOTLAR" in line.upper():
-            _add_heading(doc, "FOYDALANILGAN ADABIYOTLAR RO'YXATI", level=1, center=True)
-        elif re.match(r'^\d+\.\s+[A-Z]', line): # 1. BOB, 2. BOB
+        # Sarlavhalarni aniqlash va formatlash (qat'iy tanlangan tilda)
+        if line.upper().startswith(lbl["intro"].upper()) or line.upper() == lbl["intro"].upper():
+            _add_heading(doc, lbl["intro"], level=1, center=True)
+        elif line.upper().startswith(lbl["conclusion"].upper()) or line.upper() == lbl["conclusion"].upper():
+            _add_heading(doc, lbl["conclusion"], level=1, center=True)
+        elif lbl["references"].upper() in line.upper() or "ADABIYOTLAR" in line.upper() or "ЛИТЕРАТУР" in line.upper():
+            _add_heading(doc, lbl["references"], level=1, center=True)
+        elif re.match(r'^\d+\.\s+[A-ZА-Я]', line): # 1. BOB, 2. ГЛАВА
             _add_heading(doc, line.upper(), level=1, center=False)
         elif re.match(r'^\d+\.\d+\.', line): # 1.1., 1.2.
             _add_heading(doc, line, level=2, center=False)
@@ -890,7 +823,7 @@ def _parse_test_questions(content_text, n_q, topic, lang):
         
     fb_list = _TEST_FB.get(str(lang).lower(), _TEST_FB["en"])
     
-    # QAT'IY TO'LDIRISH: Agar AI kam savol yozsa, foydalanuvchi tanlagan songa to'ldiriladi
+    # QAT'IY TO'LDIRISH
     while len(questions) < n_q:
         i = len(questions) + 1
         fb_q = fb_list[(i-1) % len(fb_list)]
@@ -901,7 +834,7 @@ def _parse_test_questions(content_text, n_q, topic, lang):
         })
         
     out = []
-    # QAT'IY QIRQISH: Agar AI ko'p savol yozsa, foydalanuvchi tanlagan songa qirqiladi
+    # QAT'IY QIRQISH
     for i, q in enumerate(questions[:n_q]):
         opts = q["options"]
         if len(opts) < 4:
@@ -924,7 +857,6 @@ def _generate_test(doc, topic, lang, pages, content_text, author, lbl):
     p = doc.add_paragraph(); p.alignment = WD_ALIGN_PARAGRAPH.CENTER
     r = p.add_run(f'{lbl["topic_label"]} {topic}'); r.font.size = Pt(15); r.font.name = "Times New Roman"
     
-    # ===== QAT'IY NAZORAT: n_q = foydalanuvchi tanlagan son (20 bo'lsa 20) =====
     n_q = int(pages) if pages else 20 
     if n_q < 1: n_q = 20
     
@@ -969,8 +901,20 @@ def _generate_article(doc, topic, lang, content_text, author, lbl):
         p = doc.add_paragraph(); p.alignment = WD_ALIGN_PARAGRAPH.CENTER
         r = p.add_run(f"{lab} {val}"); r.font.size = Pt(12); r.font.name = "Times New Roman"
     doc.add_paragraph()
+    
+    # Kalit so'zlar ham tanlangan tilda bo'lishi shart
+    kw_dict = {
+        "uz": "tahlil, rivojlanish, samaradorlik, tavsiyalar",
+        "ru": "анализ, развитие, эффективность, рекомендации",
+        "en": "analysis, development, efficiency, recommendations",
+        "tr": "analiz, gelişme, verimlilik, öneriler",
+        "de": "analyse, entwicklung, effizienz, empfehlungen",
+        "fr": "analyse, développement, efficacité, recommandations"
+    }
+    keywords_text = kw_dict.get(str(lang).lower(), kw_dict["en"])
+    
     _add_label_para(doc, lbl["annotation"], _loc("article_abstract", lang, topic))
-    _add_label_para(doc, lbl["keywords"], f"{topic}, analysis, development, efficiency, recommendations.")
+    _add_label_para(doc, lbl["keywords"], f"{topic}, {keywords_text}.")
     doc.add_paragraph()
     _add_heading(doc, lbl["intro"], level=1, center=True)
     _add_para(doc, _loc("article_intro", lang, topic))
