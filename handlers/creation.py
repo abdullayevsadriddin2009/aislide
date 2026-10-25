@@ -1,4 +1,4 @@
-import math  # <--- NAMEERROR XATOSI TUZATILDI
+import math  # NAMEERROR XATOSI TUZATILDI
 from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery, BufferedInputFile, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.fsm.context import FSMContext
@@ -129,6 +129,13 @@ async def cb_language(call: CallbackQuery, state: FSMContext):
     data = await state.get_data()
     service = data.get("service")
     
+    # REFERAT UCHUN MAXSUS SAVOLLAR BOSHLANADI
+    if service == "referat":
+        await state.set_state(Creation.ref_subject)
+        await msg.edit_text(t("ref_ask_subject", lang))
+        await call.answer()
+        return
+
     if service != "slide":
         await state.set_state(Creation.format)
         await msg.edit_text(t("file_format_question", lang), reply_markup=format_kb(lang))
@@ -144,14 +151,19 @@ async def cb_language(call: CallbackQuery, state: FSMContext):
 async def cb_format(call: CallbackQuery, state: FSMContext):
     fmt = call.data.split(":")[1]
     await state.update_data(file_format=fmt)
-    await _ask_author(call, state)
+    data = await state.get_data()
+    
+    # Referat bo'lsa, muallifni qayta so'ramaymiz, to'g'ridan-to'g'ri tasdiqlashga o'tamiz
+    if data.get("service") == "referat":
+        await _show_confirm(call, state)
+    else:
+        await _ask_author(call, state)
     await call.answer()
 
 # ===== 6. Yangi Shablon tanlash (slayd) =====
 @router.callback_query(Creation.slide_count, F.data.startswith("tmpl:"))
 async def cb_template(call: CallbackQuery, state: FSMContext):
     count = int(call.data.split(":")[1])
-    # Shablon nomini aniqlash
     t_names = {10: "Gold", 15: "Green", 20: "Wine", 25: "Teal"}
     template_name = t_names.get(count, "Gold")
     
@@ -176,7 +188,7 @@ async def cb_option(call: CallbackQuery, state: FSMContext):
     await _ask_author(call, state)
     await call.answer()
 
-# ===== 8. Muallif so'rash =====
+# ===== 8. Muallif so'rash (Umumiy hujjatlar uchun) =====
 async def _ask_author(event, state):
     user_id, msg = _eid(event)
     lang = await _lang(user_id)
@@ -196,6 +208,49 @@ async def author_received(message: Message, state: FSMContext):
     await state.update_data(author=author)
     await _show_confirm(message, state)
 
+# ===== 8.1 REFERAT UCHUN MAXSUS SAVOL-JAVOBLAR =====
+@router.message(Creation.ref_subject)
+async def ref_subject(message: Message, state: FSMContext):
+    lang = await _lang(message.from_user.id)
+    await state.update_data(ref_subject=message.text.strip())
+    await state.set_state(Creation.ref_institution)
+    await message.answer(t("ref_ask_institution", lang))
+
+@router.message(Creation.ref_institution)
+async def ref_institution(message: Message, state: FSMContext):
+    lang = await _lang(message.from_user.id)
+    await state.update_data(ref_institution=message.text.strip())
+    await state.set_state(Creation.ref_faculty)
+    await message.answer(t("ref_ask_faculty", lang))
+
+@router.message(Creation.ref_faculty)
+async def ref_faculty(message: Message, state: FSMContext):
+    lang = await _lang(message.from_user.id)
+    await state.update_data(ref_faculty=message.text.strip())
+    await state.set_state(Creation.ref_dept)
+    await message.answer(t("ref_ask_dept", lang))
+
+@router.message(Creation.ref_dept)
+async def ref_dept(message: Message, state: FSMContext):
+    lang = await _lang(message.from_user.id)
+    await state.update_data(ref_dept=message.text.strip())
+    await state.set_state(Creation.ref_author)
+    await message.answer(t("ref_ask_author", lang))
+
+@router.message(Creation.ref_author)
+async def ref_author(message: Message, state: FSMContext):
+    lang = await _lang(message.from_user.id)
+    await state.update_data(ref_author=message.text.strip())
+    await state.set_state(Creation.ref_checker)
+    await message.answer(t("ref_ask_checker", lang))
+
+@router.message(Creation.ref_checker)
+async def ref_checker(message: Message, state: FSMContext):
+    lang = await _lang(message.from_user.id)
+    await state.update_data(ref_checker=message.text.strip())
+    await state.set_state(Creation.format)
+    await message.answer(t("file_format_question", lang), reply_markup=format_kb(lang))
+
 # ===== 9. Tasdiqlash =====
 async def _show_confirm(event, state):
     user_id, msg = _eid(event)
@@ -205,7 +260,10 @@ async def _show_confirm(event, state):
     service = data.get("service")
     topic = data.get("topic", "")
     options = data.get("options", {})
-    author = data.get("author", "") or "—"
+    
+    # Referat bo'lsa ref_author, bo'lmasa oddiy author
+    author = data.get("ref_author") or data.get("author", "") or "—"
+    
     s = SERVICES.get(service, {})
     price = await db.get_price(service)
     
@@ -247,7 +305,7 @@ async def cb_confirm(call: CallbackQuery, state: FSMContext):
     service = data.get("service")
     topic = data.get("topic", "")
     options = data.get("options", {})
-    author = data.get("author", "")
+    author = data.get("ref_author") or data.get("author", "")
     price = data.get("price") if service == "slide" else await db.get_price(service)
     free_mode = (await db.get_setting("free_mode", "1")) == "1" or price == 0
     
@@ -286,25 +344,22 @@ async def cb_confirm(call: CallbackQuery, state: FSMContext):
         subject_key = data.get("subject", "tarix")
         language_code = data.get("language", "uz")
         slide_count = data.get("slide_count", 10)
-        template_type = str(slide_count)  # "10", "15", "20", "25" (pptx_generator uchun)
+        template_type = str(slide_count)
         subj_display = subject_name(subject_key, language_code)
         
-        # AI orqali slayd kontentini yaratish
         slides_content, real = await generate_slides_structured(topic, subj_display, language_code, slide_count)
         
-        # Rasmlarni yuklash (ixtiyoriy)
         try:
             img_paths = await _collect_images(topic, slides_content, total=5)
         except Exception as e:
             print(f"[creation] Image download error: {e}", flush=True)
             img_paths = []
             
-        # Yangi PPTX generator yordamida faylni yig'ish
         buf = generate_pptx(
             topic=topic, 
             subject=subj_display, 
             lang=language_code, 
-            design_key=template_type, # "10", "15" va hokazo
+            design_key=template_type,
             slide_count=slide_count, 
             slides_content=slides_content, 
             images=img_paths, 
@@ -324,7 +379,6 @@ async def cb_confirm(call: CallbackQuery, state: FSMContext):
         await msg.answer_document(doc, caption=caption, reply_markup=main_kb(lang))
         
     else:
-        # Boshqa hujjatlar (docx, pdf)
         language_code = data.get("language", lang)
         text_content, real = await generate(service, topic, options, language_code)
         
@@ -336,7 +390,17 @@ async def cb_confirm(call: CallbackQuery, state: FSMContext):
         else:
             pages = int(options.get("pages", 10) or 10)
             
-        buf = generate_docx(topic, service_name(service, lang), service, language_code, pages, text_content, author=author)
+        # extra_data=data qo'shildi, bu docx_generator ichidagi titul varaq uchun kerak
+        buf = generate_docx(
+            topic=topic, 
+            service_name=service_name(service, lang), 
+            service_code=service, 
+            lang=language_code, 
+            pages=pages, 
+            content_text=text_content, 
+            author=author,
+            extra_data=data
+        )
         docx_bytes = buf.read()
         fmt = data.get("file_format", "docx")
         prefix = t(f"fname_{service}", lang)
@@ -380,7 +444,7 @@ async def cb_essay_go(call: CallbackQuery, state: FSMContext):
     pages = max(2, math.ceil(words / 220))
     options["pages"] = pages
     options["target_words"] = words
-    buf = generate_docx(topic, service_name(service, lang), service, language_code, pages, text_content, author=author)
+    buf = generate_docx(topic, service_name(service, lang), service, language_code, pages, text_content, author=author, extra_data=data)
     docx_bytes = buf.read()
     fmt = data.get("file_format", "docx")
     prefix = t(f"fname_{service}", lang)
