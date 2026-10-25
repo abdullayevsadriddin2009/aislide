@@ -1,364 +1,371 @@
 # -*- coding: utf-8 -*-
+"""PowerPoint generator with three independent, fully localized designs.
+
+Design keys: modern, nature, elegant. The selected design never changes the
+requested slide count. All template/UI text is localized to ``lang``.
 """
-YANGI PPTX GENERATOR (v3.0) - Xatosiz va Toza Dizayn
-====================================================
-- 4 xil shablon: Gold(10), Green(15), Wine(20), Teal(25)
-- Timeline (yillar) avtomatik AI matnidan aniqlanadi.
-- Bo'sh joylar va keraksiz "Ma'lumot" yozuvlari to'liq olib tashlandi.
-- Jadvallar buzilmaydigan chiroyli bloklar ko'rinishida.
-"""
+from __future__ import annotations
+
 import io
 import os
-import re
+import textwrap
+from typing import Any
 
 from pptx import Presentation
-from pptx.util import Inches, Pt, Emu
+from pptx.util import Inches, Pt
 from pptx.dml.color import RGBColor
 from pptx.enum.text import PP_ALIGN, MSO_ANCHOR
 from pptx.enum.shapes import MSO_SHAPE
 
 BOT_USERNAME = "@Talaba_AI_SlideBot"
 
-# ===== Shablon ranglari =====
 THEMES = {
-    "10": {"name": "Gold",  "bg": (255, 255, 255), "primary": (201, 162, 39),  "text": (40, 40, 40),   "light": (252, 248, 235), "dark": (150, 110, 10)},
-    "15": {"name": "Green", "bg": (255, 255, 255), "primary": (45, 106, 79),   "text": (40, 40, 40),   "light": (240, 248, 240), "dark": (25, 70, 50)},
-    "20": {"name": "Wine",  "bg": (255, 255, 255), "primary": (128, 0, 32),    "text": (40, 40, 40),   "light": (250, 240, 240), "dark": (80, 0, 20)},
-    "25": {"name": "Teal",  "bg": (255, 255, 255), "primary": (15, 118, 110),  "text": (40, 40, 40),   "light": (230, 245, 245), "dark": (10, 80, 75)}
+    # Inspired by the supplied Timurid presentation: navy, warm paper and gold.
+    "modern": {
+        "bg": (248, 245, 240), "panel": (255, 255, 255), "primary": (27, 42, 65),
+        "accent": (201, 162, 39), "secondary": (123, 126, 130), "text": (48, 49, 50),
+        "cover": (20, 32, 50), "soft": (239, 232, 214), "line": (220, 217, 208),
+    },
+    # Inspired by the supplied cell / biology presentation: deep green, bright green.
+    "nature": {
+        "bg": (248, 245, 240), "panel": (255, 255, 255), "primary": (27, 67, 50),
+        "accent": (74, 222, 128), "secondary": (111, 128, 116), "text": (42, 48, 44),
+        "cover": (8, 38, 30), "soft": (231, 239, 232), "line": (205, 219, 207),
+    },
+    # A separate premium variant with plum and champagne accents.
+    "elegant": {
+        "bg": (248, 244, 240), "panel": (255, 255, 255), "primary": (65, 35, 56),
+        "accent": (194, 158, 103), "secondary": (136, 118, 128), "text": (54, 45, 51),
+        "cover": (39, 23, 36), "soft": (243, 232, 222), "line": (227, 213, 207),
+    },
 }
 
-def _rgb(tup): return RGBColor(tup[0], tup[1], tup[2])
+DESIGN_NAMES = {
+    "modern": {"uz": "Temuriylar — ko‘k va oltin", "ru": "Тимуриды — синий и золото", "en": "Timurid — navy and gold", "tr": "Timurlu — lacivert ve altın", "de": "Timuriden — Marineblau und Gold", "fr": "Timouride — bleu nuit et or"},
+    "nature": {"uz": "Ilmiy tabiat — yashil", "ru": "Научная природа — зелёный", "en": "Scientific nature — green", "tr": "Bilimsel doğa — yeşil", "de": "Wissenschaftliche Natur — Grün", "fr": "Nature scientifique — vert"},
+    "elegant": {"uz": "Minimal premium", "ru": "Минимализм премиум", "en": "Minimal premium", "tr": "Minimal premium", "de": "Minimal Premium", "fr": "Minimal premium"},
+}
 
-def _set_bg(slide, rgb):
-    fill = slide.background.fill
-    fill.solid()
-    fill.fore_color.rgb = _rgb(rgb)
+# Static template strings only. The generated subject matter is supplied by the AI
+# and must be generated in the same language as this dictionary's language key.
+UI = {
+    "uz": {"overview": "TAQDIMOT", "overview_tag": "REJA · ASOSIY BO‘LIMLAR", "overview_title": "Taqdimot mazmuni", "overview_list_heading": "MAVZUNING ASOSIY QISMLARI", "section": "BO‘LIM", "presentation": "taqdimoti", "key_points": "Asosiy fikrlar", "details": "Muhim jihatlar", "part": "BO‘LIM", "prepared": "Tayyorladi", "summary": "Yakuniy xulosalar", "thanks": "E’tiboringiz uchun rahmat!", "slide": "S L A Y D", "continued": "Davomi", "empty_title": "Qo‘shimcha tahlil", "empty_body": "Bu bo‘lim mavzuning muhim jihatlarini umumlashtiradi."},
+    "ru": {"overview": "ПРЕЗЕНТАЦИЯ", "overview_tag": "ПЛАН · ОСНОВНЫЕ РАЗДЕЛЫ", "overview_title": "Содержание презентации", "overview_list_heading": "ОСНОВНЫЕ РАЗДЕЛЫ ТЕМЫ", "section": "РАЗДЕЛ", "presentation": "презентация", "key_points": "Ключевые идеи", "details": "Важные аспекты", "part": "РАЗДЕЛ", "prepared": "Подготовил(а)", "summary": "Итоговые выводы", "thanks": "Спасибо за внимание!", "slide": "С Л А Й Д", "continued": "Продолжение", "empty_title": "Дополнительный анализ", "empty_body": "В этом разделе обобщены важные аспекты темы."},
+    "en": {"overview": "PRESENTATION", "overview_tag": "AGENDA · MAIN SECTIONS", "overview_title": "Presentation overview", "overview_list_heading": "MAIN TOPIC SECTIONS", "section": "SECTION", "presentation": "presentation", "key_points": "Key ideas", "details": "Important details", "part": "SECTION", "prepared": "Prepared by", "summary": "Key takeaways", "thanks": "Thank you for your attention!", "slide": "S L I D E", "continued": "Continued", "empty_title": "Further analysis", "empty_body": "This section summarizes important aspects of the topic."},
+    "tr": {"overview": "SUNUM", "overview_tag": "PLAN · ANA BÖLÜMLER", "overview_title": "Sunum içeriği", "overview_list_heading": "KONUNUN ANA BÖLÜMLERİ", "section": "BÖLÜM", "presentation": "sunumu", "key_points": "Temel fikirler", "details": "Önemli noktalar", "part": "BÖLÜM", "prepared": "Hazırlayan", "summary": "Genel sonuçlar", "thanks": "Dinlediğiniz için teşekkürler!", "slide": "S L A Y T", "continued": "Devamı", "empty_title": "Ek analiz", "empty_body": "Bu bölüm konunun önemli yönlerini özetler."},
+    "de": {"overview": "PRÄSENTATION", "overview_tag": "AGENDA · HAUPTABSCHNITTE", "overview_title": "Präsentationsübersicht", "overview_list_heading": "ZENTRALE THEMENABSCHNITTE", "section": "ABSCHNITT", "presentation": "Präsentation", "key_points": "Kernaussagen", "details": "Wichtige Aspekte", "part": "ABSCHNITT", "prepared": "Erstellt von", "summary": "Wichtigste Erkenntnisse", "thanks": "Vielen Dank für Ihre Aufmerksamkeit!", "slide": "F O L I E", "continued": "Fortsetzung", "empty_title": "Weitere Analyse", "empty_body": "Dieser Abschnitt fasst wichtige Aspekte des Themas zusammen."},
+    "fr": {"overview": "PRÉSENTATION", "overview_tag": "PLAN · SECTIONS PRINCIPALES", "overview_title": "Sommaire de la présentation", "overview_list_heading": "SECTIONS PRINCIPALES DU SUJET", "section": "SECTION", "presentation": "présentation", "key_points": "Idées clés", "details": "Points importants", "part": "SECTION", "prepared": "Préparé par", "summary": "Conclusions essentielles", "thanks": "Merci de votre attention !", "slide": "D I A P O", "continued": "Suite", "empty_title": "Analyse complémentaire", "empty_body": "Cette section résume les aspects importants du sujet."},
+}
 
-def _rect(slide, x, y, w, h, fill_rgb, line_rgb=None):
-    sp = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(x), Inches(y), Inches(w), Inches(h))
-    sp.fill.solid()
-    sp.fill.fore_color.rgb = _rgb(fill_rgb)
-    if line_rgb:
-        sp.line.color.rgb = _rgb(line_rgb)
-        sp.line.width = Pt(1.5)
+
+def _rgb(value):
+    return RGBColor(*value)
+
+
+def _set_bg(slide, color):
+    slide.background.fill.solid()
+    slide.background.fill.fore_color.rgb = _rgb(color)
+
+
+def _shape(slide, x, y, w, h, color, kind=MSO_SHAPE.RECTANGLE, line_color=None, radius=None):
+    sh = slide.shapes.add_shape(kind, Inches(x), Inches(y), Inches(w), Inches(h))
+    sh.fill.solid()
+    sh.fill.fore_color.rgb = _rgb(color)
+    if line_color:
+        sh.line.color.rgb = _rgb(line_color)
+        sh.line.width = Pt(1)
     else:
-        sp.line.fill.background()
-    try: sp.shadow.inherit = False
-    except Exception: pass
-    return sp
+        sh.line.fill.background()
+    return sh
 
-def _txt(slide, x, y, w, h, text, size=16, bold=False, rgb=(40,40,40), font="Arial", align=PP_ALIGN.LEFT, anchor=MSO_ANCHOR.TOP, italic=False):
-    tb = slide.shapes.add_textbox(Inches(x), Inches(y), Inches(w), Inches(h))
-    tf = tb.text_frame
+
+def _text(slide, x, y, w, h, value, size=18, color=(35, 46, 65), bold=False,
+          align=PP_ALIGN.LEFT, font="Aptos", valign=MSO_ANCHOR.TOP, margin=0.06, italic=False):
+    box = slide.shapes.add_textbox(Inches(x), Inches(y), Inches(w), Inches(h))
+    tf = box.text_frame
+    tf.clear()
     tf.word_wrap = True
-    tf.vertical_anchor = anchor
-    tf.margin_left = Emu(0); tf.margin_right = Emu(0); tf.margin_top = Emu(0); tf.margin_bottom = Emu(0)
-    lines = text.split("\n") if isinstance(text, str) else list(text)
-    for i, ln in enumerate(lines):
-        p = tf.paragraphs[0] if i == 0 else tf.add_paragraph()
+    tf.vertical_anchor = valign
+    tf.margin_left = Inches(margin)
+    tf.margin_right = Inches(margin)
+    tf.margin_top = Inches(margin)
+    tf.margin_bottom = Inches(margin)
+    lines = str(value if value is not None else "").split("\n")
+    for idx, line in enumerate(lines):
+        p = tf.paragraphs[0] if idx == 0 else tf.add_paragraph()
         p.alignment = align
-        p.line_spacing = 1.3
+        p.space_after = Pt(5)
+        p.line_spacing = 1.08
         r = p.add_run()
-        r.text = ln
+        r.text = line
         r.font.name = font
         r.font.size = Pt(size)
         r.font.bold = bold
         r.font.italic = italic
-        r.font.color.rgb = _rgb(rgb)
-    return tb
+        r.font.color.rgb = _rgb(color)
+    return box
 
-def _get_sd(sc, idx):
-    """Xavfsiz ma'lumot olish."""
-    if idx < len(sc):
-        d = sc[idx]
-        return str(d.get("title", "Tahlil")), d.get("content", ["Ma'lumotlar kiritilmagan."])
-    return "Tahlil", ["Ma'lumotlar kiritilmagan."]
 
-# ================= LAYOUTS =================
-
-def _slide_cover(prs, th, topic, subject, author):
-    slide = prs.slides.add_slide(prs.slide_layouts[6])
-    _set_bg(slide, th["light"])
-    _rect(slide, 0, 0, 13.333, 0.5, th["primary"])
-    _rect(slide, 0, 7.0, 13.333, 0.5, th["primary"])
-    
-    _txt(slide, 1.0, 1.5, 11.333, 0.5, subject.upper(), size=18, bold=True, rgb=th["primary"])
-    _txt(slide, 1.0, 2.2, 11.333, 2.0, topic, size=48, bold=True, rgb=th["text"], font="Georgia")
-    _rect(slide, 1.0, 4.5, 2.0, 0.08, th["primary"])
-    _txt(slide, 1.0, 4.8, 10.0, 0.5, "Qisqa tavsif: taqdimotning asosiy g'oyasi shu yerda yoziladi", size=16, rgb=(100,100,100))
-    _txt(slide, 1.0, 5.8, 10.0, 0.5, f"Tayyorlovchi: {author if author else 'Ism Familiya'}", size=16, bold=True, rgb=th["dark"])
-    _txt(slide, 10.0, 6.5, 2.5, 0.3, f"{BOT_USERNAME}", size=10, rgb=(150,150,150), align=PP_ALIGN.RIGHT)
-
-def _slide_toc(prs, th, sc):
-    slide = prs.slides.add_slide(prs.slide_layouts[6])
-    _set_bg(slide, th["bg"])
-    _txt(slide, 0.8, 0.8, 10, 0.8, "Taqdimot mazmuni", size=36, bold=True, rgb=th["primary"], font="Georgia")
-    _txt(slide, 0.8, 1.8, 10, 0.4, "BO'LIMLAR", size=14, bold=True, rgb=th["primary"])
-    
-    for i in range(min(6, len(sc) - 2)):
-        title, _ = _get_sd(sc, i+2)
-        r, c = i // 3, i % 3
-        x = 0.8 + c * 4.1
-        y = 2.8 + r * 2.0
-        _rect(slide, x, y, 3.8, 1.5, th["light"])
-        _txt(slide, x+0.2, y+0.2, 3.4, 0.4, f"0{i+1}", size=20, bold=True, rgb=th["primary"])
-        _txt(slide, x+0.2, y+0.7, 3.4, 0.6, title, size=14, bold=True, rgb=th["text"])
-
-def _slide_section(prs, th, num, title, subtitle=""):
-    slide = prs.slides.add_slide(prs.slide_layouts[6])
-    _set_bg(slide, th["primary"])
-    _txt(slide, 1.0, 2.0, 5, 1.5, f"0{num}", size=90, bold=True, rgb=th["bg"])
-    _txt(slide, 1.2, 3.8, 8, 1.0, title, size=40, bold=True, rgb=th["bg"])
-    if subtitle:
-        _txt(slide, 1.2, 4.8, 8, 0.5, subtitle, size=18, rgb=th["light"])
-
-def _slide_img_text(prs, th, title, content, images, img_idx):
-    slide = prs.slides.add_slide(prs.slide_layouts[6])
-    _set_bg(slide, th["bg"])
-    _txt(slide, 0.8, 0.6, 11.7, 0.8, title, size=32, bold=True, rgb=th["primary"], font="Georgia")
-    
-    # Rasm qo'yish
-    img = images[img_idx % len(images)] if images else None
-    if img and os.path.exists(img):
-        slide.shapes.add_picture(img, Inches(0.8), Inches(2.0), Inches(5.5), Inches(4.2))
+def _safe_text_list(content):
+    if isinstance(content, str):
+        values = [x.strip(" •\t") for x in content.splitlines() if x.strip()]
+    elif isinstance(content, (list, tuple)):
+        values = [str(x).strip() for x in content if str(x).strip()]
     else:
-        _rect(slide, 0.8, 2.0, 5.5, 4.2, th["light"])
-        _txt(slide, 0.8, 3.8, 5.5, 0.5, "[ RASM / SXEMA ]", size=14, bold=True, rgb=(150,150,150), align=PP_ALIGN.CENTER)
-    
-    bullets = "\n\n".join([f"• {c}" for c in content[:5]])
-    _txt(slide, 7.0, 2.0, 5.5, 4.5, bullets, size=16, rgb=th["text"])
+        values = []
+    return values
 
-def _slide_two_col(prs, th, title, content, col_a="Birinchi guruh", col_b="Ikkinchi guruh"):
+
+def _footer(slide, th, index, total, topic, subject, lang, dark=False):
+    color = (221, 227, 238) if dark else th["secondary"]
+    labels = UI[lang]
+    short_topic = str(topic or "").strip()
+    if len(short_topic) > 45:
+        short_topic = short_topic[:42].rstrip() + "…"
+    footer_text = f"{short_topic} · {subject} {labels['presentation']}"
+    _text(slide, 0.72, 7.11, 10.3, 0.22, footer_text, size=8, color=color, margin=0)
+    _text(slide, 11.45, 7.09, 1.1, 0.25, f"{index:02d} / {total:02d}", size=9,
+          color=color, align=PP_ALIGN.RIGHT, margin=0)
+
+
+def _darken_cover_image(path):
+    """Crop a topic image to widescreen and darken it behind cover text."""
+    from PIL import Image, ImageEnhance, ImageOps
+    source = Image.open(path).convert("RGB")
+    source = ImageOps.fit(source, (1600, 900), method=Image.Resampling.LANCZOS, centering=(0.5, 0.5))
+    source = ImageEnhance.Brightness(source).enhance(0.40)
+    out = io.BytesIO()
+    source.save(out, format="JPEG", quality=88, optimize=True)
+    out.seek(0)
+    return out
+
+
+def _cover(prs, theme, lang, topic, subject, author, total, images=None, description=""):
+    labels = UI[lang]
     slide = prs.slides.add_slide(prs.slide_layouts[6])
-    _set_bg(slide, th["bg"])
-    _txt(slide, 0.8, 0.6, 11.7, 0.8, title, size=32, bold=True, rgb=th["primary"], font="Georgia")
-    
-    mid = max(1, len(content)//2)
-    txt_a = content[:mid] if content else ["Ma'lumotlar."]
-    txt_b = content[mid:] if len(content) > mid else ["Tahliliy xulosalar."]
-    
-    _rect(slide, 0.8, 1.8, 5.5, 0.6, th["primary"])
-    _txt(slide, 0.8, 1.9, 5.5, 0.4, col_a, size=18, bold=True, rgb=(255,255,255), align=PP_ALIGN.CENTER)
-    _rect(slide, 0.8, 2.4, 5.5, 4.0, th["light"])
-    _txt(slide, 1.0, 2.6, 5.1, 3.6, "\n\n".join([f"• {c}" for c in txt_a]), size=15, rgb=th["text"])
-    
-    _rect(slide, 7.0, 1.8, 5.5, 0.6, th["primary"])
-    _txt(slide, 7.0, 1.9, 5.5, 0.4, col_b, size=18, bold=True, rgb=(255,255,255), align=PP_ALIGN.CENTER)
-    _rect(slide, 7.0, 2.4, 5.5, 4.0, th["light"])
-    _txt(slide, 7.2, 2.6, 5.1, 3.6, "\n\n".join([f"• {c}" for c in txt_b]), size=15, rgb=th["text"])
+    cover_image = next((p for p in (images or []) if isinstance(p, str) and os.path.exists(p)), None)
+    if cover_image:
+        try:
+            slide.shapes.add_picture(_darken_cover_image(cover_image), Inches(0), Inches(0), width=Inches(13.333), height=Inches(7.5))
+        except Exception:
+            _set_bg(slide, theme["cover"])
+    else:
+        _set_bg(slide, theme["cover"])
+    # A narrow color rail and bold title match the sample files' cover style.
+    _shape(slide, 0.0, 0.0, 0.10, 7.5, theme["accent"])
+    eyebrow = f"{subject.upper()} · {str(topic).upper()}"
+    _text(slide, 0.88, 1.35, 11.5, 0.42, eyebrow[:100], size=12, color=theme["accent"], bold=True, margin=0)
+    title_size = 39 if len(str(topic)) < 42 else 32 if len(str(topic)) < 70 else 25
+    _text(slide, 0.86, 2.05, 11.7, 1.6, topic, size=title_size, color=(255, 255, 255), bold=True, font="Aptos Display", margin=0)
+    _shape(slide, 0.88, 4.03, 1.75, 0.055, theme["accent"])
+    description = str(description or labels["empty_body"]).strip()
+    if len(description) > 180:
+        description = description[:177].rstrip() + "…"
+    _text(slide, 0.88, 4.38, 10.8, 0.95, description, size=16, color=(241, 241, 241), margin=0)
+    if author:
+        _text(slide, 0.88, 5.82, 10.8, 0.35, f"{labels['prepared']}: {author}", size=11, color=(228, 228, 228), margin=0)
+    _text(slide, 0.88, 6.60, 10.8, 0.28, f"{subject} · {labels['presentation']}", size=9, color=(215, 215, 215), margin=0)
+    _footer(slide, theme, 1, total, topic, subject, lang, dark=True)
+    return slide
 
-def _slide_stats(prs, th, title, content):
+
+def _overview_slide(prs, theme, lang, topic, subject, entries, total):
+    labels = UI[lang]
     slide = prs.slides.add_slide(prs.slide_layouts[6])
-    _set_bg(slide, th["bg"])
-    _txt(slide, 0.8, 0.6, 11.7, 0.8, title, size=32, bold=True, rgb=th["primary"], font="Georgia")
-    
-    for i in range(min(3, len(content))):
-        x = 0.8 + i * 4.1
-        _rect(slide, x, 2.5, 3.8, 3.5, th["light"])
-        txt = content[i]
-        # Raqamni ajratib olishga urinish (masalan: "1370" yoki "35 yil")
-        match = re.search(r'\b(\d+[\d\s\.,]*)\b', txt)
-        val = match.group(0) if match else f"0{i+1}"
-        
-        _txt(slide, x, 3.0, 3.8, 1.0, val, size=48, bold=True, rgb=th["primary"], align=PP_ALIGN.CENTER)
-        _txt(slide, x+0.2, 4.2, 3.4, 1.5, txt[:150], size=14, rgb=th["text"], align=PP_ALIGN.CENTER)
+    _set_bg(slide, theme["bg"])
+    _shape(slide, 0.0, 0.0, 13.333, 0.075, theme["accent"])
+    _text(slide, 0.82, 0.52, 11.7, 0.30, labels["overview_tag"], size=10, color=theme["primary"], bold=True, margin=0)
+    _text(slide, 0.82, 0.97, 11.7, 0.74, labels["overview_title"], size=30, color=theme["primary"], bold=True, font="Aptos Display", margin=0)
+    _shape(slide, 0.82, 1.77, 0.92, 0.045, theme["accent"])
 
-def _slide_process(prs, th, title, content):
+    # Select up to six representative section titles, spread across larger decks.
+    valid = [e for e in entries if isinstance(e, dict) and str(e.get("title", "")).strip()]
+    if len(valid) > 6:
+        idxs = [round(i * (len(valid) - 1) / 5) for i in range(6)]
+        agenda = [valid[i] for i in idxs]
+    else:
+        agenda = valid
+    _shape(slide, 0.82, 2.23, 11.68, 3.88, theme["panel"], kind=MSO_SHAPE.ROUNDED_RECTANGLE, line_color=theme["line"])
+    _shape(slide, 0.82, 2.23, 11.68, 0.72, theme["primary"], kind=MSO_SHAPE.ROUNDED_RECTANGLE)
+    _text(slide, 1.12, 2.42, 10.95, 0.32, labels["overview_list_heading"], size=13, color=(255, 255, 255), bold=True, margin=0)
+    for i, item in enumerate(agenda):
+        y = 3.18 + i * 0.45
+        _text(slide, 1.15, y, 0.42, 0.31, f"{i + 1}.", size=13, color=theme["accent"], bold=True, margin=0)
+        heading = str(item.get("title", "")).strip()
+        if len(heading) > 100:
+            heading = heading[:97].rstrip() + "…"
+        _text(slide, 1.62, y, 10.35, 0.32, heading, size=13, color=theme["text"], margin=0)
+    _footer(slide, theme, 2, total, topic, subject, lang)
+    return slide
+
+def _content_slide(prs, th, lang, item, index, total, design_key, images, topic, subject):
+    labels = UI[lang]
     slide = prs.slides.add_slide(prs.slide_layouts[6])
-    _set_bg(slide, th["bg"])
-    _txt(slide, 0.8, 0.6, 11.7, 0.8, title, size=32, bold=True, rgb=th["primary"], font="Georgia")
-    
-    steps = ["1. BOSQICH", "2. BOSQICH", "3. BOSQICH", "4. BOSQICH"]
-    for i in range(min(4, len(content))):
-        x = 0.8 + i * 3.0
-        _rect(slide, x, 2.0, 2.8, 0.6, th["primary"])
-        _txt(slide, x, 2.1, 2.8, 0.4, steps[i], size=14, bold=True, rgb=(255,255,255), align=PP_ALIGN.CENTER)
-        _rect(slide, x, 2.6, 2.8, 3.0, th["light"], line_rgb=th["primary"])
-        _txt(slide, x+0.1, 2.8, 2.6, 2.6, content[i][:200], size=13, rgb=th["text"])
+    dark = design_key == "elegant" and index % 4 == 0
+    _set_bg(slide, th["cover"] if dark else th["bg"])
+    _shape(slide, 0.0, 0.0, 0.10, 7.5, th["accent"])
+    title_color = (255, 255, 255) if dark else th["primary"]
+    body_color = (239, 233, 239) if dark else th["text"]
+    card_color = (73, 47, 66) if dark else th["panel"]
+    accent_color = th["accent"]
 
-def _slide_quote(prs, th, title, content):
+    title = str(item.get("title") or labels["empty_title"]).strip()
+    content = _safe_text_list(item.get("content"))
+    if not content:
+        content = [labels["empty_body"]]
+    title_size = 27 if len(title) < 46 else 22 if len(title) < 75 else 18
+    eyebrow = f"{labels['section']} {max(1, index - 2):02d} · {subject.upper()}"
+    _text(slide, 0.78, 0.40, 11.8, 0.28, eyebrow, size=10, color=accent_color, bold=True, margin=0)
+    _text(slide, 0.78, 0.82, 11.8, 0.8, title, size=title_size, color=title_color, bold=True, font="Aptos Display", margin=0)
+    _shape(slide, 0.78, 1.68, 0.85, 0.045, accent_color)
+
+    # Three visible layout patterns are reused differently in each design.
+    pattern = (index - 1) % 3
+    image_path = None
+    if images and (index % 3 == 1):
+        candidate = images[(index // 3) % len(images)]
+        if isinstance(candidate, str) and os.path.exists(candidate):
+            image_path = candidate
+
+    if pattern == 0 and image_path:
+        try:
+            slide.shapes.add_picture(image_path, Inches(0.8), Inches(1.75), width=Inches(5.25), height=Inches(4.45))
+            _shape(slide, 6.35, 1.75, 6.05, 4.45, card_color, line_color=th["line"] if not dark else None)
+            body = "\n\n".join([f"• {x}" for x in content[:5]])
+            _text(slide, 6.62, 2.0, 5.55, 3.95, body, size=16 if len(body) < 750 else 13, color=body_color, margin=0.02)
+        except Exception:
+            image_path = None
+
+    if pattern == 0 and not image_path:
+        # Two clear cards, not a fixed foreign-language placeholder.
+        mid = max(1, (len(content) + 1) // 2)
+        groups = [content[:mid], content[mid:]]
+        headings = [labels["key_points"], labels["details"]]
+        for col in range(2):
+            x = 0.8 + col * 6.05
+            _shape(slide, x, 1.85, 5.7, 4.25, card_color, line_color=th["line"] if not dark else None)
+            _shape(slide, x, 1.85, 5.7, 0.12, accent_color)
+            _text(slide, x + 0.25, 2.12, 5.15, 0.42, headings[col], size=16, color=accent_color if dark else th["primary"], bold=True, margin=0)
+            group = groups[col] or [labels["empty_body"]]
+            body = "\n\n".join(f"• {v}" for v in group)
+            _text(slide, x + 0.25, 2.68, 5.15, 3.15, body, size=16 if len(body) < 600 else 13, color=body_color, margin=0.02)
+
+    elif pattern == 1:
+        # Vertical numbered points with generous spacing.
+        for i, value in enumerate(content[:5]):
+            y = 1.72 + i * 0.88
+            _shape(slide, 0.88, y, 0.58, 0.58, accent_color, kind=MSO_SHAPE.OVAL)
+            _text(slide, 0.88, y + 0.12, 0.58, 0.28, str(i + 1), size=14, color=(255, 255, 255), bold=True, align=PP_ALIGN.CENTER, margin=0)
+            card = _shape(slide, 1.7, y - 0.03, 10.75, 0.66, card_color, line_color=th["line"] if not dark else None)
+            fontsize = 15 if len(value) < 120 else 12
+            _text(slide, 1.95, y + 0.08, 10.25, 0.47, value, size=fontsize, color=body_color, margin=0)
+
+    elif pattern == 2:
+        # Large statement on the left and concise points on the right.
+        _shape(slide, 0.8, 1.82, 4.05, 4.42, th["primary"] if not dark else th["accent"])
+        _text(slide, 1.08, 2.15, 3.48, 0.35, labels["part"], size=11, color=(255, 255, 255), bold=True, margin=0)
+        _text(slide, 1.08, 2.85, 3.45, 2.6, title, size=25 if len(title) < 55 else 19, color=(255, 255, 255), bold=True, margin=0)
+        _shape(slide, 5.2, 1.82, 7.2, 4.42, card_color, line_color=th["line"] if not dark else None)
+        body = "\n\n".join(f"✓ {v}" for v in content[:5])
+        _text(slide, 5.52, 2.12, 6.55, 3.8, body, size=16 if len(body) < 650 else 13, color=body_color, margin=0.02)
+
+    _footer(slide, th, index, total, topic, subject, lang, dark=dark)
+    return slide
+
+
+
+def _closing_slide(prs, theme, lang, topic, subject, entries, total):
+    """Localized closing slide with a short recap and thank-you message."""
+    labels = UI[lang]
     slide = prs.slides.add_slide(prs.slide_layouts[6])
-    _set_bg(slide, th["primary"])
-    _txt(slide, 1.0, 1.0, 11.3, 0.5, "MUHIM G'OYA", size=16, bold=True, rgb=th["light"])
-    _txt(slide, 1.0, 2.0, 11.3, 2.0, title, size=40, bold=True, rgb=(255,255,255), align=PP_ALIGN.CENTER, font="Georgia")
-    text = content[0] if content else "Muhim fikr."
-    _txt(slide, 1.0, 4.0, 11.3, 1.5, f'"{text}"', size=24, italic=True, rgb=th["light"], align=PP_ALIGN.CENTER)
-    _txt(slide, 1.0, 5.5, 11.3, 0.5, "— Muallif nomi", size=18, rgb=(255,255,255), align=PP_ALIGN.RIGHT)
+    _set_bg(slide, theme["cover"])
+    _shape(slide, 0.0, 0.0, 13.333, 0.10, theme["accent"])
+    _text(slide, 0.86, 0.75, 11.5, 0.35, labels["summary"].upper(), size=12,
+          color=theme["accent"], bold=True, margin=0)
+    _text(slide, 0.82, 1.25, 11.8, 0.85, labels["summary"], size=31,
+          color=(255, 255, 255), bold=True, font="Aptos Display", margin=0)
+    _shape(slide, 0.86, 2.17, 1.0, 0.055, theme["accent"])
 
-def _slide_grid_2x2(prs, th, title, content):
-    slide = prs.slides.add_slide(prs.slide_layouts[6])
-    _set_bg(slide, th["bg"])
-    _txt(slide, 0.8, 0.6, 11.7, 0.8, title, size=32, bold=True, rgb=th["primary"], font="Georgia")
-    
-    for i in range(min(4, len(content))):
-        r, c = i // 2, i % 2
-        x = 0.8 + c * 6.0
-        y = 2.0 + r * 2.4
-        _rect(slide, x, y, 5.7, 2.0, th["light"])
-        _txt(slide, x+0.2, y+0.2, 5.3, 0.5, f"Xususiyat {i+1}", size=18, bold=True, rgb=th["primary"])
-        _txt(slide, x+0.2, y+0.8, 5.3, 1.0, content[i][:150], size=14, rgb=th["text"])
+    recap = []
+    # The final content slide is instructed to summarize the topic; its points
+    # make the closing slide useful instead of merely repeating the agenda.
+    if entries and isinstance(entries[-1], dict):
+        recap = _safe_text_list(entries[-1].get("content"))[:4]
+    if not recap:
+        recap = [labels["empty_body"]]
+    _shape(slide, 0.84, 2.62, 7.7, 3.05, (255, 255, 255))
+    for i, value in enumerate(recap[:4]):
+        y = 2.92 + i * 0.61
+        _shape(slide, 1.08, y + 0.03, 0.34, 0.34, theme["accent"], kind=MSO_SHAPE.OVAL)
+        _text(slide, 1.08, y + 0.08, 0.34, 0.18, "✓", size=10, color=theme["cover"], bold=True,
+              align=PP_ALIGN.CENTER, margin=0)
+        value = value if len(value) <= 100 else value[:97].rstrip() + "…"
+        _text(slide, 1.62, y, 6.55, 0.44, value, size=14, color=theme["text"], margin=0)
 
-def _slide_table(prs, th, title, content):
-    slide = prs.slides.add_slide(prs.slide_layouts[6])
-    _set_bg(slide, th["bg"])
-    _txt(slide, 0.8, 0.6, 11.7, 0.8, title, size=32, bold=True, rgb=th["primary"], font="Georgia")
-    
-    # AI matnni jadvalga moslab bermasligi mumkinligi sababli, uni chiroyli 2 ustunli qilib chiqaramiz
-    _rect(slide, 0.8, 2.0, 11.7, 4.5, th["light"])
-    bullets = "\n\n".join([f"▪️ {c}" for c in content[:6]])
-    _txt(slide, 1.2, 2.4, 11.0, 3.8, bullets, size=18, rgb=th["text"])
+    _shape(slide, 8.95, 2.62, 3.55, 3.05, theme["primary"])
+    _text(slide, 9.25, 3.10, 2.95, 1.0, labels["thanks"], size=21,
+          color=(255, 255, 255), bold=True, align=PP_ALIGN.CENTER, valign=MSO_ANCHOR.MIDDLE, margin=0.04)
+    _shape(slide, 10.22, 4.38, 1.05, 0.05, theme["accent"])
+    _text(slide, 9.25, 4.69, 2.95, 0.48, str(topic)[:80], size=11,
+          color=(237, 237, 237), align=PP_ALIGN.CENTER, margin=0.02)
+    _footer(slide, theme, total, total, topic, subject, lang, dark=True)
+    return slide
 
-def _slide_timeline(prs, th, title, content):
-    slide = prs.slides.add_slide(prs.slide_layouts[6])
-    _set_bg(slide, th["bg"])
-    _txt(slide, 0.8, 0.6, 11.7, 0.8, title, size=32, bold=True, rgb=th["primary"], font="Georgia")
-    _txt(slide, 0.8, 1.5, 11.7, 0.4, "TARIXIY JADVAL", size=14, bold=True, rgb=th["primary"])
-    
-    _rect(slide, 0.8, 3.2, 11.7, 0.1, th["primary"])
-    for i in range(min(4, len(content))):
-        x = 1.5 + i * 3.0
-        _rect(slide, x, 3.05, 0.4, 0.4, th["primary"])
-        
-        # Matndan yilni avtomatik ajratib olish (xato 2020, 2022 larni yo'q qilish)
-        text = content[i]
-        match = re.search(r'\b(1\d{3}|20\d{2})\b', text)
-        year_lbl = match.group(1) if match else f"{i+1}-bosqich"
-        
-        _txt(slide, x-0.5, 2.5, 1.5, 0.5, year_lbl, size=24, bold=True, rgb=th["primary"], align=PP_ALIGN.CENTER)
-        _txt(slide, x-1.2, 3.6, 3.0, 2.0, text[:150], size=14, rgb=th["text"], align=PP_ALIGN.CENTER)
+def generate_pptx(topic: str, subject: str, lang: str, design_key: str, slide_count: int,
+                  slides_content: list[dict[str, Any]] | None, images=None, author: str = ""):
+    """Create a localized deck with cover, agenda, content, and closing slides.
 
-def _slide_facts(prs, th, title, content):
-    slide = prs.slides.add_slide(prs.slide_layouts[6])
-    _set_bg(slide, th["bg"])
-    _txt(slide, 0.8, 0.6, 11.7, 0.8, title, size=32, bold=True, rgb=th["primary"], font="Georgia")
-    
-    # 6 ta quti emas, faqat mavjud ma'lumot sonini chizish
-    for i in range(min(6, len(content))):
-        r, c = i // 3, i % 3
-        x = 0.8 + c * 4.1
-        y = 2.0 + r * 2.4
-        _rect(slide, x, y, 3.8, 2.0, th["light"])
-        _txt(slide, x+0.2, y+0.2, 3.4, 0.5, f"0{i+1}", size=24, bold=True, rgb=th["primary"])
-        _txt(slide, x+0.2, y+0.8, 3.4, 1.0, content[i][:120], size=14, rgb=th["text"])
+    The requested slide count includes all four parts and is preserved exactly.
+    ``slides_content`` should contain ``slide_count - 3`` body slides.
+    """
+    lc = str(lang or "en").lower()
+    if lc not in UI:
+        lc = "en"
+    key = str(design_key or "modern").lower()
+    if key not in THEMES:
+        key = "modern"
+    total = max(5, min(50, int(slide_count or 10)))
+    body_count = total - 3
 
-def _slide_chart(prs, th, title, content):
-    slide = prs.slides.add_slide(prs.slide_layouts[6])
-    _set_bg(slide, th["bg"])
-    _txt(slide, 0.8, 0.6, 11.7, 0.8, title, size=32, bold=True, rgb=th["primary"], font="Georgia")
-    _txt(slide, 0.8, 2.0, 5.0, 4.0, "\n\n".join([f"• {c}" for c in content[:4]]), size=16, rgb=th["text"])
-    _rect(slide, 6.5, 2.0, 6.0, 4.0, th["light"])
-    _txt(slide, 6.5, 3.8, 6.0, 0.5, "[ GRAFIK JOYI ]", size=14, bold=True, rgb=(150,150,150), align=PP_ALIGN.CENTER)
-
-def _slide_refs(prs, th, title, content):
-    slide = prs.slides.add_slide(prs.slide_layouts[6])
-    _set_bg(slide, th["bg"])
-    _txt(slide, 0.8, 0.6, 11.7, 0.8, title, size=32, bold=True, rgb=th["primary"], font="Georgia")
-    refs = "1. Asosiy adabiyotlar va manbalar.\n2. Ilmiy maqolalar to'plami."
-    if content:
-        refs = "\n".join([f"{i+1}. {c}" for i, c in enumerate(content[:6])])
-    _txt(slide, 0.8, 2.0, 11.7, 4.5, refs, size=16, rgb=th["text"])
-
-def _slide_conclusion(prs, th, title, content):
-    slide = prs.slides.add_slide(prs.slide_layouts[6])
-    _set_bg(slide, th["bg"])
-    _txt(slide, 0.8, 0.6, 11.7, 0.8, "XULOSA • SUMMARY", size=20, bold=True, rgb=th["primary"])
-    _txt(slide, 0.8, 1.5, 11.7, 0.8, title, size=32, bold=True, rgb=th["text"], font="Georgia")
-    
-    bullets = content[:4] if content else ["Asosiy xulosalar."]
-    _txt(slide, 0.8, 2.8, 11.7, 2.5, "\n\n".join([f"✓ {c}" for c in bullets]), size=18, rgb=th["text"])
-    _txt(slide, 0.8, 5.8, 11.7, 1.0, "E'tiboringiz uchun rahmat! Savollaringiz bormi?", size=24, bold=True, rgb=th["primary"], align=PP_ALIGN.CENTER)
-
-# ================= ASOSIY GENERATOR =================
-
-def generate_pptx(topic, subject, lang, design_key, slide_count, slides_content, images=None, author=""):
     prs = Presentation()
     prs.slide_width = Inches(13.333)
     prs.slide_height = Inches(7.5)
-    
-    t_key = str(slide_count) if str(slide_count) in THEMES else "10"
-    th = THEMES[t_key]
-    sc = slides_content or []
-    imgs = images if isinstance(images, list) else ([images] if images else [])
-    
-    # ================= 10 SLAYD (GOLD) =================
-    if t_key == "10":
-        _slide_cover(prs, th, topic, subject, author)
-        _slide_toc(prs, th, sc)
-        t, c = _get_sd(sc, 2); _slide_img_text(prs, th, t, c, imgs, 1)
-        t, c = _get_sd(sc, 3); _slide_two_col(prs, th, t, c, "Asosiy tushunchalar", "Muhim jihatlar")
-        t, c = _get_sd(sc, 4); _slide_stats(prs, th, t, c)
-        t, c = _get_sd(sc, 5); _slide_process(prs, th, t, c)
-        t, c = _get_sd(sc, 6); _slide_quote(prs, th, t, c)
-        t, c = _get_sd(sc, 7); _slide_two_col(prs, th, t, c, "Afzalliklar", "Kamchiliklar")
-        _slide_refs(prs, th, "Foydalanilgan adabiyotlar", [])
-        t, c = _get_sd(sc, 9); _slide_conclusion(prs, th, t, c)
 
-    # ================= 15 SLAYD (GREEN) =================
-    elif t_key == "15":
-        _slide_cover(prs, th, topic, subject, author)
-        _slide_toc(prs, th, sc)
-        t, c = _get_sd(sc, 2); _slide_img_text(prs, th, t, c, imgs, 1)
-        t, c = _get_sd(sc, 3); _slide_two_col(prs, th, t, c, "Turlari", "Guruhlari")
-        t, c = _get_sd(sc, 4); _slide_stats(prs, th, t, c)
-        t, c = _get_sd(sc, 5); _slide_table(prs, th, t, c)
-        t, c = _get_sd(sc, 6); _slide_process(prs, th, t, c)
-        t, c = _get_sd(sc, 7); _slide_grid_2x2(prs, th, t, c)
-        t, c = _get_sd(sc, 8); _slide_quote(prs, th, t, c)
-        t, c = _get_sd(sc, 9); _slide_two_col(prs, th, t, c, "Variant A", "Variant B")
-        t, c = _get_sd(sc, 10); _slide_img_text(prs, th, t, c, imgs, 2)
-        t, c = _get_sd(sc, 11); _slide_facts(prs, th, t, c)
-        t, c = _get_sd(sc, 12); _slide_two_col(prs, th, t, c, "Xulosa A", "Xulosa B")
-        _slide_refs(prs, th, "Foydalanilgan adabiyotlar", [])
-        t, c = _get_sd(sc, 14); _slide_conclusion(prs, th, t, c)
+    th = dict(THEMES[key])
+    entries = list(slides_content or [])
+    while len(entries) < body_count:
+        n = len(entries) + 1
+        title_fallback, body_fallback = _localized_fallback_entry(lc, n)
+        entries.append({"title": title_fallback, "content": body_fallback})
+    entries = entries[:body_count]
+    desc = ""
+    if entries:
+        first_content = _safe_text_list(entries[0].get("content")) if isinstance(entries[0], dict) else []
+        desc = first_content[0] if first_content else ""
 
-    # ================= 20 SLAYD (WINE) =================
-    elif t_key == "20":
-        _slide_cover(prs, th, topic, subject, author)
-        _slide_toc(prs, th, sc)
-        t, c = _get_sd(sc, 2); _slide_img_text(prs, th, t, c, imgs, 1)
-        t, c = _get_sd(sc, 3); _slide_two_col(prs, th, t, c, "Konsept A", "Konsept B")
-        t, c = _get_sd(sc, 4); _slide_timeline(prs, th, t, c)  # <--- Xato yillar to'g'rilandi
-        t, c = _get_sd(sc, 5); _slide_stats(prs, th, t, c)
-        t, c = _get_sd(sc, 6); _slide_table(prs, th, t, c)     # <--- Jadval to'g'rilandi
-        t, c = _get_sd(sc, 7); _slide_process(prs, th, t, c)
-        t, c = _get_sd(sc, 8); _slide_grid_2x2(prs, th, t, c)
-        t, c = _get_sd(sc, 9); _slide_quote(prs, th, t, c)
-        t, c = _get_sd(sc, 10); _slide_two_col(prs, th, t, c, "Variant A", "Variant B")
-        t, c = _get_sd(sc, 11); _slide_facts(prs, th, t, c)     # <--- Bo'sh faktlar olib tashlandi
-        t, c = _get_sd(sc, 12); _slide_img_text(prs, th, t, c, imgs, 2)
-        t, c = _get_sd(sc, 13); _slide_two_col(prs, th, t, c, "Afzalliklar", "Cheklovlar")
-        t, c = _get_sd(sc, 14); _slide_grid_2x2(prs, th, t, c)
-        t, c = _get_sd(sc, 15); _slide_timeline(prs, th, t, c)
-        t, c = _get_sd(sc, 16); _slide_table(prs, th, t, c)
-        _slide_refs(prs, th, "Foydalanilgan adabiyotlar", [])
-        t, c = _get_sd(sc, 19); _slide_conclusion(prs, th, t, c)
-
-    # ================= 25 SLAYD (TEAL) =================
-    else:
-        _slide_cover(prs, th, topic, subject, author)
-        _slide_toc(prs, th, sc)
-        t, c = _get_sd(sc, 2); _slide_img_text(prs, th, t, c, imgs, 1)
-        t, c = _get_sd(sc, 3); _slide_two_col(prs, th, t, c, "Maqsad", "Vazifalar")
-        t, c = _get_sd(sc, 4); _slide_timeline(prs, th, t, c)
-        t, c = _get_sd(sc, 5); _slide_stats(prs, th, t, c)
-        t, c = _get_sd(sc, 6); _slide_img_text(prs, th, t, c, imgs, 2)
-        t, c = _get_sd(sc, 7); _slide_two_col(prs, th, t, c, "Guruh A", "Guruh B")
-        t, c = _get_sd(sc, 8); _slide_table(prs, th, t, c)
-        t, c = _get_sd(sc, 9); _slide_grid_2x2(prs, th, t, c)
-        t, c = _get_sd(sc, 10); _slide_process(prs, th, t, c)
-        t, c = _get_sd(sc, 11); _slide_quote(prs, th, t, c)
-        t, c = _get_sd(sc, 12); _slide_table(prs, th, t, c)
-        t, c = _get_sd(sc, 13); _slide_grid_2x2(prs, th, t, c)
-        t, c = _get_sd(sc, 14); _slide_facts(prs, th, t, c)
-        t, c = _get_sd(sc, 15); _slide_two_col(prs, th, t, c, "Natija A", "Natija B")
-        t, c = _get_sd(sc, 16); _slide_quote(prs, th, t, c)
-        t, c = _get_sd(sc, 17); _slide_img_text(prs, th, t, c, imgs, 3)
-        t, c = _get_sd(sc, 18); _slide_facts(prs, th, t, c)
-        t, c = _get_sd(sc, 19); _slide_process(prs, th, t, c)
-        _slide_refs(prs, th, "Foydalanilgan adabiyotlar", [])
-        t, c = _get_sd(sc, 24); _slide_conclusion(prs, th, t, c)
+    _cover(prs, th, lc, str(topic), str(subject), str(author or "").strip(), total,
+           images=images, description=desc)
+    _overview_slide(prs, th, lc, str(topic), str(subject), entries, total)
+    for i, item in enumerate(entries):
+        item = item if isinstance(item, dict) else {}
+        actual_slide_number = i + 3
+        _content_slide(prs, th, lc, item, actual_slide_number, total, key, images or [], str(topic), str(subject))
+    _closing_slide(prs, th, lc, str(topic), str(subject), entries, total)
 
     buf = io.BytesIO()
     prs.save(buf)
     buf.seek(0)
     return buf
+
+
+def _localized_fallback_entry(lang, index):
+    """Never introduce English placeholder content into a non-English deck."""
+    fallback = {
+        "uz": (f"Qo‘shimcha tahlil {index}", ["Mavzuning asosiy jihatlari tahlil qilinadi.", "Muhim dalillar va misollar ko‘rib chiqiladi.", "Natijalar mavzu bilan bog‘liq holda umumlashtiriladi."]),
+        "ru": (f"Дополнительный анализ {index}", ["Рассматриваются основные аспекты темы.", "Изучаются важные факты и примеры.", "Результаты обобщаются в контексте темы."]),
+        "en": (f"Further analysis {index}", ["The main aspects of the topic are examined.", "Important facts and examples are considered.", "The findings are summarized in context."]),
+        "tr": (f"Ek analiz {index}", ["Konunun temel yönleri incelenir.", "Önemli bilgiler ve örnekler ele alınır.", "Sonuçlar konu bağlamında özetlenir."]),
+        "de": (f"Weitere Analyse {index}", ["Die wichtigsten Aspekte des Themas werden untersucht.", "Wichtige Fakten und Beispiele werden betrachtet.", "Die Ergebnisse werden zusammengefasst."]),
+        "fr": (f"Analyse complémentaire {index}", ["Les principaux aspects du sujet sont examinés.", "Les faits et exemples importants sont étudiés.", "Les résultats sont résumés dans leur contexte."]),
+    }
+    return fallback.get(lang, fallback["en"])
