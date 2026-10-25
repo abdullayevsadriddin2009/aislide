@@ -451,7 +451,7 @@ async def cb_confirm(call: CallbackQuery, state: FSMContext):
     # ===== INSHO UCHUN MAXSUS =====
     if service == "insho":
         language_code = data.get("language", lang)
-        words = max(320, int(options.get("words", 320) or 320))
+        words = max(100, min(3000, int(options.get("words", 320) or 320)))
         options["words"] = words
         await state.update_data(options=options)
         outline = await generate_outline(service, generation_topic, language_code, words)
@@ -460,13 +460,18 @@ async def cb_confirm(call: CallbackQuery, state: FSMContext):
             [InlineKeyboardButton(text=t("btn_cancel", lang), callback_data="cancel")],
         ])
         if outline:
+            await state.update_data(essay_outline=outline)
             await msg.edit_text(t("essay_outline", lang, outline=outline[:3000]), reply_markup=kb)
         else:
             fallback_outline = {
-                "uz": "(Reja avtomatik tuziladi)", "ru": "(План будет составлен автоматически)",
-                "en": "(The outline will be generated automatically)", "tr": "(Taslak otomatik oluşturulacak)",
-                "de": "(Die Gliederung wird automatisch erstellt)", "fr": "(Le plan sera généré automatiquement)",
-            }.get(lang, "(The outline will be generated automatically)")
+                "uz": f"1. Kirish: {generation_topic} mavzusining mazmuni va ahamiyati\n2. Asosiy fikr: asosiy tarixiy yoki nazariy xususiyatlar\n3. Asosiy fikr: mavzuning jamiyatga ta’siri\n4. Shaxsiy munosabat: dalillarni baholash\n5. Xulosa: fikrlarni umumlashtirish",
+                "ru": f"1. Введение: значение темы «{generation_topic}»\n2. Основная мысль: ключевые особенности\n3. Основная мысль: влияние темы на общество\n4. Личная позиция: оценка аргументов\n5. Заключение: обобщение выводов",
+                "en": f"1. Introduction: meaning and importance of {generation_topic}\n2. Main point: key features\n3. Main point: impact on society\n4. Personal view: evaluate the arguments\n5. Conclusion: summarize the findings",
+                "tr": f"1. Giriş: {generation_topic} konusunun önemi\n2. Ana fikir: temel özellikler\n3. Ana fikir: toplum üzerindeki etkisi\n4. Kişisel görüş: savları değerlendirme\n5. Sonuç: bulguları özetleme",
+                "de": f"1. Einleitung: Bedeutung von {generation_topic}\n2. Hauptgedanke: zentrale Merkmale\n3. Hauptgedanke: gesellschaftliche Wirkung\n4. Eigene Position: Argumente bewerten\n5. Schluss: Ergebnisse zusammenfassen",
+                "fr": f"1. Introduction : importance de {generation_topic}\n2. Idée principale : caractéristiques essentielles\n3. Idée principale : effets sur la société\n4. Point de vue personnel : évaluer les arguments\n5. Conclusion : résumer les résultats",
+            }.get(language_code, f"1. Introduction: {generation_topic}\n2. Main point\n3. Main point\n4. Personal view\n5. Conclusion")
+            await state.update_data(essay_outline=fallback_outline)
             await msg.edit_text(t("essay_outline", lang, outline=fallback_outline), reply_markup=kb)
         await state.set_state(Creation.essay_outline)
         return
@@ -580,12 +585,13 @@ async def cb_essay_go(call: CallbackQuery, state: FSMContext):
     safe_topic = "".join(c for c in topic[:25] if c.isalnum() or c in " _-").strip() or "document"
     language_code = data.get("language", lang)
     text_content, real = await generate(service, generation_topic, options, language_code)
-    words = max(320, int(options.get("words", 320) or 320))
+    words = max(100, min(3000, int(options.get("words", 320) or 320)))
     pages = max(2, math.ceil(words / 220))
     options["pages"] = pages
     options["target_words"] = words
     document_data = dict(data)
     document_data["essay_target_words"] = words
+    document_data["essay_outline"] = data.get("essay_outline", "")
     for field in ("ref_subject", "ref_faculty", "ref_dept"):
         if document_data.get(field):
             document_data[field] = await localize_topic(document_data[field], language_code)
