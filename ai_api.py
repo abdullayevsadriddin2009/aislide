@@ -307,16 +307,20 @@ async def _generate_section(service, topic, sec_title, sec_pages, sec_desc, lang
         await asyncio.sleep(0.2)
     return "\n\n".join(parts)
 
-async def generate_outline(service, topic, lang, words=250):
+async def generate_outline(service, topic, lang, words=320):
+    """Create a localized essay outline matching the required three-part structure."""
     wiki = await wikipedia_fetch(topic, max_chars=2000, gen_lang=lang)
     wb = wiki_block(wiki)
-    prompt = f"""Mavzu: {topic}. Ushbu mavzuda insho yozish uchun REJA tuzing. 
-Reja quyidagi tuzilishda bo'lishi shart:
-1. Kirish (asosiy tezis nima bo'ladi?)
-2. Asosiy qism (3 ta alohida fikr/argument)
-3. Xulosa (qanday yakuniy fikrga kelinadi?)
-Faqat shu rejani qisqa qilib yozing, matnni yozmang. {wb}"""
-    txt = await _chat_complete(prompt, system=_pure_language_system(lang), max_tokens=1000)
+    ln = _lang_name(lang)
+    prompt = f"""Create an essay outline for the topic: {topic}.
+The final essay must be written entirely in {ln} and follow this structure:
+I. INTRODUCTION: establish why the topic matters today, paraphrase the topic in the writer's own words, and state a clear thesis.
+II. MAIN BODY: plan three paragraphs: (1) first argument with explanation and a concrete example; (2) second argument or opposing view with evidence/example; (3) the writer's personal position after considering both sides.
+III. CONCLUSION: summarize the arguments, restate the thesis in different words, and offer a relevant solution or forward-looking recommendation. Do not introduce a new topic.
+The standard essay target is about {words} words. For a roughly 320–350 word essay, aim for 70–80 words in the introduction, 150–200 in the main body, and 70–80 in the conclusion. For longer choices, expand all three sections proportionally while keeping this structure.
+Return only a concise outline in {ln}; do not write the full essay. Do not add instructions about how to write an essay. Reference material (use for facts only; do not copy its language if it differs from {ln}):
+{wb}"""
+    txt = await _chat_complete(prompt, system=_pure_language_system(lang), max_tokens=1200)
     return txt if txt and not txt.startswith("⚠️") else None
 
 # ===== ASOSIY GENERATE FUNKSIYASI (Hujjatlar uchun) =====
@@ -324,39 +328,65 @@ async def generate(service, topic, options, lang="uz"):
     if service == "insho":
         wiki = await wikipedia_fetch(topic, max_chars=3000, gen_lang=lang)
         wb = wiki_block(wiki)
-        target_words = max(100, min(3000, int(options.get("words", 250) or 250)))
-        intro_words = max(20, round(target_words * 0.2))
-        body_words = max(40, round(target_words * 0.6))
-        conclusion_words = max(20, target_words - intro_words - body_words)
-        system = _pure_language_system(lang) + """ You are an expert essay writer. Write only in the selected language. Do not use headings, numbered lists, or bullet points; write normal paragraphs only."""
+        target_words = max(320, min(3000, int(options.get("words", 320) or 320)))
+        ln = _lang_name(lang)
+        # Standard essay: 3 sections. For longer requested lengths, retain the same proportions.
+        intro_words = max(70, round(target_words * 0.225))
+        conclusion_words = max(70, round(target_words * 0.225))
+        body_words = max(150, target_words - intro_words - conclusion_words)
+        # Ensure the sections stay within the requested total approximately.
+        if target_words <= 360:
+            intro_words = max(70, min(80, round(target_words * 0.225)))
+            conclusion_words = intro_words
+            body_words = max(150, min(200, target_words - intro_words - conclusion_words))
+        system = _pure_language_system(lang) + (
+            f" You are an expert essay writer. Produce only natural {ln}. "
+            "Follow the requested section task exactly. Do not include meta-advice, a writing checklist, "
+            "or headings inside the section text. Use clear reasoning and do not invent statistics or sources."
+        )
 
-        prompt_k = f"Topic: {topic}. Write the opening paragraph of an essay in {lang}, about {intro_words} words. Do not add a heading. {wb}"
-        kirish = await _chat_complete(prompt_k, system=system, max_tokens=1000)
-        if _is_lang_mixed(kirish, lang) or not kirish:
-            kirish = await _chat_complete(prompt_k + f"\nFAQAT {_lang_name(lang)} TILIDA YOZING!", system=system, max_tokens=1000)
-        if not kirish or kirish.startswith("⚠️"):
+        prompt_intro = f"""Topic: {topic}.
+Write ONLY the essay's INTRODUCTION in {ln}, approximately {intro_words} words.
+Include these elements naturally in this order: (1) one or two sentences showing why the issue matters today; (2) paraphrase the topic in your own words; (3) a clear thesis stating the writer's position or central claim.
+Do not add a heading, bullet points, a numbered list, or writing advice. Do not mention section word counts. {wb}"""
+        intro = await _chat_complete(prompt_intro, system=system, max_tokens=1200)
+        if not intro or intro.startswith("⚠️") or _is_lang_mixed(intro, lang):
+            intro = await _chat_complete(prompt_intro + f"\nOutput exclusively in {ln}.", system=system, max_tokens=1200)
+        if not intro or intro.startswith("⚠️"):
             loc = _FALLBACK_COPY.get(str(lang).lower(), _FALLBACK_COPY["en"])
-            kirish = f"{topic}. {loc['body']}"
+            intro = f"{topic}. {loc['body']}"
 
-        prompt_a = f"Topic: {topic}. Write the main part of the essay in 2-4 meaningful paragraphs, about {body_words} words total. Do not use headings, numbering or bullet points. Write only in {lang}. {wb}"
-        asosiy = await _chat_complete(prompt_a, system=system, max_tokens=2000)
-        if _is_lang_mixed(asosiy, lang) or not asosiy:
-            asosiy = await _chat_complete(prompt_a + f"\nFAQAT {_lang_name(lang)} TILIDA YOZING!", system=system, max_tokens=2000)
-        if not asosiy or asosiy.startswith("⚠️"):
+        prompt_body = f"""Topic: {topic}.
+Write ONLY the MAIN BODY of an essay in {ln}, approximately {body_words} words total, as exactly THREE meaningful paragraphs:
+Paragraph 1: first strong argument, explain it, and support it with a concrete real-life or scientific example.
+Paragraph 2: the second aspect or an opposing viewpoint, with an example or evidence; do not fabricate precise statistics.
+Paragraph 3: the writer's personal position after weighing both sides, supported by reasoning.
+Do not add a heading, numbering, bullet points, or writing advice. Do not write the introduction or conclusion. {wb}"""
+        body = await _chat_complete(prompt_body, system=system, max_tokens=2400)
+        if not body or body.startswith("⚠️") or _is_lang_mixed(body, lang):
+            body = await _chat_complete(prompt_body + f"\nOutput exclusively in {ln}.", system=system, max_tokens=2400)
+        if not body or body.startswith("⚠️"):
             loc = _FALLBACK_COPY.get(str(lang).lower(), _FALLBACK_COPY["en"])
-            asosiy = f"{loc['analysis']} {loc['relevance']} {loc['body']}"
+            body = f"{loc['analysis']} {loc['relevance']}\n\n{loc['body']}\n\n{loc['analysis']}"
 
-        prompt_x = f"Topic: {topic}. Write the concluding paragraph of the essay in {lang}, about {conclusion_words} words. Do not add a heading. Write only in {lang}."
-        xulosa = await _chat_complete(prompt_x, system=system, max_tokens=1000)
-        if _is_lang_mixed(xulosa, lang) or not xulosa:
-            xulosa = await _chat_complete(prompt_x + f"\nFAQAT {_lang_name(lang)} TILIDA YOZING!", system=system, max_tokens=1000)
-        if not xulosa or xulosa.startswith("⚠️"):
+        prompt_conclusion = f"""Topic: {topic}.
+Write ONLY the CONCLUSION in {ln}, approximately {conclusion_words} words.
+It must (1) briefly synthesize the arguments already discussed; (2) restate the introduction's thesis using different words; and (3) give a relevant solution, recommendation, or forward-looking call. Do NOT introduce a new idea or unrelated topic. Do not add a heading, bullets, numbering, or writing advice. {wb}"""
+        conclusion = await _chat_complete(prompt_conclusion, system=system, max_tokens=1200)
+        if not conclusion or conclusion.startswith("⚠️") or _is_lang_mixed(conclusion, lang):
+            conclusion = await _chat_complete(prompt_conclusion + f"\nOutput exclusively in {ln}.", system=system, max_tokens=1200)
+        if not conclusion or conclusion.startswith("⚠️"):
             loc = _FALLBACK_COPY.get(str(lang).lower(), _FALLBACK_COPY["en"])
-            xulosa = f"{loc['conclusion']}: {loc['relevance']}"
+            conclusion = f"{loc['conclusion']}: {loc['relevance']}"
 
-        result = f"{kirish}\n\n{asosiy}\n\n{xulosa}"
-        real = bool(kirish and asosiy and xulosa and not kirish.startswith("⚠️"))
-        return clean_ai_text(result), real
+        # Internal markers let DOCX render exactly the three requested sections without extra filler.
+        result = (
+            "[[ESSAY_INTRO]]\n" + clean_ai_text(intro) +
+            "\n\n[[ESSAY_BODY]]\n" + clean_ai_text(body) +
+            "\n\n[[ESSAY_CONCLUSION]]\n" + clean_ai_text(conclusion)
+        )
+        real = all(x and not x.startswith("⚠️") for x in (intro, body, conclusion))
+        return result, real
 
     pages = int(options.get("pages", 10) or 10)
     if service == "test":
@@ -589,7 +619,20 @@ async def _try_post(api, model, payload):
     try:
         if api["type"] == "google":
             url = f"{api['base_url']}/models/{model}:generateContent?key={api['api_key']}"
-            data = {"contents": [{"parts": [{"text": payload["messages"][-1]["content"]}]}]}
+            messages = payload.get("messages", [])
+            system_text = "\n".join(
+                str(item.get("content", "")) for item in messages
+                if item.get("role") == "system" and item.get("content")
+            ).strip()
+            user_messages = [item for item in messages if item.get("role") != "system"]
+            contents = [
+                {"role": "user" if item.get("role") != "assistant" else "model",
+                 "parts": [{"text": str(item.get("content", ""))}]}
+                for item in user_messages if item.get("content")
+            ]
+            data = {"contents": contents}
+            if system_text:
+                data["systemInstruction"] = {"parts": [{"text": system_text}]}
             async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=AI_TIMEOUT)) as session:
                 async with session.post(url, json=data, timeout=AI_TIMEOUT) as resp:
                     body = await resp.text()
@@ -636,25 +679,21 @@ async def _chat_complete(prompt, system=None, max_tokens=2500):
         await asyncio.sleep(0.5)
     return "⚠️ AI serverga ulanib bo'lmadi."
 
-CHAT_STYLE = {
-    "uz": "Suhbat uslubida, qisqa va aniq javob bering.",
-    "ru": "Отвечайте в разговорном стиле, кратко.",
-    "en": "Answer in a conversational style, briefly.",
-    "tr": "Konuşma tarzında, kısa cevap ver.",
-    "de": "Antworten Sie im Gesprächsstil, kurz.",
-    "fr": "Répondez dans un style conversationnel, brièvement.",
-}
+CHAT_AUTO_LANGUAGE_SYSTEM = """You are a helpful multilingual AI assistant.
+IMPORTANT LANGUAGE RULE: Determine the language of the user's latest message and answer in that same language, using the same script and a natural level of formality. The bot interface language and these system instructions do not determine the response language.
+If the user explicitly asks you to translate something or to answer in a different language, follow that explicit request. Otherwise, do not switch languages and do not default to Uzbek.
+Answer the actual question or task. If the user provides a long text, analyze the whole available text instead of treating words inside it as menu commands. Preserve requested structure, examples, and level of detail. Do not claim that you processed parts that were not provided. Use readable formatting and avoid unnecessary repetition."""
 
 async def chat_answer(question, user_lang="uz"):
-    q = str(question or "")
-    lang = str(user_lang).lower()
-    truncated = ""
-    if len(q) > 8000:
-        truncated = "\n\n[Eslatma: matn qisqartirildi.]"
-        q = q[:8000]
-    system = _pure_language_system(lang) + " " + CHAT_STYLE.get(lang, CHAT_STYLE["en"])
-    ans = await _chat_complete(q, system=system, max_tokens=4000)
-    return ans + truncated if ans and not ans.startswith("⚠️") else None
+    q = str(question or "").strip()
+    if not q:
+        return None
+    # Telegram message bodies are normally capped around 4096 characters. Keep a safety limit
+    # for other clients without appending a notice in a different language.
+    if len(q) > 12000:
+        q = q[:12000]
+    ans = await _chat_complete(q, system=CHAT_AUTO_LANGUAGE_SYSTEM, max_tokens=4000)
+    return ans if ans and not ans.startswith("⚠️") else None
 
 async def test_api():
     lines = []
