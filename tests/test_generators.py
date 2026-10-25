@@ -60,6 +60,38 @@ class DOCXGeneratorTests(unittest.TestCase):
         for lang in LANGS:
             self.assertEqual(set(L[lang]), expected, msg=f"Missing localization key for {lang}")
 
+
+    def test_essay_has_five_point_plan_without_section_headings(self):
+        from docx import Document
+        content = (
+            "[[ESSAY_INTRO]]\nI. KIRISH QISMI\nAmir Temur XIV asrda muhim davlat arbobi bo‘lgan.\n\n"
+            "[[ESSAY_BODY]]\nII. ASOSIY QISM\nU davlat boshqaruvini mustahkamlashga intilgan.\n\n"
+            "Samarqand madaniy markaz sifatida rivojlangan.\n\n"
+            "Uning merosini xolis baholash kerak.\n\n"
+            "[[ESSAY_CONCLUSION]]\nIII. XULOSA QISMI\nXulosa qilib aytganda, tarixiy merosni dalillar asosida o‘rganish muhim."
+        )
+        stream = generate_docx(
+            topic="Amir Temur", service_name="INSHO / ESSEY", service_code="insho",
+            lang="uz", pages=2, content_text=content, author="Talaba",
+            extra_data={
+                "essay_target_words": 200,
+                "essay_outline": "1. Kirish: mavzuning tarixiy ahamiyati\n"
+                                "2. Birinchi fikr: davlat boshqaruvi\n"
+                                "3. Ikkinchi fikr: Samarqand madaniyati\n"
+                                "4. Uchinchi fikr: merosga xolis baho\n"
+                                "5. Xulosa: tarixiy saboqlar",
+            },
+        )
+        doc = Document(io.BytesIO(stream.getvalue()))
+        full_text = "\n".join(p.text for p in doc.paragraphs)
+        self.assertIn("REJA", full_text)
+        for n in range(1, 6):
+            self.assertIn(f"{n}.", full_text)
+        self.assertNotIn("KIRISH QISMI", full_text)
+        self.assertNotIn("ASOSIY QISM", full_text)
+        self.assertNotIn("XULOSA QISMI", full_text)
+        self.assertIn("Amir Temur XIV asrda", full_text)
+
     def test_all_services_and_languages_generate(self):
         for lang in LANGS:
             for service in SERVICES:
