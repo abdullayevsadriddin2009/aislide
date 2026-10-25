@@ -20,7 +20,7 @@ LAST_ERROR = "hali sinanmadi"
 PIXABAY_KEY  = os.getenv("PIXABAY_KEY", "")
 PEXELS_KEY   = os.getenv("PEXELS_KEY", "")
 UNSPLASH_KEY = os.getenv("UNSPLASH_KEY", "")
-USER_AGENT = "SlaydBot/1.0 (aloqa: admin@example.uz)"
+USER_AGENT = "SlaydBot/1.0 (aloqa: admin@AbduIIayev__7)"
 
 _KEYWORD_CACHE = {}
 CHARS_PER_PAGE = 900
