@@ -451,7 +451,9 @@ async def cb_confirm(call: CallbackQuery, state: FSMContext):
     # ===== INSHO UCHUN MAXSUS =====
     if service == "insho":
         language_code = data.get("language", lang)
-        words = int(options.get("words", 250))
+        words = max(320, int(options.get("words", 320) or 320))
+        options["words"] = words
+        await state.update_data(options=options)
         outline = await generate_outline(service, generation_topic, language_code, words)
         kb = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text=t("btn_write_essay", lang), callback_data="essay:go")],
@@ -578,11 +580,12 @@ async def cb_essay_go(call: CallbackQuery, state: FSMContext):
     safe_topic = "".join(c for c in topic[:25] if c.isalnum() or c in " _-").strip() or "document"
     language_code = data.get("language", lang)
     text_content, real = await generate(service, generation_topic, options, language_code)
-    words = int(options.get("words", 250))
+    words = max(320, int(options.get("words", 320) or 320))
     pages = max(2, math.ceil(words / 220))
     options["pages"] = pages
     options["target_words"] = words
     document_data = dict(data)
+    document_data["essay_target_words"] = words
     for field in ("ref_subject", "ref_faculty", "ref_dept"):
         if document_data.get(field):
             document_data[field] = await localize_topic(document_data[field], language_code)
