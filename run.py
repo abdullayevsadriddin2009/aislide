@@ -17,6 +17,11 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 log = logging.getLogger("bot")
 
 async def main():
+    if not config.BOT_TOKEN:
+        log.error("BOT_TOKEN muhit o'zgaruvchisi sozlanmagan. .env yoki hosting Environment Variables ichida kiriting.")
+        return
+    if not config.WEB_ADMIN_PASSWORD:
+        log.warning("WEB_ADMIN_PASSWORD sozlanmagan: web-admin login vaqtincha yopiq bo'ladi.")
     await db.get_db()
     log.info("Database initialized: %s", config.DB_PATH)
 
@@ -33,7 +38,7 @@ async def main():
 
     try:
         start_web_thread()
-        log.info("Web admin: http://127.0.0.1:%s (parol: %s)", config.WEB_ADMIN_PORT, config.WEB_ADMIN_PASSWORD)
+        log.info("Web admin server ishga tushirishga yuborildi (port=%s). Maxfiy parol logga chiqarilmaydi.", config.WEB_ADMIN_PORT)
     except Exception as e:
         log.warning("Web panel ishga tushmadi: %s", e)
 
