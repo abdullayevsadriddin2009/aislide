@@ -12,6 +12,7 @@ import json
 import re
 import math
 import os
+from collections import Counter
 from dotenv import load_dotenv
 load_dotenv()
 from config import AI_API_URL, AI_MODEL, AI_TIMEOUT
@@ -20,7 +21,7 @@ LAST_ERROR = "hali sinanmadi"
 PIXABAY_KEY  = os.getenv("PIXABAY_KEY", "")
 PEXELS_KEY   = os.getenv("PEXELS_KEY", "")
 UNSPLASH_KEY = os.getenv("UNSPLASH_KEY", "")
-USER_AGENT = "SlaydBot/1.0 (aloqa: admin@AbduIIayev__7)"
+USER_AGENT = "SlaydBot/1.0 (aloqa: @AbduIIayev__7)"
 
 _KEYWORD_CACHE = {}
 CHARS_PER_PAGE = 900
@@ -192,6 +193,17 @@ async def localize_topic(topic, lang="uz"):
     language_names = {"uz": "Uzbek", "ru": "Russian", "en": "English", "tr": "Turkish", "de": "German", "fr": "French"}
     if not original or lc not in language_names:
         return original
+    # Common Arabic subject names should not remain untranslated in an otherwise localized document.
+    arabic_subjects = {
+        "تاريخ": {"uz": "Tarix", "ru": "История", "en": "History", "tr": "Tarih", "de": "Geschichte", "fr": "Histoire"},
+        "رياضيات": {"uz": "Matematika", "ru": "Математика", "en": "Mathematics", "tr": "Matematik", "de": "Mathematik", "fr": "Mathématiques"},
+        "جغرافيا": {"uz": "Geografiya", "ru": "География", "en": "Geography", "tr": "Coğrafya", "de": "Geografie", "fr": "Géographie"},
+        "فيزياء": {"uz": "Fizika", "ru": "Физика", "en": "Physics", "tr": "Fizik", "de": "Physik", "fr": "Physique"},
+        "كيمياء": {"uz": "Kimyo", "ru": "Химия", "en": "Chemistry", "tr": "Kimya", "de": "Chemie", "fr": "Chimie"},
+        "أحياء": {"uz": "Biologiya", "ru": "Биология", "en": "Biology", "tr": "Biyoloji", "de": "Biologie", "fr": "Biologie"},
+    }
+    if original in arabic_subjects:
+        return arabic_subjects[original].get(lc, original)
     prompt = (
         f"Translate this academic topic/title into {language_names[lc]}. Preserve people, place, "
         "organization, brand and official product names where appropriate. Do not add commentary, "
@@ -307,86 +319,303 @@ async def _generate_section(service, topic, sec_title, sec_pages, sec_desc, lang
         await asyncio.sleep(0.2)
     return "\n\n".join(parts)
 
-async def generate_outline(service, topic, lang, words=320):
-    """Create a localized essay outline matching the required three-part structure."""
-    wiki = await wikipedia_fetch(topic, max_chars=2000, gen_lang=lang)
-    wb = wiki_block(wiki)
-    ln = _lang_name(lang)
-    prompt = f"""Create an essay outline for the topic: {topic}.
-The final essay must be written entirely in {ln} and follow this structure:
-I. INTRODUCTION: establish why the topic matters today, paraphrase the topic in the writer's own words, and state a clear thesis.
-II. MAIN BODY: plan three paragraphs: (1) first argument with explanation and a concrete example; (2) second argument or opposing view with evidence/example; (3) the writer's personal position after considering both sides.
-III. CONCLUSION: summarize the arguments, restate the thesis in different words, and offer a relevant solution or forward-looking recommendation. Do not introduce a new topic.
-The standard essay target is about {words} words. For a roughly 320–350 word essay, aim for 70–80 words in the introduction, 150–200 in the main body, and 70–80 in the conclusion. For longer choices, expand all three sections proportionally while keeping this structure.
-Return only a concise outline in {ln}; do not write the full essay. Do not add instructions about how to write an essay. Reference material (use for facts only; do not copy its language if it differs from {ln}):
-{wb}"""
-    txt = await _chat_complete(prompt, system=_pure_language_system(lang), max_tokens=1200)
-    return txt if txt and not txt.startswith("⚠️") else None
+def _fallback_essay_outline(topic, lang="uz"):
+    """Return a stable, localized five-point essay plan when AI output is unusable."""
+    topic = str(topic or "mavzu").strip()
+    plans = {
+        "uz": [
+            f"Kirish: {topic} mavzusining mazmuni va tarixiy yoki ijtimoiy ahamiyati.",
+            "Birinchi asosiy fikr: mavzuning kelib chiqishi va muhim xususiyatlari.",
+            "Ikkinchi asosiy fikr: mavzuning hayotga ta’siri va tegishli misollar.",
+            "Uchinchi asosiy fikr: turli qarashlarni baholash va shaxsiy munosabat.",
+            "Xulosa: asosiy fikrlarni umumlashtirish va yakuniy saboq.",
+        ],
+        "ru": [
+            f"Введение: содержание темы «{topic}» и её историческое или общественное значение.",
+            "Первый основной тезис: происхождение темы и её важные особенности.",
+            "Второй основной тезис: влияние темы на жизнь и соответствующие примеры.",
+            "Третий основной тезис: оценка разных взглядов и личная позиция.",
+            "Заключение: обобщение основных мыслей и итоговый вывод.",
+        ],
+        "en": [
+            f"Introduction: the meaning of {topic} and its historical or social significance.",
+            "First main point: the topic’s origins and key characteristics.",
+            "Second main point: the topic’s impact and relevant examples.",
+            "Third main point: weighing different views and stating a personal position.",
+            "Conclusion: summarizing the key arguments and final lesson.",
+        ],
+        "tr": [
+            f"Giriş: {topic} konusunun anlamı ve tarihsel ya da toplumsal önemi.",
+            "Birinci ana fikir: konunun kökeni ve temel özellikleri.",
+            "İkinci ana fikir: konunun yaşama etkisi ve uygun örnekler.",
+            "Üçüncü ana fikir: farklı görüşleri değerlendirme ve kişisel tutum.",
+            "Sonuç: temel düşünceleri bir araya getirme ve nihai çıkarım.",
+        ],
+        "de": [
+            f"Einleitung: Bedeutung des Themas {topic} für Geschichte oder Gesellschaft.",
+            "Erster Hauptgedanke: Ursprung des Themas und seine wichtigsten Merkmale.",
+            "Zweiter Hauptgedanke: Auswirkungen des Themas und passende Beispiele.",
+            "Dritter Hauptgedanke: verschiedene Ansichten abwägen und die eigene Position begründen.",
+            "Schluss: zentrale Argumente zusammenfassen und eine Schlussfolgerung ziehen.",
+        ],
+        "fr": [
+            f"Introduction : sens du sujet {topic} et son importance historique ou sociale.",
+            "Première idée principale : les origines du sujet et ses caractéristiques essentielles.",
+            "Deuxième idée principale : les effets du sujet et des exemples pertinents.",
+            "Troisième idée principale : comparer les points de vue et exposer sa position personnelle.",
+            "Conclusion : résumer les arguments essentiels et formuler un bilan.",
+        ],
+    }
+    rows = plans.get(str(lang).lower(), plans["uz"])
+    return "\n".join(f"{i}. {row}" for i, row in enumerate(rows, 1))
 
-# ===== ASOSIY GENERATE FUNKSIYASI (Hujjatlar uchun) =====
+
+def _normalize_outline(text, topic, lang):
+    """Accept only a clean five-item plan; otherwise use a localized safe plan."""
+    raw = clean_ai_text(text or "")
+    lines = []
+    for line in raw.splitlines():
+        line = re.sub(r"^\s*(?:[-*•]|\d+[.)])\s*", "", line).strip()
+        if not line or line.lower().rstrip(":") in {"reja", "outline", "plan", "план", "gliederung", "taslak"}:
+            continue
+        if len(line) > 240:
+            continue
+        lines.append(line)
+    # A plan must have exactly the requested outline slots, not writing advice or a full essay.
+    combined = " ".join(lines)
+    if len(lines) != 5 or _is_lang_mixed(combined, lang) or _essay_text_is_suspicious(combined, lang, 30):
+        return _fallback_essay_outline(topic, lang)
+    norm = [re.sub(r"^\s*(?:I{1,3}[.)]\s*)", "", x).strip() for x in lines]
+    if len({re.sub(r"\W+", " ", x.lower()).strip() for x in norm}) != 5:
+        return _fallback_essay_outline(topic, lang)
+    return "\n".join(f"{i}. {line}" for i, line in enumerate(norm, 1))
+
+
+def _essay_text_is_suspicious(text, lang, expected_words):
+    """Reject malformed, repeated, very short, or clearly mixed-language AI output."""
+    cleaned = clean_ai_text(text or "")
+    if not cleaned or cleaned.startswith("⚠️") or _is_lang_mixed(cleaned, lang):
+        return True
+    words = re.findall(r"[^\W_]+(?:[’'’-][^\W_]+)*", cleaned.lower(), flags=re.UNICODE)
+    if len(words) < max(8, int(expected_words * 0.48)):
+        return True
+    if len(words) >= 28:
+        language_signals = {
+            "uz": {"va", "bu", "bilan", "uchun", "ham", "esa", "ammo", "biroq", "uning", "ular", "bo‘lgan", "bo'lgan", "kerak", "mumkin", "orqali", "shuning", "sababli", "hisoblanadi", "ko‘ra", "kabi", "edi", "qiladi", "etadi", "bo‘lib", "bo'lib", "hamda", "muhim", "tarixda", "davrda", "natijada", "birinchi", "ikkinchi", "xulosa", "inson", "jamiyat", "mavzu"},
+            "ru": {"и", "в", "не", "на", "что", "это", "как", "для", "при", "также", "который", "его", "она", "они", "но", "потому", "поэтому", "следует", "важно", "можно", "является", "был", "были", "этот", "тема"},
+            "en": {"the", "and", "of", "to", "in", "is", "that", "for", "with", "on", "as", "by", "from", "it", "was", "are", "which", "this", "these", "should", "because", "however"},
+            "tr": {"ve", "bir", "bu", "için", "ile", "olarak", "ancak", "ayrıca", "çünkü", "olan", "göre", "gibi", "daha", "çok", "önemli", "gerekir", "konu", "etkisi"},
+            "de": {"der", "die", "das", "und", "ist", "für", "mit", "auch", "als", "auf", "im", "den", "ein", "eine", "werden", "deshalb", "wichtig", "weil", "dass", "thema"},
+            "fr": {"le", "la", "les", "et", "est", "de", "des", "un", "une", "pour", "avec", "dans", "qui", "que", "mais", "ainsi", "important", "parce", "sujet"},
+        }
+        expected_signals = language_signals.get(str(lang).lower(), set())
+        if expected_signals and len(set(words) & expected_signals) < 3:
+            return True
+    if len(words) >= 35:
+        unique_ratio = len(set(words)) / max(1, len(words))
+        if unique_ratio < 0.36:
+            return True
+        ngrams = Counter(tuple(words[i:i + 7]) for i in range(max(0, len(words) - 6)))
+        if any(count >= 3 for count in ngrams.values()):
+            return True
+    paragraphs = [re.sub(r"\W+", " ", p.lower()).strip() for p in re.split(r"\n\s*\n|\n", cleaned) if p.strip()]
+    meaningful = [p for p in paragraphs if len(p.split()) >= 8]
+    if len(meaningful) != len(set(meaningful)) and len(meaningful) >= 2:
+        return True
+    return False
+
+
+def _fallback_essay_parts(topic, lang="uz"):
+    """Coherent localized backup prose; never use a repeated or corrupted model response."""
+    tpc = str(topic or "ushbu mavzu").strip()
+    lc = str(lang).lower()
+    if lc == "uz" and "amir temur" in tpc.lower():
+        return (
+            "Amir Temur XIV asrda Movarounnahrda kuchli markazlashgan davlat barpo etgan hukmdor va sarkarda sifatida tarixda muhim o‘rin egallaydi. Uning faoliyati davlat boshqaruvi, harbiy strategiya va madaniy hayot bilan bog‘liq. Amir Temur merosini o‘rganish o‘sha davr siyosiy sharoitini hamda davlat taraqqiyotiga ta’sir qilgan omillarni tushunishga yordam beradi.",
+            "Avvalo, Amir Temur siyosiy tarqoqlik kuchaygan bir davrda hokimiyatni mustahkamlashga va boshqaruvni markazlashtirishga intildi. Uning harbiy yurishlari davlat hududini kengaytirgan bo‘lsa-da, bu jarayonlar turli xalqlar uchun og‘ir oqibatlar ham keltirgan. Shu sababli uning faoliyatini tarixiy sharoitni hisobga olib, biryoqlama baholamaslik lozim.",
+            "Ikkinchidan, Samarqand uning davrida yirik siyosiy va madaniy markazga aylandi. Turli hududlardan ustalar, me’morlar va hunarmandlarning jalb qilinishi me’morchilik hamda amaliy san’at rivojiga ta’sir ko‘rsatdi. Bu jarayonlar keyingi temuriylar davridagi ilm-fan va madaniyat yuksalishi uchun ham muhim zamin yaratdi.",
+            "Menimcha, Amir Temur merosini o‘rganishda yutuqlar bilan birga urushlarning oqibatlarini ham tahlil qilish kerak. Tarixiy shaxsga xolis baho berish uning kuchli tomonlarini tan olish va murakkab jihatlarini ham unutmaslikni talab etadi. Ana shunday yondashuv tarixdan to‘g‘ri saboq olishga yordam beradi.",
+            "Xulosa qilib aytganda, Amir Temur tarixda davlat qurilishi, harbiy boshqaruv va Samarqand taraqqiyoti bilan iz qoldirgan. Uning faoliyati murakkab tarixiy hodisa bo‘lib, uni dalillar asosida o‘rganish zarur. Tarixiy merosni chuqur bilish bugungi avlodda mas’uliyat, xolis fikrlash va o‘z o‘tmishiga ongli munosabatni shakllantiradi."
+        )
+    fallback = {
+        "uz": (
+            f"{tpc} mavzusi turli jihatlarni o‘ylab ko‘rish va uning mazmunini chuqurroq anglash imkonini beradi. Bu masalani faqat umumiy ta’rif bilan cheklamasdan, sabablar, misollar va oqibatlar orqali tahlil qilish muhim. Shunday yondashuv mavzuning ahamiyatini aniqroq ko‘rsatadi.",
+            f"Birinchidan, {tpc}ni tushunish uchun uning kelib chiqishi va asosiy xususiyatlariga e’tibor berish kerak. Asosli fikrlar ishonchli ma’lumotlar va aniq misollar bilan mustahkamlanganda, tahlil ishonarli bo‘ladi. Dalillarni tekshirish esa xato xulosalarga kelish ehtimolini kamaytiradi.",
+            f"Ikkinchidan, {tpc}ning insonlar va jamiyatga ta’sirini ham hisobga olish lozim. Har bir masalada turli qarashlar uchrashi mumkin, shuning uchun qarama-qarshi fikrlarni tinglash va ularni dalillar bilan solishtirish foydali. Bu mavzuni kengroq nuqtayi nazardan ko‘rishga yordam beradi.",
+            f"Menimcha, {tpc}ga munosabat bildirayotganda hissiyotdan ko‘ra dalil va mantiqqa tayanish kerak. Bir nechta jihatni solishtirish orqali asosli pozitsiyani shakllantirish mumkin. Shu bilan birga, har qanday xulosani yangi ma’lumotlar asosida qayta ko‘rib chiqishga tayyor turish muhim.",
+            f"Xulosa qilib aytganda, {tpc}ni to‘g‘ri anglash uchun uning asosiy tomonlarini birgalikda baholash kerak. Ishonchli dalillar, mazmunli misollar va xolis yondashuv yaxshi xulosa chiqarishga yordam beradi. Eng muhimi, olingan saboqlarni amalda qo‘llash va masalaga mas’uliyat bilan qarashdir."
+        ),
+        "ru": (
+            f"Тема «{tpc}» позволяет рассмотреть важный вопрос с разных сторон и глубже понять его смысл. Для содержательного анализа недостаточно общего определения: необходимо учитывать причины, примеры и последствия. Такой подход помогает точнее оценить значение темы.",
+            f"Во-первых, для понимания темы «{tpc}» важно изучить её происхождение и основные особенности. Когда рассуждения подтверждаются достоверными сведениями и конкретными примерами, анализ становится убедительнее. Проверка фактов также уменьшает риск ошибочных выводов.",
+            f"Во-вторых, следует учитывать влияние темы «{tpc}» на людей и общество. По многим вопросам существуют разные позиции, поэтому полезно сопоставлять противоположные мнения и проверять их аргументы. Это позволяет увидеть проблему шире и избежать односторонней оценки.",
+            f"На мой взгляд, обсуждая тему «{tpc}», следует опираться прежде всего на логику и доказательства. Сравнение нескольких точек зрения помогает сформировать взвешенную позицию. При этом важно быть готовым пересмотреть выводы при появлении новых достоверных сведений.",
+            f"Подводя итог, можно сказать, что для понимания темы «{tpc}» необходимо оценивать её основные стороны в совокупности. Факты, подходящие примеры и объективный подход помогают сделать обоснованный вывод. Важно также применять полученные уроки на практике и ответственно относиться к обсуждаемой проблеме."
+        ),
+        "en": (
+            f"The topic of {tpc} can be examined from several perspectives and understood more deeply by considering its meaning and consequences. A useful discussion should move beyond a general definition and consider causes, examples, and effects. This approach gives a clearer view of the topic’s importance.",
+            f"First, understanding {tpc} requires attention to its background and main characteristics. Reasoning becomes more convincing when it is supported by reliable information and concrete examples. Checking evidence also reduces the likelihood of reaching an inaccurate conclusion.",
+            f"Second, the effect of {tpc} on people and society should be considered. Different viewpoints often exist, so comparing opposing arguments and evaluating their evidence is useful. This makes it easier to understand the issue broadly rather than relying on a one-sided interpretation.",
+            f"In my view, a sound position on {tpc} should be based on evidence and logical reasoning rather than emotion alone. Comparing several perspectives helps form a balanced judgment. It is also important to remain willing to revise a conclusion when trustworthy new information becomes available.",
+            f"In conclusion, {tpc} should be evaluated by considering its main dimensions together. Reliable evidence, relevant examples, and an objective approach lead to stronger conclusions. The lessons learned are most valuable when they are applied thoughtfully and with a sense of responsibility."
+        ),
+        "tr": (
+            f"{tpc} konusu, anlamını ve sonuçlarını farklı açılardan değerlendirmeye imkân verir. Nitelikli bir inceleme yalnızca genel bir tanımla yetinmemeli; nedenleri, örnekleri ve etkileri de ele almalıdır. Bu yaklaşım konunun önemini daha açık biçimde gösterir.",
+            f"İlk olarak, {tpc} konusunu anlamak için geçmişini ve temel özelliklerini incelemek gerekir. Görüşler güvenilir bilgiler ve somut örneklerle desteklendiğinde değerlendirme daha inandırıcı olur. Bilgileri doğrulamak yanlış sonuçlara ulaşma riskini de azaltır.",
+            f"İkinci olarak, {tpc} konusunun insanlar ve toplum üzerindeki etkileri dikkate alınmalıdır. Bir konuda farklı düşünceler bulunabilir; bu nedenle karşıt görüşleri karşılaştırmak ve kanıtlarını değerlendirmek yararlıdır. Böylece mesele tek taraflı değil, daha geniş bir bakışla ele alınır.",
+            f"Bana göre, {tpc} hakkında düşünürken yalnızca duygulara değil, mantığa ve kanıtlara da dayanmak gerekir. Farklı bakış açılarını karşılaştırmak dengeli bir görüş oluşturmaya yardım eder. Güvenilir yeni bilgiler ortaya çıktığında düşünceyi yeniden değerlendirmek de önemlidir.",
+            f"Sonuç olarak, {tpc} konusunu anlamak için temel yönleri birlikte değerlendirmek gerekir. Güvenilir bilgiler, uygun örnekler ve tarafsız yaklaşım daha sağlam bir sonuca ulaşmayı sağlar. En önemli nokta, çıkarılan dersleri uygulamak ve konuya sorumlulukla yaklaşmaktır."
+        ),
+        "de": (
+            f"Das Thema {tpc} lässt sich aus mehreren Blickwinkeln betrachten, um seine Bedeutung und Folgen besser zu verstehen. Eine überzeugende Erörterung sollte nicht bei einer allgemeinen Definition stehen bleiben, sondern Ursachen, Beispiele und Auswirkungen berücksichtigen. So wird die Bedeutung des Themas klarer.",
+            f"Erstens müssen für das Verständnis von {tpc} der Hintergrund und die wichtigsten Merkmale untersucht werden. Argumente wirken überzeugender, wenn sie durch zuverlässige Informationen und konkrete Beispiele gestützt werden. Eine Prüfung der Fakten senkt zudem das Risiko falscher Schlussfolgerungen.",
+            f"Zweitens sollten die Auswirkungen von {tpc} auf Menschen und Gesellschaft berücksichtigt werden. Oft gibt es unterschiedliche Sichtweisen; deshalb ist es sinnvoll, Gegenargumente zu vergleichen und ihre Belege zu prüfen. Auf diese Weise lässt sich das Thema umfassender betrachten.",
+            f"Meiner Ansicht nach sollte eine fundierte Position zu {tpc} auf Belegen und logischem Denken beruhen. Der Vergleich verschiedener Perspektiven hilft dabei, ein ausgewogenes Urteil zu bilden. Zugleich sollte man bereit sein, Schlussfolgerungen anhand neuer verlässlicher Informationen zu überprüfen.",
+            f"Zusammenfassend lässt sich sagen, dass {tpc} nur dann angemessen verstanden wird, wenn seine wesentlichen Aspekte gemeinsam betrachtet werden. Verlässliche Belege, passende Beispiele und eine sachliche Haltung unterstützen eine begründete Schlussfolgerung. Entscheidend ist, daraus praktische Lehren zu ziehen und verantwortungsvoll zu handeln."
+        ),
+        "fr": (
+            f"Le sujet {tpc} peut être étudié sous plusieurs angles afin d’en comprendre le sens et les conséquences. Une réflexion sérieuse ne doit pas se limiter à une définition générale : elle doit aussi examiner les causes, les exemples et les effets. Cette démarche permet de mieux apprécier son importance.",
+            f"Tout d’abord, comprendre {tpc} demande d’étudier son contexte et ses caractéristiques principales. Une argumentation devient plus convaincante lorsqu’elle s’appuie sur des informations fiables et des exemples concrets. La vérification des faits réduit également le risque de conclusions erronées.",
+            f"Ensuite, il convient d’examiner les effets de {tpc} sur les personnes et la société. Plusieurs points de vue peuvent coexister ; il est donc utile de comparer les arguments opposés et d’évaluer leurs preuves. Cela permet d’aborder le sujet de manière plus complète.",
+            f"À mon avis, une position solide sur {tpc} doit s’appuyer sur des preuves et un raisonnement logique, et pas uniquement sur les émotions. Comparer différentes perspectives aide à construire un jugement équilibré. Il faut aussi rester prêt à réviser ses conclusions lorsque de nouvelles informations fiables apparaissent.",
+            f"En conclusion, il est nécessaire d’examiner ensemble les principaux aspects de {tpc} pour en saisir la portée. Des preuves fiables, des exemples pertinents et une approche objective permettent de tirer une conclusion justifiée. L’essentiel est de mettre les enseignements en pratique avec responsabilité."
+        ),
+    }
+    return fallback.get(lc, fallback["uz"])
+
+
+def _normalize_three_paragraphs(text):
+    """Ensure the essay body is displayed as three substantive paragraphs."""
+    parts = [p.strip() for p in re.split(r"\n\s*\n|\n", clean_ai_text(text or "")) if p.strip()]
+    if len(parts) == 3:
+        return "\n\n".join(parts)
+    if len(parts) > 3:
+        groups = [[], [], []]
+        for i, part in enumerate(parts):
+            groups[min(2, (i * 3) // len(parts))].append(part)
+        return "\n\n".join(" ".join(g) for g in groups if g)
+    whole = " ".join(parts)
+    sentences = [s.strip() for s in re.split(r"(?<=[.!?])\s+", whole) if s.strip()]
+    if len(sentences) >= 3:
+        groups = [[], [], []]
+        total = len(sentences)
+        for i, sentence in enumerate(sentences):
+            groups[min(2, (i * 3) // total)].append(sentence)
+        return "\n\n".join(" ".join(g) for g in groups if g)
+    return "\n\n".join(parts)
+
+
+async def generate_outline(service, topic, lang, words=320):
+    """Generate exactly five localized outline points: intro, three body points, conclusion."""
+    lc = str(lang or "uz").lower()
+    ln = _lang_name(lc)
+    try:
+        wiki = await wikipedia_fetch(topic, max_chars=1800, gen_lang=lc)
+    except Exception as exc:
+        _log(f"Essay outline reference lookup failed: {exc}")
+        wiki = ""
+    wb = wiki_block(wiki)
+    prompt = f"""Create an outline for an essay on this topic: {topic}.
+Write exactly FIVE concise numbered lines, entirely in {ln}, in this precise order:
+1. Introduction plan: context, significance, and thesis.
+2. Main argument 1: first key point and supporting detail.
+3. Main argument 2: second key point, evidence, or a balanced counter-view.
+4. Main argument 3: personal evaluation or a third relevant argument.
+5. Conclusion plan: synthesize the argument and state a final lesson.
+Do not write the essay itself, explanatory instructions, headings beyond the five numbered lines, or any words in another language. Do not invent statistics. Keep each line specific to the topic. If references below use another language, use them only for facts and write the outline solely in {ln}.
+Target essay length: {words} words.
+Reference notes:
+{wb}"""
+    try:
+        txt = await _chat_complete(prompt, system=_pure_language_system(lc) + f" Output exactly five numbered outline lines only in {ln}.", max_tokens=1000)
+        normalized = _normalize_outline(txt, topic, lc)
+        return normalized
+    except Exception as exc:
+        _log(f"Essay outline generation failed: {exc}")
+        return _fallback_essay_outline(topic, lc)
+
+
+# ===== ESSAY GENERATION =====
 async def generate(service, topic, options, lang="uz"):
     if service == "insho":
-        wiki = await wikipedia_fetch(topic, max_chars=3000, gen_lang=lang)
+        lc = str(lang or "uz").lower()
+        ln = _lang_name(lc)
+        try:
+            target_words = max(100, min(3000, int(options.get("words", 320) or 320)))
+        except (TypeError, ValueError):
+            target_words = 320
+        target_words = max(100, min(3000, target_words))
+        # Keep the user's requested total instead of silently forcing every essay to 320 words.
+        intro_words = max(20, round(target_words * 0.20))
+        conclusion_words = max(20, round(target_words * 0.20))
+        body_words = max(45, target_words - intro_words - conclusion_words)
+        para_words = max(15, round(body_words / 3))
+        try:
+            wiki = await wikipedia_fetch(topic, max_chars=2200, gen_lang=lc)
+        except Exception as exc:
+            _log(f"Essay reference lookup failed: {exc}")
+            wiki = ""
         wb = wiki_block(wiki)
-        target_words = max(320, min(3000, int(options.get("words", 320) or 320)))
-        ln = _lang_name(lang)
-        # Standard essay: 3 sections. For longer requested lengths, retain the same proportions.
-        intro_words = max(70, round(target_words * 0.225))
-        conclusion_words = max(70, round(target_words * 0.225))
-        body_words = max(150, target_words - intro_words - conclusion_words)
-        # Ensure the sections stay within the requested total approximately.
-        if target_words <= 360:
-            intro_words = max(70, min(80, round(target_words * 0.225)))
-            conclusion_words = intro_words
-            body_words = max(150, min(200, target_words - intro_words - conclusion_words))
-        system = _pure_language_system(lang) + (
-            f" You are an expert essay writer. Produce only natural {ln}. "
-            "Follow the requested section task exactly. Do not include meta-advice, a writing checklist, "
-            "or headings inside the section text. Use clear reasoning and do not invent statistics or sources."
+        system = _pure_language_system(lc) + (
+            f" You are a skilled essay writer. Write idiomatic, coherent {ln} only. "
+            "Do not code-switch or imitate broken language. Never repeat a sentence or paragraph. "
+            "Do not invent precise statistics, quotations, or sources. Do not output section headings."
         )
 
-        prompt_intro = f"""Topic: {topic}.
-Write ONLY the essay's INTRODUCTION in {ln}, approximately {intro_words} words.
-Include these elements naturally in this order: (1) one or two sentences showing why the issue matters today; (2) paraphrase the topic in your own words; (3) a clear thesis stating the writer's position or central claim.
-Do not add a heading, bullet points, a numbered list, or writing advice. Do not mention section word counts. {wb}"""
-        intro = await _chat_complete(prompt_intro, system=system, max_tokens=1200)
-        if not intro or intro.startswith("⚠️") or _is_lang_mixed(intro, lang):
-            intro = await _chat_complete(prompt_intro + f"\nOutput exclusively in {ln}.", system=system, max_tokens=1200)
-        if not intro or intro.startswith("⚠️"):
-            loc = _FALLBACK_COPY.get(str(lang).lower(), _FALLBACK_COPY["en"])
-            intro = f"{topic}. {loc['body']}"
+        async def generate_section(label, prompt, expected, max_tokens=1200):
+            draft = await _chat_complete(prompt, system=system, max_tokens=max_tokens)
+            for attempt in range(2):
+                if draft and not str(draft).startswith("⚠️") and not _essay_text_is_suspicious(draft, lc, expected):
+                    return clean_ai_text(draft), True
+                repair_prompt = f"""The previous answer was unusable because it contained mixed language, repetition, or unnatural text.
+Rewrite it from scratch as natural, correct {ln}. Do not translate word by word. Do not include a heading or writing instructions.
+Task: {label}
+Topic: {topic}
+Target length: approximately {expected} words.
+Reference notes may contain foreign words; do not copy foreign-language text:
+{wb}
+Previous draft to fix (use only if it contains a valid fact):
+{str(draft or '')[:2500]}"""
+                draft = await _chat_complete(repair_prompt, system=system, max_tokens=max_tokens)
+            return None, False
 
-        prompt_body = f"""Topic: {topic}.
-Write ONLY the MAIN BODY of an essay in {ln}, approximately {body_words} words total, as exactly THREE meaningful paragraphs:
-Paragraph 1: first strong argument, explain it, and support it with a concrete real-life or scientific example.
-Paragraph 2: the second aspect or an opposing viewpoint, with an example or evidence; do not fabricate precise statistics.
-Paragraph 3: the writer's personal position after weighing both sides, supported by reasoning.
-Do not add a heading, numbering, bullet points, or writing advice. Do not write the introduction or conclusion. {wb}"""
-        body = await _chat_complete(prompt_body, system=system, max_tokens=2400)
-        if not body or body.startswith("⚠️") or _is_lang_mixed(body, lang):
-            body = await _chat_complete(prompt_body + f"\nOutput exclusively in {ln}.", system=system, max_tokens=2400)
-        if not body or body.startswith("⚠️"):
-            loc = _FALLBACK_COPY.get(str(lang).lower(), _FALLBACK_COPY["en"])
-            body = f"{loc['analysis']} {loc['relevance']}\n\n{loc['body']}\n\n{loc['analysis']}"
+        prompt_intro = f"""Write ONLY the opening paragraph of an essay about: {topic}.
+Write approximately {intro_words} words in natural {ln}. Establish the topic's relevance, explain it in your own words, and state a clear central idea. Make it topic-specific and factually careful.
+Output only the paragraph. No heading, numbering, checklist, meta-advice, or section labels. Do not use any other language. Reference notes:
+{wb}"""
+        intro, intro_ok = await generate_section("opening paragraph", prompt_intro, intro_words, 1000)
 
-        prompt_conclusion = f"""Topic: {topic}.
-Write ONLY the CONCLUSION in {ln}, approximately {conclusion_words} words.
-It must (1) briefly synthesize the arguments already discussed; (2) restate the introduction's thesis using different words; and (3) give a relevant solution, recommendation, or forward-looking call. Do NOT introduce a new idea or unrelated topic. Do not add a heading, bullets, numbering, or writing advice. {wb}"""
-        conclusion = await _chat_complete(prompt_conclusion, system=system, max_tokens=1200)
-        if not conclusion or conclusion.startswith("⚠️") or _is_lang_mixed(conclusion, lang):
-            conclusion = await _chat_complete(prompt_conclusion + f"\nOutput exclusively in {ln}.", system=system, max_tokens=1200)
-        if not conclusion or conclusion.startswith("⚠️"):
-            loc = _FALLBACK_COPY.get(str(lang).lower(), _FALLBACK_COPY["en"])
-            conclusion = f"{loc['conclusion']}: {loc['relevance']}"
+        prompt_body = f"""Write the essay's main argument paragraphs about: {topic}.
+Write approximately {body_words} words total in natural {ln}, separated into EXACTLY THREE paragraphs of about {para_words} words each:
+Paragraph 1: first important argument with an explanation and relevant example.
+Paragraph 2: second aspect or a balanced counter-view with relevant evidence.
+Paragraph 3: a third point or a reasoned personal position.
+Keep the content specific to the topic. Do not invent exact statistics. Output only those three paragraphs; no headings, numbering, bullet points, checklist, or writing advice. Use only {ln}. Reference notes:
+{wb}"""
+        body, body_ok = await generate_section("three main argument paragraphs", prompt_body, body_words, 1800)
 
-        # Internal markers let DOCX render exactly the three requested sections without extra filler.
+        prompt_conclusion = f"""Write ONLY the concluding paragraph of an essay about: {topic}.
+Use approximately {conclusion_words} words in natural {ln}. Briefly synthesize the arguments, restate the central idea in different words, and finish with a relevant conclusion or recommendation. Do not introduce a new topic or unsupported factual claim.
+Output only one paragraph, no heading, list, numbering, checklist, or writing advice. Use only {ln}. Reference notes:
+{wb}"""
+        conclusion, conclusion_ok = await generate_section("concluding paragraph", prompt_conclusion, conclusion_words, 1000)
+
+        used_fallback = not (intro_ok and body_ok and conclusion_ok)
+        fallback_parts = _fallback_essay_parts(topic, lc)
+        if not intro_ok:
+            intro = fallback_parts[0]
+        if not body_ok:
+            body = "\n\n".join(fallback_parts[1:4])
+        if not conclusion_ok:
+            conclusion = fallback_parts[4]
+        body = _normalize_three_paragraphs(body)
+
         result = (
             "[[ESSAY_INTRO]]\n" + clean_ai_text(intro) +
             "\n\n[[ESSAY_BODY]]\n" + clean_ai_text(body) +
             "\n\n[[ESSAY_CONCLUSION]]\n" + clean_ai_text(conclusion)
         )
-        real = all(x and not x.startswith("⚠️") for x in (intro, body, conclusion))
-        return result, real
+        return result, not used_fallback
 
     pages = int(options.get("pages", 10) or 10)
     if service == "test":
