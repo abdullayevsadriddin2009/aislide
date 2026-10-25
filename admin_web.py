@@ -1,11 +1,13 @@
 """Web admin panel — Flask based. Starts with the bot. English UI."""
 import sqlite3
 import threading
+import secrets
+import html
 from flask import Flask, request, session, redirect, render_template_string, url_for
 import config
 
 app = Flask(__name__)
-app.secret_key = config.AI_API_KEY
+app.secret_key = config.WEB_ADMIN_SECRET_KEY or secrets.token_hex(32)
 
 @app.route("/health")
 def health():
@@ -54,7 +56,7 @@ def login_required():
 @app.route("/login", methods=["GET", "POST"])
 def login():
     if request.method == "POST":
-        if request.form.get("password") == config.WEB_ADMIN_PASSWORD:
+        if config.WEB_ADMIN_PASSWORD and request.form.get("password") == config.WEB_ADMIN_PASSWORD:
             session["admin"] = "1"
             return redirect("/")
         return "❌ Wrong password"
@@ -81,7 +83,7 @@ def index():
       <div class="stat"><div class="num">{checks}</div>Pending receipts</div>
     </div>
     <div class="card"><h3>Recent orders</h3><table><tr><th>ID</th><th>User</th><th>Service</th><th>Topic</th><th>Price</th><th>Date</th></tr>
-    {''.join(f"<tr><td>{o['id']}</td><td>{o['user_id']}</td><td>{o['service']}</td><td>{o['topic'][:40]}</td><td>{o['price']}</td><td>{o['created_at']}</td></tr>" for o in q("SELECT * FROM orders ORDER BY id DESC LIMIT 10"))}
+    {''.join(f"<tr><td>{html.escape(str(o['id']))}</td><td>{html.escape(str(o['user_id']))}</td><td>{html.escape(str(o['service']))}</td><td>{html.escape(str(o['topic'] or '')[:40])}</td><td>{html.escape(str(o['price']))}</td><td>{html.escape(str(o['created_at']))}</td></tr>" for o in q("SELECT * FROM orders ORDER BY id DESC LIMIT 10"))}
     </table></div>"""
     return PAGE.replace("{{content|safe}}", content)
 
@@ -91,7 +93,7 @@ def users():
     rows = q("SELECT * FROM users ORDER BY created_at DESC LIMIT 200")
     content = '<div class="card"><h3>Users (last 200)</h3><table><tr><th>ID</th><th>Username</th><th>Name</th><th>Lang</th><th>Balance</th><th>Bonus</th><th>Referred by</th></tr>'
     for u in rows:
-        content += f"<tr><td>{u['telegram_id']}</td><td>@{u['username'] or '-'}</td><td>{u['first_name'] or '-'}</td><td>{u['lang']}</td><td>{u['balance']}</td><td>{u['bonus_balance']}</td><td>{u['referred_by'] or '-'}</td></tr>"
+        content += f"<tr><td>{html.escape(str(u['telegram_id']))}</td><td>@{html.escape(str(u['username'] or '-'))}</td><td>{html.escape(str(u['first_name'] or '-'))}</td><td>{html.escape(str(u['lang']))}</td><td>{html.escape(str(u['balance']))}</td><td>{html.escape(str(u['bonus_balance']))}</td><td>{html.escape(str(u['referred_by'] or '-'))}</td></tr>"
     content += "</table></div>"
     return PAGE.replace("{{content|safe}}", content)
 
@@ -101,7 +103,7 @@ def orders():
     rows = q("SELECT * FROM orders ORDER BY id DESC LIMIT 200")
     content = '<div class="card"><h3>Orders</h3><table><tr><th>ID</th><th>User</th><th>Service</th><th>Topic</th><th>Price</th><th>Status</th></tr>'
     for o in rows:
-        content += f"<tr><td>{o['id']}</td><td>{o['user_id']}</td><td>{o['service']}</td><td>{o['topic'][:50]}</td><td>{o['price']}</td><td>{o['status']}</td></tr>"
+        content += f"<tr><td>{html.escape(str(o['id']))}</td><td>{html.escape(str(o['user_id']))}</td><td>{html.escape(str(o['service']))}</td><td>{html.escape(str(o['topic'] or '')[:50])}</td><td>{html.escape(str(o['price']))}</td><td>{html.escape(str(o['status']))}</td></tr>"
     content += "</table></div>"
     return PAGE.replace("{{content|safe}}", content)
 
@@ -111,7 +113,8 @@ def checks():
     rows = q("SELECT * FROM checks ORDER BY id DESC LIMIT 100")
     content = '<div class="card"><h3>Payment Receipts</h3><table><tr><th>ID</th><th>User</th><th>Amount</th><th>Status</th><th>Action</th></tr>'
     for c in rows:
-        badge = f'<span class="badge b-{c["status"]}">{c["status"]}</span>'
+        safe_status = html.escape(str(c["status"]))
+        badge = f'<span class="badge b-{safe_status}">{safe_status}</span>'
         actions = ""
         if c["status"] == "pending":
             actions = f'<a class="btn green" href="/check/{c["id"]}/approve">Approve</a> <a class="btn" href="/check/{c["id"]}/reject">Reject</a>'
@@ -142,10 +145,13 @@ def settings():
     ref = q("SELECT value FROM settings WHERE key='referral_percent'")
     pay = q("SELECT value FROM settings WHERE key='payment_info'")
     free = q("SELECT value FROM settings WHERE key='free_mode'")
+    ref_value = html.escape(str(ref[0]['value'] if ref else '10'), quote=True)
+    pay_value = html.escape(str(pay[0]['value'] if pay else ''))
+    free_value = html.escape(str(free[0]['value'] if free else '1'), quote=True)
     content = f"""<div class="card"><h3>Settings</h3><form method="post">
-    <label>Referral percent:</label><input name="referral_percent" value="{ref[0]['value'] if ref else '10'}">
-    <label>Payment info:</label><textarea name="payment_info" rows="4">{pay[0]['value'] if pay else ''}</textarea>
-    <label>Mode (1=free, 0=paid):</label><input name="free_mode" value="{free[0]['value'] if free else '1'}">
+    <label>Referral percent:</label><input name="referral_percent" value="{ref_value}">
+    <label>Payment info:</label><textarea name="payment_info" rows="4">{pay_value}</textarea>
+    <label>Mode (1=free, 0=paid):</label><input name="free_mode" value="{free_value}">
     <button class="btn green">Save</button></form></div>"""
     return PAGE.replace("{{content|safe}}", content)
 
