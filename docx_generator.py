@@ -638,8 +638,124 @@ def _add_conclusion(doc, topic, lbl, conclusion_key="conclusion"):
     _add_heading(doc, lbl[conclusion_key], level=1, center=True)
     for pt in [_loc(f"concl{i}", lang, topic) for i in range(1, 5)]: _add_para(doc, pt, indent=False)
 
+
+# ===== MAXSUS REFERAT YARATISH FUNKSIYASI =====
+def _generate_special_referat(doc, topic, content_text, author, extra_data, lbl, lang):
+    """Foydalanuvchi yuborgan namunadagi kabi chiroyli va to'liq Referat yaratish."""
+    data = extra_data or {}
+    subject = data.get("ref_subject", "Fan nomi kiritilmagan")
+    institution = data.get("ref_institution", "O'quv muassasasi")
+    faculty = data.get("ref_faculty", "")
+    dept = data.get("ref_dept", "")
+    checker = data.get("ref_checker", "")
+    
+    # 1. TITUL VARAQ
+    p = doc.add_paragraph(); p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    r = p.add_run("O'ZBEKISTON RESPUBLIKASI OLIY TA'LIM, FAN VA INNOVATSIYALAR VAZIRLIGI")
+    r.font.size = Pt(12); r.font.bold = True; r.font.name = "Times New Roman"
+    
+    p = doc.add_paragraph(); p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    r = p.add_run(institution.upper())
+    r.font.size = Pt(14); r.font.bold = True; r.font.name = "Times New Roman"
+    
+    if faculty and faculty != "-":
+        p = doc.add_paragraph(); p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        r = p.add_run(f"Fakultet: {faculty}")
+        r.font.size = Pt(12); r.font.name = "Times New Roman"
+        
+    if dept and dept != "-":
+        p = doc.add_paragraph(); p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        r = p.add_run(f"Kafedra: {dept}")
+        r.font.size = Pt(12); r.font.name = "Times New Roman"
+
+    doc.add_paragraph()
+    doc.add_paragraph()
+    
+    p = doc.add_paragraph(); p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    r = p.add_run("REFERAT")
+    r.font.size = Pt(24); r.font.bold = True; r.font.name = "Times New Roman"
+    
+    p = doc.add_paragraph(); p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    r = p.add_run(f"Fan: {subject}")
+    r.font.size = Pt(14); r.font.bold = True; r.font.name = "Times New Roman"
+    
+    p = doc.add_paragraph(); p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    r = p.add_run(f"«{topic.upper()}»")
+    r.font.size = Pt(16); r.font.bold = True; r.font.name = "Times New Roman"
+    
+    doc.add_paragraph()
+    doc.add_paragraph()
+    
+    p = doc.add_paragraph(); p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+    r = p.add_run(f"Ijro etuvchi: {author if author else 'Ism Familiya'}")
+    r.font.size = Pt(14); r.font.name = "Times New Roman"
+    
+    if checker:
+        p = doc.add_paragraph(); p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+        r = p.add_run(f"Tekshiruvchi: {checker}")
+        r.font.size = Pt(14); r.font.name = "Times New Roman"
+
+    doc.add_paragraph()
+    doc.add_paragraph()
+    doc.add_paragraph()
+    
+    p = doc.add_paragraph(); p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    r = p.add_run("Toshkent — 2026")
+    r.font.size = Pt(14); r.font.bold = True; r.font.name = "Times New Roman"
+    
+    doc.add_page_break()
+
+    # 2. MUNDARIJA
+    _add_heading(doc, "MUNDARIJA", level=1, center=True)
+    toc_items = [
+        "KIRISH",
+        "1. AXBOROT TEXNOLOGIYALARI NAZARIY ASOSLARI",
+        "   1.1. Asosiy tushunchalar va tasniflash",
+        "   1.2. Tarixiy rivojlanish bosqichlari",
+        "2. ZAMONAVIY AXBOROT TEXNOLOGIYALARI",
+        "   2.1. Kompyuter tarmoqlari va Internet",
+        "   2.2. Sun'iy intellekt va katta ma'lumotlar",
+        "3. AMALIY QO'LLANILISHI VA KELAJAK",
+        "XULOSA",
+        "FOYDALANILGAN ADABIYOTLAR"
+    ]
+    for item in toc_items:
+        p = doc.add_paragraph()
+        p.paragraph_format.line_spacing = 1.5
+        p.paragraph_format.space_after = Pt(6)
+        r = p.add_run(item)
+        r.font.size = Pt(14); r.font.name = "Times New Roman"
+    doc.add_page_break()
+
+    # 3. ASOSIY MATN
+    lines = content_text.split("\n")
+    for line in lines:
+        line = line.strip()
+        if not line: 
+            doc.add_paragraph()
+            continue
+            
+        # Sarlavhalarni aniqlash va formatlash
+        if line.upper().startswith("KIRISH") or line.upper() == "KIRISH":
+            _add_heading(doc, "KIRISH", level=1, center=True)
+        elif line.upper().startswith("XULOSA") or line.upper() == "XULOSA":
+            _add_heading(doc, "XULOSA", level=1, center=True)
+        elif "FOYDALANILGAN ADABIYOTLAR" in line.upper():
+            _add_heading(doc, "FOYDALANILGAN ADABIYOTLAR RO'YXATI", level=1, center=True)
+        elif re.match(r'^\d+\.\s+[A-Z]', line): # 1. BOB, 2. BOB
+            _add_heading(doc, line.upper(), level=1, center=False)
+        elif re.match(r'^\d+\.\d+\.', line): # 1.1., 1.2.
+            _add_heading(doc, line, level=2, center=False)
+        else:
+            # Oddiy matn
+            _add_para(doc, line)
+
+    buf = io.BytesIO(); doc.save(buf); buf.seek(0)
+    return buf
+
+
 # ===== Asosiy funksiya =====
-def generate_docx(topic, service_name, service_code, lang, pages, content_text, author=""):
+def generate_docx(topic, service_name, service_code, lang, pages, content_text, author="", extra_data=None):
     doc = Document()
     style = doc.styles["Normal"]
     style.font.name = "Times New Roman"
@@ -652,6 +768,10 @@ def generate_docx(topic, service_name, service_code, lang, pages, content_text, 
     lbl = _lbl(lang)
     content_text = content_text or ""
 
+    # Referat bo'lsa, maxsus funksiyani chaqiramiz
+    if service_code == "referat":
+        return _generate_special_referat(doc, topic, content_text, author, extra_data, lbl, lang)
+
     if service_code == "test":
         return _generate_test(doc, topic, lang, pages, content_text, author, lbl)
     if service_code == "maqola":
@@ -661,6 +781,7 @@ def generate_docx(topic, service_name, service_code, lang, pages, content_text, 
     if service_code == "insho":
         return _generate_essay(doc, topic, lang, content_text, author, lbl)
 
+    # Qolgan xizmatlar (mustaqil, kurs, diplom) uchun eski universal mantiq
     include_dept = service_code in ("kurs", "diplom")
     _add_title_page(doc, service_code, topic, author, lbl, include_dept=include_dept)
 
