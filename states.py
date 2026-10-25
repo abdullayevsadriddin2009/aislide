@@ -9,9 +9,17 @@ class Creation(StatesGroup):
     slide_count = State()
     option = State()
     format = State()
-    author = State()   # ✅ YANGI: muallif ismi (bir nechta qator bo'lishi mumkin)
+    author = State()   # ✅ Muallif ismi (bir nechta qator bo'lishi mumkin)
     confirm = State()
     essay_outline = State()   # ✅ Essay reja bosqichi
+    
+    # ===== REFERAT UCHUN MAXSUS STATE'LAR =====
+    ref_subject = State()      # Fan nomi
+    ref_institution = State()  # O'quv muassasasi (Universitet/Institut)
+    ref_faculty = State()      # Fakultet
+    ref_dept = State()         # Kafedra
+    ref_author = State()       # Ijro etuvchi (Talaba)
+    ref_checker = State()      # Tekshiruvchi (O'qituvchi)
 
 class TopUp(StatesGroup):
     amount = State()
