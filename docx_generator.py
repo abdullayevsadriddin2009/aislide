@@ -918,23 +918,95 @@ def _add_compact_academic_header(doc, title, topic, author, lbl, extra_data=None
     doc.add_paragraph()
 
 
+ESSAY_SECTION_LABELS = {
+    "uz": {
+        "intro": "I. KIRISH QISMI (Hajmi: 70–80 so‘z)",
+        "body": "II. ASOSIY QISM (Hajmi: 150–200 so‘z)",
+        "conclusion": "III. XULOSA QISMI (Hajmi: 70–80 so‘z)",
+        "intro_plain": "I. KIRISH QISMI", "body_plain": "II. ASOSIY QISM", "conclusion_plain": "III. XULOSA QISMI",
+    },
+    "ru": {
+        "intro": "I. ВВЕДЕНИЕ (70–80 слов)", "body": "II. ОСНОВНАЯ ЧАСТЬ (150–200 слов)",
+        "conclusion": "III. ЗАКЛЮЧЕНИЕ (70–80 слов)", "intro_plain": "I. ВВЕДЕНИЕ",
+        "body_plain": "II. ОСНОВНАЯ ЧАСТЬ", "conclusion_plain": "III. ЗАКЛЮЧЕНИЕ",
+    },
+    "en": {
+        "intro": "I. INTRODUCTION (70–80 words)", "body": "II. MAIN BODY (150–200 words)",
+        "conclusion": "III. CONCLUSION (70–80 words)", "intro_plain": "I. INTRODUCTION",
+        "body_plain": "II. MAIN BODY", "conclusion_plain": "III. CONCLUSION",
+    },
+    "tr": {
+        "intro": "I. GİRİŞ BÖLÜMÜ (70–80 kelime)", "body": "II. ANA BÖLÜM (150–200 kelime)",
+        "conclusion": "III. SONUÇ BÖLÜMÜ (70–80 kelime)", "intro_plain": "I. GİRİŞ BÖLÜMÜ",
+        "body_plain": "II. ANA BÖLÜM", "conclusion_plain": "III. SONUÇ BÖLÜMÜ",
+    },
+    "de": {
+        "intro": "I. EINLEITUNG (70–80 Wörter)", "body": "II. HAUPTTEIL (150–200 Wörter)",
+        "conclusion": "III. SCHLUSS (70–80 Wörter)", "intro_plain": "I. EINLEITUNG",
+        "body_plain": "II. HAUPTTEIL", "conclusion_plain": "III. SCHLUSS",
+    },
+    "fr": {
+        "intro": "I. INTRODUCTION (70–80 mots)", "body": "II. DÉVELOPPEMENT (150–200 mots)",
+        "conclusion": "III. CONCLUSION (70–80 mots)", "intro_plain": "I. INTRODUCTION",
+        "body_plain": "II. DÉVELOPPEMENT", "conclusion_plain": "III. CONCLUSION",
+    },
+}
+
+
+def _parse_essay_sections(content_text):
+    text = str(content_text or "")
+    patterns = {
+        "intro": r"\[\[ESSAY_INTRO\]\](.*?)(?=\[\[ESSAY_BODY\]\])",
+        "body": r"\[\[ESSAY_BODY\]\](.*?)(?=\[\[ESSAY_CONCLUSION\]\])",
+        "conclusion": r"\[\[ESSAY_CONCLUSION\]\](.*)$",
+    }
+    found = {}
+    for key, pattern in patterns.items():
+        match = re.search(pattern, text, flags=re.DOTALL | re.IGNORECASE)
+        if match:
+            found[key] = match.group(1).strip()
+    if len(found) == 3:
+        return found["intro"], found["body"], found["conclusion"]
+    # Backward compatibility for content produced by the previous generator version.
+    parts = _split_content(text, 3)
+    return parts[0], parts[1], parts[2]
+
+
 def _generate_essay(doc, topic, lang, content_text, author, lbl, extra_data=None):
-    _add_compact_academic_header(doc, lbl.get("essay_title", "ESSAY"), topic, author, lbl,
-                                 extra_data=extra_data, topic_label=True,
-                                 checker_label="supervisor_label", show_city_year=True)
-    _add_heading(doc, lbl["intro"], level=1, center=True)
-    _add_para(doc, _loc("essay_intro", lang, topic))
-    _add_label_para(doc, "💭 " + lbl["goal"], _loc("essay_goal", lang, topic))
-    doc.add_paragraph()
-    _add_heading(doc, _loc("main_part", lang, topic), level=1, center=True)
-    parts = _split_content(content_text, 3)
-    for i, part in enumerate(parts):
-        _add_para(doc, part or _loc("essay_main_fb", lang, topic))
-    _add_box(doc, lbl["quote"], _loc("quote_text", lang), bg_hex="F3E5F5")
-    doc.add_paragraph()
-    _add_heading(doc, lbl["conclusion"], level=1, center=True)
-    _add_para(doc, _loc("essay_concl_fb", lang, topic))
-    _add_box(doc, lbl["final_wisdom"], _loc("final_wisdom", lang), bg_hex="E8F5E9")
+    extra_data = extra_data or {}
+    _add_compact_academic_header(
+        doc, lbl.get("essay_title", "ESSAY"), topic, author, lbl,
+        extra_data=extra_data, topic_label=True,
+        checker_label="supervisor_label", show_city_year=True
+    )
+    lc = str(lang).lower()
+    labels = ESSAY_SECTION_LABELS.get(lc, ESSAY_SECTION_LABELS["en"])
+    target_words = int(extra_data.get("essay_target_words", 320) or 320)
+    if target_words > 360:
+        titles = {
+            "uz": {"intro": labels["intro_plain"], "body": labels["body_plain"], "conclusion": labels["conclusion_plain"]},
+            "ru": {"intro": labels["intro_plain"], "body": labels["body_plain"], "conclusion": labels["conclusion_plain"]},
+            "en": {"intro": labels["intro_plain"], "body": labels["body_plain"], "conclusion": labels["conclusion_plain"]},
+            "tr": {"intro": labels["intro_plain"], "body": labels["body_plain"], "conclusion": labels["conclusion_plain"]},
+            "de": {"intro": labels["intro_plain"], "body": labels["body_plain"], "conclusion": labels["conclusion_plain"]},
+            "fr": {"intro": labels["intro_plain"], "body": labels["body_plain"], "conclusion": labels["conclusion_plain"]},
+        }.get(lc, labels)
+    else:
+        titles = labels
+
+    intro_text, body_text, conclusion_text = _parse_essay_sections(content_text)
+    _add_heading(doc, titles["intro"], level=1, center=True)
+    _add_para(doc, intro_text or _loc("essay_intro", lang, topic))
+
+    _add_heading(doc, titles["body"], level=1, center=True)
+    body_paragraphs = [p.strip() for p in re.split(r"\n\s*\n|\n", body_text) if p.strip()]
+    if not body_paragraphs:
+        body_paragraphs = [_loc("essay_main_fb", lang, topic)]
+    for paragraph in body_paragraphs[:3]:
+        _add_para(doc, paragraph)
+
+    _add_heading(doc, titles["conclusion"], level=1, center=True)
+    _add_para(doc, conclusion_text or _loc("essay_concl_fb", lang, topic))
     buf = io.BytesIO(); doc.save(buf); buf.seek(0)
     return buf
 
