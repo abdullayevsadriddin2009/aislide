@@ -39,27 +39,90 @@ def _slide_design_prompt(lang):
     }
     return prompts.get(lang, prompts["en"])
 
-async def _collect_images(topic, slides_content, total=5):
-    import tempfile, os
+async def _collect_images(topic, slides_content, total=5, lang="uz"):
+    """Collect topic-specific images concurrently and always supply visual artwork."""
+    import tempfile, os, textwrap, asyncio
+    from PIL import Image, ImageDraw, ImageFont
     tmpdir = tempfile.mkdtemp(prefix="pptx_imgs_")
-    queries = [topic]
-    paths = []
-    seen = set()
-    for q in queries:
-        if len(paths) >= total: break
+    queries = []
+    for candidate in [str(topic or "").strip()] + [
+        str(item.get("title") or "").strip()
+        for item in (slides_content or []) if isinstance(item, dict)
+    ]:
+        candidate = candidate.strip()
+        if len(candidate) >= 3 and candidate.casefold() not in {q.casefold() for q in queries}:
+            queries.append(candidate)
+        if len(queries) >= 3:
+            break
+
+    async def search_one(q):
         try:
-            urls = await search_images(q, count=8)
-        except Exception:
-            urls = []
-        for u in urls:
-            if u in seen or len(paths) >= total: continue
-            seen.add(u)
-            p = os.path.join(tmpdir, f"img_{len(paths)}.jpg")
+            return await search_images(q, count=max(5, total * 2))
+        except Exception as exc:
+            print(f"[creation] search_images failed for {q!r}: {exc}", flush=True)
+            return []
+
+    groups = await asyncio.gather(*(search_one(q) for q in queries)) if queries else []
+    urls, seen = [], set()
+    for group in groups:
+        for url in group or []:
+            if url and url not in seen:
+                seen.add(url)
+                urls.append(url)
+    urls = urls[:max(8, total * 2)]
+
+    async def download_one(index, url):
+        path = os.path.join(tmpdir, f"img_{index}.jpg")
+        try:
+            ok = await download_image(url, path)
+            if not ok or not os.path.isfile(path) or os.path.getsize(path) < 1000:
+                return None
+            # HTTP 200 responses can still contain HTML/error pages instead of an
+            # image; verify the bytes before passing the file to python-pptx.
+            with Image.open(path) as image:
+                if image.width < 120 or image.height < 80:
+                    return None
+                image.verify()
+            return path
+        except Exception as exc:
+            print(f"[creation] image download failed/invalid: {exc}", flush=True)
+            return None
+
+    downloads = await asyncio.gather(*(download_one(i, url) for i, url in enumerate(urls))) if urls else []
+    paths = [p for p in downloads if p][:total]
+
+    if not paths:
+        # The supplied PPTX has no embedded photos. This generated visual is a
+        # guaranteed fallback when Commons or optional image APIs cannot be reached.
+        try:
+            width, height = 1600, 900
+            canvas = Image.new("RGB", (width, height), (20, 32, 50))
+            draw = ImageDraw.Draw(canvas)
+            draw.ellipse((1030, -180, 1770, 560), outline=(201, 162, 39), width=12)
+            draw.ellipse((1100, -110, 1690, 480), outline=(104, 125, 151), width=5)
+            draw.rounded_rectangle((80, 90, 1520, 810), radius=38, outline=(201, 162, 39), width=4)
             try:
-                if await download_image(u, p):
-                    paths.append(p)
+                font_path = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+                title_font = ImageFont.truetype(font_path, 62)
+                label_font = ImageFont.truetype(font_path, 28)
             except Exception:
-                pass
+                title_font = label_font = ImageFont.load_default()
+            title = str(topic or "Educational presentation").strip()
+            lines = textwrap.wrap(title, width=30)[:4]
+            y = 285 if len(lines) <= 2 else 220
+            for line in lines:
+                draw.text((145, y), line, font=title_font, fill=(255, 255, 255), stroke_width=1, stroke_fill=(20, 32, 50))
+                y += 83
+            labels = {
+                "uz": "MAVZUGA OID VIZUAL", "ru": "ВИЗУАЛИЗАЦИЯ ТЕМЫ", "en": "TOPIC VISUAL",
+                "tr": "KONU GÖRSELİ", "de": "THEMENVISUALISIERUNG", "fr": "VISUEL DU SUJET",
+            }
+            draw.text((145, 690), labels.get(str(lang).lower(), labels["en"]), font=label_font, fill=(201, 162, 39))
+            path = os.path.join(tmpdir, "topic_visual.jpg")
+            canvas.save(path, "JPEG", quality=90)
+            paths.append(path)
+        except Exception as exc:
+            print(f"[creation] fallback image generation failed: {exc}", flush=True)
     return paths
 
 async def _lang(uid):
@@ -212,7 +275,7 @@ async def cb_slide_count(call: CallbackQuery, state: FSMContext):
     except (TypeError, ValueError):
         await call.answer()
         return
-    if count not in (5, 7, 10, 12, 15, 18, 20, 25, 30):
+    if count not in (10, 15, 20):
         await call.answer()
         return
     base_price = await db.get_price("slide")
@@ -240,9 +303,18 @@ async def cb_template(call: CallbackQuery, state: FSMContext):
 @router.callback_query(Creation.option, F.data.startswith("opt:"))
 async def cb_option(call: CallbackQuery, state: FSMContext):
     _, otype, oval = call.data.split(":", 2)
+    allowed_values = {"pages": {10, 15, 20}, "questions": {10, 15, 20}, "words": {200, 300, 500}}
+    try:
+        selected_value = int(oval)
+    except (TypeError, ValueError):
+        await call.answer("Invalid option", show_alert=True)
+        return
+    if otype not in allowed_values or selected_value not in allowed_values[otype]:
+        await call.answer("Invalid option", show_alert=True)
+        return
     data = await state.get_data()
     options = data.get("options", {})
-    options[otype] = oval
+    options[otype] = selected_value
     await state.update_data(options=options)
     service = data.get("service")
     if service != "slide":
@@ -390,7 +462,11 @@ async def _show_confirm(event, state):
     else:
         u = await db.get_user(user_id)
         if u and "pages" not in options and s.get("option_type") == "pages":
-            options["pages"] = u["default_pages"]
+            try:
+                default_pages = int(u.get("default_pages", 10))
+            except (TypeError, ValueError):
+                default_pages = 10
+            options["pages"] = default_pages if default_pages in (10, 15, 20) else 10
         await state.update_data(options=options)
         lang_name = data.get("language_name", lang_full_name("uz", lang))
         fmt = data.get("file_format", "docx")
@@ -451,7 +527,8 @@ async def cb_confirm(call: CallbackQuery, state: FSMContext):
     # ===== INSHO UCHUN MAXSUS =====
     if service == "insho":
         language_code = data.get("language", lang)
-        words = max(100, min(3000, int(options.get("words", 320) or 320)))
+        words = int(options.get("words", 200) or 200)
+        words = words if words in (200, 300, 500) else min((200, 300, 500), key=lambda n: abs(n - words))
         options["words"] = words
         await state.update_data(options=options)
         outline = await generate_outline(service, generation_topic, language_code, words)
@@ -487,22 +564,30 @@ async def cb_confirm(call: CallbackQuery, state: FSMContext):
         slides_content, real = await generate_slides_structured(generation_topic, subj_display, language_code, max(2, slide_count - 3))
         
         try:
-            img_paths = await _collect_images(generation_topic, slides_content, total=5)
+            img_paths = await _collect_images(generation_topic, slides_content, total=5, lang=language_code)
         except Exception as e:
             print(f"[creation] Image download error: {e}", flush=True)
             img_paths = []
             
         buf = generate_pptx(
-            topic=generation_topic, 
-            subject=subj_display, 
-            lang=language_code, 
+            topic=generation_topic,
+            subject=subj_display,
+            lang=language_code,
             design_key=data.get("design_key", "modern"),
-            slide_count=slide_count, 
-            slides_content=slides_content, 
-            images=img_paths, 
+            slide_count=slide_count,
+            slides_content=slides_content,
+            images=img_paths,
             author=author
         )
-        
+        # python-pptx embeds image bytes in the presentation; the temporary files
+        # can now be safely removed.
+        if img_paths:
+            try:
+                import shutil
+                shutil.rmtree(__import__("pathlib").Path(img_paths[0]).parent, ignore_errors=True)
+            except Exception:
+                pass
+
         prefix = t("fname_slide", language_code)
         fname = f"{prefix}_{safe_topic}.pptx".replace(" ", "_")
         doc = BufferedInputFile(buf.read(), filename=fname)
@@ -585,7 +670,8 @@ async def cb_essay_go(call: CallbackQuery, state: FSMContext):
     safe_topic = "".join(c for c in topic[:25] if c.isalnum() or c in " _-").strip() or "document"
     language_code = data.get("language", lang)
     text_content, real = await generate(service, generation_topic, options, language_code)
-    words = max(100, min(3000, int(options.get("words", 320) or 320)))
+    words = int(options.get("words", 200) or 200)
+    words = words if words in (200, 300, 500) else min((200, 300, 500), key=lambda n: abs(n - words))
     pages = max(2, math.ceil(words / 220))
     options["pages"] = pages
     options["target_words"] = words
