@@ -21,7 +21,7 @@ LAST_ERROR = "hali sinanmadi"
 PIXABAY_KEY  = os.getenv("PIXABAY_KEY", "")
 PEXELS_KEY   = os.getenv("PEXELS_KEY", "")
 UNSPLASH_KEY = os.getenv("UNSPLASH_KEY", "")
-USER_AGENT = "SlaydBot/1.0 (aloqa: @AbduIIayev__7)"
+USER_AGENT = "SlaydBot/1.0 (aloqa: admin@example.uz)"
 
 _KEYWORD_CACHE = {}
 CHARS_PER_PAGE = 900
@@ -884,14 +884,14 @@ async def _try_post(api, model, payload):
                     return resp.status, None, f"HTTP {resp.status}"
     except Exception as e: return None, None, str(e)
 
-async def _chat_complete(prompt, system=None, max_tokens=2500):
+async def _chat_complete(prompt, system=None, max_tokens=2500, temperature=0.5, frequency_penalty=0.7, presence_penalty=0.5):
     messages = [{"role": "system", "content": system}, {"role": "user", "content": prompt}]
     payload = {
-        "messages": messages, 
-        "temperature": 0.5, 
+        "messages": messages,
+        "temperature": temperature,
         "max_tokens": max_tokens,
-        "frequency_penalty": 0.7,
-        "presence_penalty": 0.5
+        "frequency_penalty": frequency_penalty,
+        "presence_penalty": presence_penalty
     }
     start = CURRENT_API_INDEX
     while True:
@@ -908,21 +908,243 @@ async def _chat_complete(prompt, system=None, max_tokens=2500):
         await asyncio.sleep(0.5)
     return "⚠️ AI serverga ulanib bo'lmadi."
 
-CHAT_AUTO_LANGUAGE_SYSTEM = """You are a helpful multilingual AI assistant.
-IMPORTANT LANGUAGE RULE: Determine the language of the user's latest message and answer in that same language, using the same script and a natural level of formality. The bot interface language and these system instructions do not determine the response language.
-If the user explicitly asks you to translate something or to answer in a different language, follow that explicit request. Otherwise, do not switch languages and do not default to Uzbek.
-Answer the actual question or task. If the user provides a long text, analyze the whole available text instead of treating words inside it as menu commands. Preserve requested structure, examples, and level of detail. Do not claim that you processed parts that were not provided. Use readable formatting and avoid unnecessary repetition."""
+CHAT_LANGUAGE_NAMES = {
+    "uz": "Uzbek, using the Latin alphabet",
+    "ru": "Russian, using Cyrillic",
+    "en": "English",
+    "tr": "Turkish",
+    "de": "German",
+    "fr": "French",
+    "ar": "Arabic, using Arabic script",
+    "es": "Spanish",
+    "pt": "Portuguese",
+    "it": "Italian",
+    "zh": "Chinese",
+    "hi": "Hindi",
+}
+
+_CHAT_WORDS = {
+    "uz": {"salom", "assalomu", "alaykum", "haqida", "nima", "qanday", "qayerda", "qachon", "nega", "uchun", "bilan", "kerak", "mumkin", "men", "siz", "menga", "tushuntir", "yozib", "yozing", "iltimos", "rahmat", "bo'ladi", "emas", "qaysi", "o'zbek", "o‘zbek", "qilib", "qil", "ber", "ayt"},
+    "en": {"hello", "hi", "hey", "what", "how", "why", "where", "when", "about", "please", "tell", "explain", "help", "thanks", "thank", "you", "your", "can", "could", "would", "is", "are", "the", "and", "for", "with", "from", "does", "do", "make", "write", "answer"},
+    "ru": {"привет", "здравствуйте", "добрый", "день", "вечер", "как", "что", "почему", "где", "когда", "расскажи", "объясни", "пожалуйста", "спасибо", "напиши", "ответь", "это", "для", "про", "меня"},
+    "tr": {"merhaba", "selam", "nasıl", "neden", "hakkında", "için", "lütfen", "teşekkürler", "anlat", "açıkla", "yaz", "nedir", "hangi"},
+    "de": {"hallo", "guten", "morgen", "abend", "wie", "warum", "wo", "wann", "über", "bitte", "danke", "erkläre", "schreibe", "was", "ist", "und", "der", "die", "das"},
+    "fr": {"bonjour", "salut", "bonsoir", "comment", "pourquoi", "où", "quand", "sur", "à propos", "merci", "veuillez", "explique", "écris", "quoi", "avec", "pour"},
+    "es": {"hola", "buenos", "buenas", "cómo", "qué", "por", "para", "gracias", "explícame", "escribe", "sobre", "dónde"},
+    "pt": {"olá", "ola", "bom", "dia", "como", "porque", "obrigado", "obrigada", "por favor", "explique", "escreva"},
+    "it": {"ciao", "buongiorno", "buonasera", "come", "perché", "dove", "quando", "grazie", "spiega", "scrivi"},
+}
+
+_CHAT_GREETINGS = {
+    "salom": ("uz", "Salom! Qanday yordam bera olaman?"),
+    "assalomu alaykum": ("uz", "Va alaykum assalom! Qanday yordam bera olaman?"),
+    "assalomu alaykum!": ("uz", "Va alaykum assalom! Qanday yordam bera olaman?"),
+    "hello": ("en", "Hello! How can I help you?"),
+    "hi": ("en", "Hi! What can I help you with?"),
+    "hey": ("en", "Hey! How can I help you?"),
+    "привет": ("ru", "Привет! Чем могу помочь?"),
+    "здравствуйте": ("ru", "Здравствуйте! Чем могу помочь?"),
+    "merhaba": ("tr", "Merhaba! Size nasıl yardımcı olabilirim?"),
+    "selam": ("tr", "Selam! Nasıl yardımcı olabilirim?"),
+    "hallo": ("de", "Hallo! Wie kann ich dir helfen?"),
+    "guten tag": ("de", "Guten Tag! Wie kann ich Ihnen helfen?"),
+    "bonjour": ("fr", "Bonjour ! Comment puis-je vous aider ?"),
+    "salut": ("fr", "Salut ! Comment puis-je vous aider ?"),
+    "hola": ("es", "¡Hola! ¿En qué puedo ayudarte?"),
+    "ciao": ("it", "Ciao! Come posso aiutarti?"),
+    "olá": ("pt", "Olá! Como posso ajudar?"),
+    "مرحبا": ("ar", "مرحبًا! كيف يمكنني مساعدتك؟"),
+}
+
+
+def _chat_tokens(text):
+    return re.findall(r"[^\W\d_]+(?:['’][^\W\d_]+)?", str(text or "").casefold(), flags=re.UNICODE)
+
+
+def _requested_chat_language(text):
+    """Respect an explicit instruction to answer or translate into another language."""
+    t = str(text or "").casefold().replace("’", "'")
+    patterns = [
+        ("uz", (r"o'zbek(cha)? (tilida|javob)", r"uzbek(cha)? (yoz|javob)", r"translate into uzbek", r"in uzbek")),
+        ("ru", (r"rus(cha)? (tilida|javob|yoz)", r"на русском", r"переведи на русский", r"in russian", r"translate into russian")),
+        ("en", (r"ingliz(cha)? (tilida|javob|yoz)", r"на английском", r"in english", r"answer in english", r"translate into english")),
+        ("tr", (r"turk(cha)? (tilida|javob|yoz)", r"in turkish", r"translate into turkish", r"türkçe")),
+        ("de", (r"nemis(cha)? (tilida|javob|yoz)", r"in german", r"auf deutsch", r"translate into german")),
+        ("fr", (r"fransuz(cha)? (tilida|javob|yoz)", r"in french", r"en français", r"translate into french")),
+        ("ar", (r"arab(cha)? (tilida|javob|yoz)", r"in arabic", r"بالعربية")),
+        ("es", (r"in spanish", r"español", r"en español", r"ispan(cha)? (tilida|javob)")),
+        ("zh", (r"in chinese", r"中文", r"xitoy(cha)? (tilida|javob)")),
+    ]
+    for lang, regexes in patterns:
+        if any(re.search(p, t) for p in regexes):
+            return lang
+    return None
+
+
+def _detect_chat_language(text, fallback="uz"):
+    """Detect the language of the actual message; don't blindly use the bot UI language."""
+    raw = str(text or "").strip()
+    if not raw:
+        return fallback if fallback in CHAT_LANGUAGE_NAMES else "uz"
+    t = raw.casefold().strip(" .,!?:;\"'`()[]{}")
+    requested = _requested_chat_language(raw)
+    if requested:
+        return requested
+    if any("\u0600" <= ch <= "\u06ff" for ch in raw):
+        return "ar"
+    cyrillic = len(re.findall(r"[А-Яа-яЁё]", raw))
+    letters = len(re.findall(r"[A-Za-zА-Яа-яЁё]", raw))
+    if cyrillic >= 2 and cyrillic / max(1, letters) >= 0.25:
+        return "ru"
+
+    # Exact common greetings must not be handed to an LLM for language guessing.
+    compact = re.sub(r"\s+", " ", t)
+    compact = re.sub(r"[.!?]+$", "", compact).strip()
+    if compact in _CHAT_GREETINGS:
+        return _CHAT_GREETINGS[compact][0]
+
+    tokens = set(_chat_tokens(raw))
+    # Uzbek-specific characters and frequent words provide a strong signal.
+    if re.search(r"[ʻʼ‘’]", raw) or any(w in tokens for w in {"haqida", "qanday", "qayerda", "uchun", "mumkin", "kerak", "salom", "rahmat", "iltimos", "o'zbek"}):
+        return "uz"
+    if any(ch in raw for ch in "ğışİı") or any(w in tokens for w in {"merhaba", "nasıl", "hakkında", "teşekkürler"}):
+        return "tr"
+    if any(ch in raw for ch in "äöüß") or any(w in tokens for w in {"hallo", "danke", "bitte", "warum", "erkläre"}):
+        return "de"
+    if any(ch in raw for ch in "àâçéèêëîïôùûüÿœ") or any(w in tokens for w in {"bonjour", "salut", "merci", "pourquoi", "comment"}):
+        return "fr"
+    if any(w in tokens for w in {"hola", "cómo", "gracias", "español"}):
+        return "es"
+    if any(w in tokens for w in {"olá", "obrigado", "obrigada"}):
+        return "pt"
+    if any(w in tokens for w in {"ciao", "grazie", "perché"}):
+        return "it"
+
+    scores = {lang: len(tokens & words) for lang, words in _CHAT_WORDS.items()}
+    best = max(scores, key=scores.get)
+    if scores[best] > 0 and scores[best] >= scores.get("uz", 0):
+        return best
+    # Ambiguous short text falls back to the user's selected interface language,
+    # but a clear English greeting such as "hello" was already handled above.
+    return fallback if fallback in CHAT_LANGUAGE_NAMES else "uz"
+
+
+def _chat_answer_is_repetitive(text):
+    words = _chat_tokens(text)
+    if len(words) < 35:
+        return False
+    if len(set(words)) / max(1, len(words)) < 0.28:
+        return True
+    # Reject copied loop fragments such as a phrase repeated dozens of times.
+    for n, threshold in ((5, 4), (4, 6), (3, 9)):
+        grams = Counter(tuple(words[i:i+n]) for i in range(len(words) - n + 1))
+        if grams and max(grams.values()) >= threshold:
+            return True
+    sentences = [re.sub(r"\W+", " ", s.casefold()).strip() for s in re.split(r"[.!?\n]+", str(text or "")) if len(s.split()) >= 6]
+    sent_counts = Counter(sentences)
+    if sent_counts and max(sent_counts.values()) >= 3:
+        return True
+    return False
+
+
+def _chat_answer_wrong_script(text, lang):
+    raw = str(text or "")
+    letters = len(re.findall(r"[A-Za-zА-Яа-яЁё\u0600-\u06ff]", raw))
+    if not letters:
+        return True
+    arabic = len(re.findall(r"[\u0600-\u06ff]", raw))
+    cyr = len(re.findall(r"[А-Яа-яЁё]", raw))
+    if lang != "ar" and arabic / letters > 0.08:
+        return True
+    if lang not in ("ru",) and cyr / letters > 0.22:
+        return True
+    if lang == "ru" and cyr / letters < 0.18 and len(raw) > 80:
+        return True
+    # Detect obvious Uzbek/English swaps for Latin-script responses without over-filtering names.
+    tokens = set(_chat_tokens(raw))
+    if lang == "uz":
+        uz_markers = len(tokens & {"haqida", "uchun", "bilan", "kerak", "mumkin", "qanday", "bu", "ham", "emas", "hisoblanadi", "bo'ladi", "shuningdek"})
+        en_markers = len(tokens & {"the", "and", "is", "are", "with", "this", "that", "you", "your", "about", "can", "for", "from", "which"})
+        if en_markers >= 4 and uz_markers == 0:
+            return True
+    if lang == "en":
+        uz_markers = len(tokens & {"haqida", "uchun", "bilan", "kerak", "mumkin", "qanday", "shuningdek", "hisoblanadi"})
+        en_markers = len(tokens & {"the", "and", "is", "are", "with", "this", "that", "you", "your", "about", "can", "for", "from", "which"})
+        if uz_markers >= 2 and en_markers == 0:
+            return True
+    return False
+
+
+def _chat_language_system(lang):
+    language = CHAT_LANGUAGE_NAMES.get(lang, CHAT_LANGUAGE_NAMES.get("uz"))
+    return (
+        "You are a reliable multilingual assistant. Answer the user's actual question. "
+        f"MANDATORY OUTPUT LANGUAGE: {language}. This was determined from the user's message, "
+        "not from the interface language. Write the entire answer only in that language and its normal script. "
+        "Do not answer in Arabic unless the user's message is Arabic or the user explicitly requests Arabic. "
+        "For a simple greeting, give one short, natural greeting in the same language. "
+        "Never fabricate words, repeat phrases, pad the answer, or switch languages mid-answer. "
+        "For technical names and brands, preserve their official spelling but explain them in the required language. "
+        "Use concise, readable formatting. If the user asks for a detailed answer, give relevant substance rather than filler."
+    )
+
+
+def _chat_failure_message(lang):
+    messages = {
+        "uz": "Kechirasiz, hozir ishonchli javob tayyorlay olmadim. Savolni boshqacha yoki qisqaroq yozib ko‘ring.",
+        "ru": "Извините, сейчас не удалось подготовить надёжный ответ. Попробуйте задать вопрос иначе или короче.",
+        "en": "Sorry, I couldn't prepare a reliable answer right now. Please rephrase the question or make it shorter.",
+        "tr": "Üzgünüm, şu anda güvenilir bir yanıt hazırlayamadım. Soruyu farklı veya daha kısa biçimde yazmayı deneyin.",
+        "de": "Entschuldigung, ich konnte gerade keine verlässliche Antwort erstellen. Formulieren Sie die Frage bitte anders oder kürzer.",
+        "fr": "Désolé, je n’ai pas pu préparer une réponse fiable. Reformulez la question ou raccourcissez-la.",
+        "ar": "عذرًا، لم أتمكن من إعداد إجابة موثوقة الآن. يرجى إعادة صياغة السؤال أو اختصاره.",
+        "es": "Lo siento, no pude preparar una respuesta fiable. Intenta reformular la pregunta o hacerla más breve.",
+        "pt": "Desculpe, não consegui preparar uma resposta confiável. Tente reformular a pergunta ou encurtá-la.",
+        "it": "Mi dispiace, non sono riuscito a preparare una risposta affidabile. Prova a riformulare o accorciare la domanda.",
+        "zh": "抱歉，我暂时无法生成可靠的回答。请尝试换一种方式提问或缩短问题。",
+        "hi": "क्षमा करें, मैं अभी विश्वसनीय उत्तर तैयार नहीं कर सका। कृपया प्रश्न को दूसरे तरीके से या थोड़ा छोटा लिखें।",
+    }
+    return messages.get(lang, messages["uz"])
+
 
 async def chat_answer(question, user_lang="uz"):
     q = str(question or "").strip()
     if not q:
         return None
-    # Telegram message bodies are normally capped around 4096 characters. Keep a safety limit
-    # for other clients without appending a notice in a different language.
     if len(q) > 12000:
         q = q[:12000]
-    ans = await _chat_complete(q, system=CHAT_AUTO_LANGUAGE_SYSTEM, max_tokens=4000)
-    return ans if ans and not ans.startswith("⚠️") else None
+
+    # Directly handle common one-word greetings so a model cannot randomly answer in Arabic.
+    compact = re.sub(r"\s+", " ", q.casefold().strip(" .,!?:;\"'`()[]{}"))
+    if compact in _CHAT_GREETINGS:
+        return _CHAT_GREETINGS[compact][1]
+
+    lang = _detect_chat_language(q, fallback=user_lang)
+    system = _chat_language_system(lang)
+    ans = await _chat_complete(
+        q, system=system, max_tokens=2200, temperature=0.2,
+        frequency_penalty=0.35, presence_penalty=0.1
+    )
+    if not ans or ans.startswith("⚠️"):
+        return None
+    ans = ans.strip()
+    bad = _chat_answer_is_repetitive(ans) or _chat_answer_wrong_script(ans, lang)
+    if bad:
+        retry_prompt = (
+            "Write a fresh answer to the ORIGINAL user question below. Do not reuse the previous draft. "
+            "Keep the answer accurate and useful, with no repeated phrases.\n\n"
+            f"Original user question:\n{q}"
+        )
+        ans = await _chat_complete(
+            retry_prompt, system=system, max_tokens=2200, temperature=0.15,
+            frequency_penalty=0.25, presence_penalty=0.0
+        )
+        if not ans or ans.startswith("⚠️"):
+            return _chat_failure_message(lang)
+        ans = ans.strip()
+        if _chat_answer_is_repetitive(ans) or _chat_answer_wrong_script(ans, lang):
+            return _chat_failure_message(lang)
+    return ans
 
 async def test_api():
     lines = []
