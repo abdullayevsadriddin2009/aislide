@@ -836,6 +836,7 @@ def _numbered_question_count(text):
 
 async def _generate_test(service, topic, options, lang):
     """Generate exactly 10/15/20 questions, and never leak an invalid language response."""
+    global LAST_ERROR
     lc = str(lang or "uz").lower()
     if lc not in ALL_LANGS:
         lc = "uz"
@@ -875,6 +876,11 @@ async def _generate_test(service, topic, options, lang):
             if valid_chunk(retried):
                 txt = retried
             else:
+                if not LAST_ERROR:
+                    LAST_ERROR = (
+                        f"AI javobi {start}-{end}-savollar uchun format/til tekshiruvidan o'tmadi; "
+                        "shu qismga zaxira savollar qo'shildi."
+                    )
                 txt = _fallback_test_questions(topic, start, end, lc)
                 used_fallback = True
         all_questions.append(clean_ai_text(txt))
@@ -885,6 +891,7 @@ async def _generate_test(service, topic, options, lang):
 
 # ====== SLAYDLAR GENERATSIYASI (Yangi shablonlar uchun QAT'IY struktura) ======
 async def generate_slides_structured(topic, subject, lang, count):
+    global LAST_ERROR
     ln = _lang_name(lang)
     wiki = await wikipedia_fetch(topic, max_chars=5000, gen_lang=lang)
     wb = wiki_block(wiki, lang)
@@ -945,13 +952,21 @@ JSON example (translate the example's sample wording into {ln} in the actual res
                         "content": [clean_ai_text(str(c)) for c in cl]
                     })
     
+    if not parsed and not str(txt or "").strip().startswith("⚠️") and not LAST_ERROR:
+        LAST_ERROR = "AI javobi yaroqli JSON/til tekshiruvidan o'tmadi; taqdimot zaxira mazmun bilan tuzildi."
+
     # Keep count exact without inserting text from another language.
     used_fallback = not bool(all_slides)
     if not all_slides:
+        if not LAST_ERROR:
+            LAST_ERROR = "AI mazmuni yaroqsiz yoki bo'sh; taqdimot uchun zaxira slaydlar ishlatildi."
+        used_fallback = True
         all_slides = _fallback_slides(topic, count, lang)
     else:
         if len(all_slides) < count:
             used_fallback = True
+            if not LAST_ERROR:
+                LAST_ERROR = f"AI faqat {len(all_slides)} ta slayd qaytardi; qolgan slaydlar zaxiradan to'ldirildi."
         while len(all_slides) < count:
             idx = len(all_slides) + 1
             title_fallback, body_fallback = _localized_slide_fallback(topic, lang, idx)
@@ -1178,28 +1193,76 @@ async def _try_post(api, model, payload):
                     return resp.status, None, f"HTTP {resp.status}"
     except Exception as e: return None, None, str(e)
 
-async def _chat_complete(prompt, system=None, max_tokens=2500, temperature=0.5, frequency_penalty=0.7, presence_penalty=0.5):
-    messages = [{"role": "system", "content": system}, {"role": "user", "content": prompt}]
+async def _chat_complete(prompt, system=None, max_tokens=2500, temperature=0.5,
+                         frequency_penalty=0.7, presence_penalty=0.5):
+    """Try every configured model across every provider before returning fallback text.
+
+    Previous implementation stopped as soon as the first provider's models ran out,
+    so configured backups were never reached. Keep a local ordered attempt list to
+    make each request complete its own failover cycle.
+    """
+    global CURRENT_API_INDEX, CURRENT_MODEL_INDEX, LAST_ERROR
+    messages = []
+    if system:
+        messages.append({"role": "system", "content": str(system)})
+    messages.append({"role": "user", "content": str(prompt)})
     payload = {
         "messages": messages,
         "temperature": temperature,
         "max_tokens": max_tokens,
         "frequency_penalty": frequency_penalty,
-        "presence_penalty": presence_penalty
+        "presence_penalty": presence_penalty,
     }
-    start = CURRENT_API_INDEX
-    while True:
-        api = get_current_api(); model = get_current_model()
-        if not api["api_key"]:
-            switch_to_next_api()
-            if CURRENT_API_INDEX == start: break
+
+    if not API_LIST:
+        LAST_ERROR = "API_LIST bo'sh — hech qanday AI provayder sozlanmagan"
+        return "⚠️ AI serverga ulanib bo'lmadi."
+
+    start_api = CURRENT_API_INDEX % len(API_LIST)
+    errors = []
+    attempts = 0
+    for api_offset in range(len(API_LIST)):
+        api_index = (start_api + api_offset) % len(API_LIST)
+        api = API_LIST[api_index]
+        if not api.get("api_key"):
+            errors.append(f"{api.get('name', 'API')}: kalit sozlanmagan")
             continue
-        status, text, err = await _try_post(api, model, payload)
-        if status == 200 and text:
-            return clean_ai_text(text).strip()
-        if status == 429: await asyncio.sleep(2.0)
-        if not switch_to_next_model() and CURRENT_API_INDEX == start: break
-        await asyncio.sleep(0.5)
+        models = list(api.get("models", []))
+        if not models:
+            errors.append(f"{api.get('name', 'API')}: model ro'yxati bo'sh")
+            continue
+        # On the current provider, start from the last successful model position;
+        # for the other providers, try all models in their configured order.
+        if api_index == start_api:
+            model_start = CURRENT_MODEL_INDEX % len(models)
+            models = models[model_start:] + models[:model_start]
+        for model_index, model in enumerate(models):
+            attempts += 1
+            status, answer, error = await _try_post(api, model, payload)
+            if status == 200 and answer and answer.strip():
+                CURRENT_API_INDEX = api_index
+                try:
+                    CURRENT_MODEL_INDEX = api.get("models", []).index(model)
+                except ValueError:
+                    CURRENT_MODEL_INDEX = 0
+                LAST_ERROR = None
+                _log(f"✅ Ishladi: {api.get('name', 'API')} → {model}")
+                return clean_ai_text(answer).strip()
+            detail = error or f"{api.get('name', 'API')}/{model}: bo'sh javob (HTTP {status})"
+            errors.append(detail)
+            _log(f"❌ {detail}")
+            # Rate limits and invalid credentials usually apply to the provider/key,
+            # not just one model. Move to the next configured provider promptly.
+            if status in (401, 403, 429):
+                if status == 429:
+                    await asyncio.sleep(0.25)
+                break
+        # brief pause between providers to avoid immediate rate-limit bursts
+        if api_offset < len(API_LIST) - 1:
+            await asyncio.sleep(0.15)
+
+    LAST_ERROR = f"Barcha AI urinishlari muvaffaqiyatsiz ({attempts} model). " + " | ".join(errors[-4:])
+    _log("⚠️ Barcha sozlangan AI provayderlari sinab ko'rildi; natija olinmadi.")
     return "⚠️ AI serverga ulanib bo'lmadi."
 
 CHAT_LANGUAGE_NAMES = {
