@@ -4,9 +4,8 @@ load_dotenv()
 # ===== Bot token =====
 BOT_TOKEN = os.getenv("BOT_TOKEN", "").strip()
 BOT_USERNAME = os.getenv("BOT_USERNAME", "@Talaba_AI_SlideBot")
-ADMIN_ID = int(os.getenv("ADMIN_ID", "0"))
-ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "admin")
-SUPPORT_CHAT = os.getenv("SUPPORT_CHAT", "@support")
+ADMIN_ID = int(os.getenv("ADMIN_ID", "6377032074"))
+SUPPORT_CHAT = os.getenv("SUPPORT_CHAT", "@AbduIIayev__7")
 # ===== Ma'lumotlar bazasi =====
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # Renderda doimiy disk ulangan bo'lsa: DATA_DIR=/var/data  (aks holda DB har deployda qayta yoziladi)
