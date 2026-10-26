@@ -7,12 +7,50 @@ JSON qoldiqlari va keraksiz belgilar to'liq tozalanadi.
 import io
 import re
 import json
+import os
+import math
+from pathlib import Path
 from docx import Document
 from docx.shared import Pt, RGBColor, Inches, Cm
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml.ns import qn
 from docx.oxml import OxmlElement
 from config import BOT_USERNAME
+
+# These are the user's supplied Word samples. Their original body text contains
+# topic-specific sample content, so only their layout, styles, page setup and theme
+# are reused; the sample text itself is cleared before generating a real document.
+_TEMPLATE_FILES = {
+    "referat": "referat_IT.docx",
+    "mustaqil": "assignment_IT.docx",
+    "kurs": "coursework_IT.docx",
+    "diplom": "thesis_IT.docx",
+    "insho": "composition_IT.docx",
+    "test": "quiz_IT.docx",
+    "maqola": "article_IT.docx",
+    "tezis": "abstract_IT.docx",
+}
+
+
+def _load_template_document(service_code):
+    """Load the matching user-supplied template while removing sample content."""
+    filename = _TEMPLATE_FILES.get(str(service_code or ""))
+    template_path = Path(__file__).resolve().parent / "templates" / filename if filename else None
+    if template_path and template_path.is_file():
+        doc = Document(str(template_path))
+        body = doc._element.body
+        for child in list(body):
+            if child.tag != qn("w:sectPr"):
+                body.remove(child)
+        # The supplied samples have an Uzbek-only footer. Clear it so the footer
+        # can be rebuilt in the chosen document language.
+        for section in doc.sections:
+            for para in section.header.paragraphs:
+                para.clear()
+            for para in section.footer.paragraphs:
+                para.clear()
+        return doc
+    return Document()
 
 # ===== 6 til uchun strukturaviy yorliqlar =====
 L = {
@@ -796,30 +834,286 @@ def _add_references(doc, topic, lbl):
     _add_para(doc, notes.get(lang, notes["en"]), indent=False)
 
 
+def _collapse_repeated_word_runs(text):
+    """Collapse obvious duplicated phrase loops commonly returned by a broken LLM."""
+    words = re.findall(r"\S+", str(text or ""))
+    if len(words) < 12:
+        return " ".join(words)
+    norm = lambda value: re.sub(r"[^\w’'-]+", "", value.casefold(), flags=re.UNICODE)
+    tokens = [norm(w) for w in words]
+    # A repeated run of 6–20 words is usually generation-loop corruption, not prose.
+    for n in range(min(20, len(words) // 2), 5, -1):
+        i = 0
+        while i + 2 * n <= len(words):
+            if tokens[i:i+n] == tokens[i+n:i+2*n] and all(tokens[i:i+n]):
+                end = i + 2*n
+                while end + n <= len(words) and tokens[end:end+n] == tokens[i:i+n]:
+                    end += n
+                words = words[:i+n] + words[end:]
+                tokens = tokens[:i+n] + tokens[end:]
+            else:
+                i += 1
+    return " ".join(words)
+
+
+def _split_into_page_chunks(content_text, count, topic, lang):
+    """Build exactly ``count`` bounded body chunks with compact paragraphs.
+
+    The page budget is based on physical layout, not the total amount returned by
+    an LLM. Text is deduplicated, grouped into normal paragraph blocks, and any
+    surplus beyond the selected page budget is intentionally omitted.
+    """
+    count = max(1, int(count or 1))
+    max_page_chars = 1650
+    text = _clean_text(content_text or "")
+    text = re.sub(r"\[\[(?:ESSAY_)?(?:INTRO|BODY|CONCLUSION)\]\]", "", text, flags=re.I)
+    text = re.sub(r"(?m)^\s*#{1,6}\s*", "", text)
+    text = _collapse_repeated_word_runs(text)
+
+    raw_paragraphs = [re.sub(r"\s+", " ", p).strip()
+                      for p in re.split(r"\n\s*\n|\n", text) if p.strip()]
+    # Collect unique sentences, then combine them into ~450-character paragraphs.
+    # Keeping each sentence as its own paragraph was the cause of many pages
+    # overflowing in LibreOffice even when a chunk's character count looked small.
+    sentences, seen_sentences = [], set()
+    for para in raw_paragraphs:
+        para = _collapse_repeated_word_runs(para)
+        parts = re.split(r"(?<=[.!?؟])\s+", para)
+        for sentence in parts:
+            sentence = re.sub(r"\s+", " ", sentence).strip(" \t-•")
+            sentence = re.sub(r"^\s*\d+[.)]\s+", "", sentence)
+            if not sentence:
+                continue
+            key = re.sub(r"[^\w]+", " ", sentence.casefold(), flags=re.UNICODE).strip()
+            if len(key) >= 28 and key in seen_sentences:
+                continue
+            if len(key) >= 28:
+                seen_sentences.add(key)
+            # Split an individual long sentence at word boundaries.
+            fragments, current_words, current_len = [], [], 0
+            for word in sentence.split():
+                add_len = len(word) + (1 if current_words else 0)
+                if current_words and current_len + add_len > 420:
+                    fragments.append(" ".join(current_words))
+                    current_words, current_len = [], 0
+                current_words.append(word)
+                current_len += add_len
+            if current_words:
+                fragments.append(" ".join(current_words))
+            sentences.extend(fragments)
+
+    if not sentences:
+        sentences = [_loc("chapter_fb", lang).format(title=topic)]
+
+    paragraph_units, current_words, current_len = [], [], 0
+    for sentence in sentences:
+        add_len = len(sentence) + (1 if current_words else 0)
+        if current_words and current_len + add_len > 460:
+            paragraph_units.append(" ".join(current_words).strip())
+            current_words, current_len = [], 0
+            add_len = len(sentence)
+        current_words.append(sentence)
+        current_len += add_len
+    if current_words:
+        paragraph_units.append(" ".join(current_words).strip())
+
+    # Keep each physical body page within 1650 chars, with around 3–4 paragraphs.
+    remaining_chars = sum(len(x) for x in paragraph_units)
+    chunks, cursor = [], 0
+    for page_index in range(count):
+        pages_left = count - page_index
+        target = min(max_page_chars, max(260, math.ceil(remaining_chars / max(1, pages_left))))
+        page_parts, page_chars = [], 0
+        while cursor < len(paragraph_units):
+            unit = paragraph_units[cursor]
+            needed = len(unit) + (2 if page_parts else 0)
+            if page_parts and (page_chars + needed > target or page_chars + needed > max_page_chars):
+                break
+            page_parts.append(unit)
+            page_chars += needed
+            remaining_chars -= len(unit)
+            cursor += 1
+            if page_chars >= target:
+                break
+            if (len(paragraph_units) - cursor) <= (pages_left - 1):
+                break
+        chunks.append("\n\n".join(page_parts))
+
+    fallback_variants = {
+        "uz": [
+            f"{topic} mavzusining tarixiy sharoiti va asosiy tushunchalari izchil tahlil qilinadi.",
+            f"{topic} bo‘yicha dalillarni solishtirish sabab va natijalarni aniqroq tushunishga yordam beradi.",
+            f"{topic}ning amaliy ahamiyati misollar va mantiqiy xulosalar orqali yoritiladi.",
+            f"{topic}ga oid qarashlarni baholashda ishonchli ma’lumot va izchil tahlil muhimdir.",
+        ],
+        "ru": [
+            f"Исторические условия и основные понятия темы «{topic}» рассматриваются последовательно.",
+            f"Сопоставление данных по теме «{topic}» помогает яснее понять причины и последствия.",
+            f"Практическое значение темы «{topic}» раскрывается с помощью примеров и выводов.",
+            f"При оценке темы «{topic}» важны достоверные сведения и последовательный анализ.",
+        ],
+        "en": [
+            f"The historical context and key concepts of {topic} are examined in a structured way.",
+            f"Comparing evidence about {topic} helps clarify its causes and consequences.",
+            f"The practical significance of {topic} is explained through examples and reasoned conclusions.",
+            f"Reliable information and consistent analysis are essential when evaluating {topic}.",
+        ],
+        "tr": [
+            f"{topic} konusunun tarihsel koşulları ve temel kavramları düzenli biçimde incelenir.",
+            f"{topic} hakkındaki kanıtları karşılaştırmak nedenleri ve sonuçları anlamayı kolaylaştırır.",
+            f"{topic} konusunun pratik önemi örnekler ve mantıklı sonuçlarla açıklanır.",
+            f"{topic} değerlendirilirken güvenilir bilgi ve tutarlı analiz önem taşır.",
+        ],
+        "de": [
+            f"Der historische Kontext und die Grundbegriffe von {topic} werden strukturiert untersucht.",
+            f"Der Vergleich von Belegen zu {topic} verdeutlicht Ursachen und Folgen.",
+            f"Die praktische Bedeutung von {topic} wird anhand von Beispielen und Schlussfolgerungen erklärt.",
+            f"Bei der Bewertung von {topic} sind verlässliche Informationen und eine konsistente Analyse wichtig.",
+        ],
+        "fr": [
+            f"Le contexte historique et les concepts clés de {topic} sont étudiés de manière structurée.",
+            f"La comparaison des éléments concernant {topic} aide à comprendre ses causes et ses conséquences.",
+            f"L’importance pratique de {topic} est expliquée à l’aide d’exemples et de conclusions raisonnées.",
+            f"L’évaluation de {topic} exige des informations fiables et une analyse cohérente.",
+        ],
+    }
+    fallback_list = fallback_variants.get(str(lang).lower(), fallback_variants["en"])
+    for index, chunk in enumerate(chunks):
+        if not chunk.strip():
+            chunks[index] = fallback_list[index % len(fallback_list)]
+    return chunks
+
+
+def _generate_paginated_academic(doc, topic, service_code, pages, content_text, author, lbl, extra_data=None):
+    """Create exact 10/15/20-page academic structures using the supplied templates."""
+    try:
+        pages = int(pages or 10)
+    except (TypeError, ValueError):
+        pages = 10
+    if pages not in (10, 15, 20):
+        pages = min((10, 15, 20), key=lambda n: abs(n - pages))
+    extra_data = extra_data or {}
+    lc = str(lbl.get("_lang", "uz"))
+    chapters = _chapters_for(service_code, lc)
+    concl_key = "conclusion_kurs" if service_code == "kurs" else "conclusion_diplom" if service_code == "diplom" else "conclusion"
+    content_chunks = _split_into_page_chunks(content_text, pages - (2 if service_code in ("maqola", "tezis") else 5), topic, lc)
+
+    if service_code in ("maqola", "tezis"):
+        if service_code == "maqola":
+            _add_compact_academic_header(doc, lbl.get("article_title", ""), topic, author, lbl,
+                                         extra_data=extra_data, topic_label=False,
+                                         checker_label="supervisor_label", show_city_year=False)
+            keywords = {
+                "uz": "tahlil, rivojlanish, dalillar, tavsiyalar", "ru": "анализ, развитие, доказательства, рекомендации",
+                "en": "analysis, development, evidence, recommendations", "tr": "analiz, gelişim, kanıtlar, öneriler",
+                "de": "Analyse, Entwicklung, Belege, Empfehlungen", "fr": "analyse, développement, preuves, recommandations",
+            }.get(lc, "analysis, evidence, recommendations")
+            _add_label_para(doc, lbl["annotation"], _loc("article_abstract", lc, topic))
+            _add_label_para(doc, lbl["keywords"], f"{topic}, {keywords}.")
+            _add_heading(doc, lbl.get("intro", ""), level=1, center=True)
+            _add_para(doc, _loc("article_intro", lc, topic))
+        else:
+            _add_compact_academic_header(doc, lbl.get("thesis", ""), topic, author, lbl,
+                                         extra_data=extra_data, topic_label=True,
+                                         checker_label="supervisor_label", show_city_year=False)
+            _add_label_para(doc, lbl["relevance_thesis"], _loc("thesis_intro", lc, topic))
+            _add_label_para(doc, lbl["methods"], _loc("method", lc, topic))
+        doc.add_page_break()
+        body_pages = pages - 2
+    else:
+        _add_title_page(doc, service_code, topic, author, lbl,
+                        include_dept=service_code in ("mustaqil", "kurs", "diplom"), extra_data=extra_data)
+        toc_items = [(lbl["intro"], "3")]
+        body_pages = pages - 5
+        for index, (title, _subs) in enumerate(chapters, 1):
+            page_no = min(pages - 2, 4 + round((index - 1) * max(1, body_pages) / max(1, len(chapters))))
+            toc_items.append((f'{lbl["chapter"]} {index}. {title}', str(page_no)))
+        toc_items.extend([(lbl[concl_key], str(pages - 1)), (lbl["references"], str(pages))])
+        _add_toc(doc, toc_items, lbl)
+        _add_intro(doc, topic, lbl, include_object=service_code in ("kurs", "diplom"), content_text="")
+        doc.add_page_break()
+
+    # Each chunk begins on its own physical page. The heading progression mirrors
+    # the corresponding supplied service sample without retaining its sample text.
+    previous_chapter = -1
+    per_chapter_counter = {}
+    for index, chunk in enumerate(content_chunks):
+        chapter_index = min(len(chapters) - 1, (index * len(chapters)) // max(1, len(content_chunks)))
+        chapter_title, subsections = chapters[chapter_index]
+        per_chapter_counter[chapter_index] = per_chapter_counter.get(chapter_index, 0) + 1
+        local_num = per_chapter_counter[chapter_index]
+        if service_code in ("maqola", "tezis"):
+            title_prefix = lbl.get("chapter", "SECTION")
+            title_text = f"{title_prefix} {index + 1}: {chapter_title}"
+            _add_heading(doc, title_text, level=1 if local_num == 1 else 2)
+        elif chapter_index != previous_chapter:
+            _add_heading(doc, f'{lbl["chapter"]} {chapter_index + 1}. {chapter_title}', level=1)
+        elif subsections:
+            sub_title = subsections[(local_num - 2) % len(subsections)][1]
+            _add_heading(doc, f"{chapter_index + 1}.{local_num - 1}. {sub_title}", level=2)
+        else:
+            _add_heading(doc, f"{chapter_index + 1}.{local_num - 1}. {chapter_title}", level=2)
+        previous_chapter = chapter_index
+        parts = [p.strip() for p in chunk.split("\n\n") if p.strip()]
+        for part in parts:
+            _add_para(doc, part, size=13, indent=True)
+        if index < len(content_chunks) - 1:
+            doc.add_page_break()
+
+    if service_code in ("maqola", "tezis"):
+        doc.add_page_break()
+        _add_heading(doc, lbl.get("conclusion", "CONCLUSION"), level=1, center=True)
+        _add_para(doc, _loc("concl_final", lc, topic), indent=False)
+        _add_heading(doc, lbl.get("references", "REFERENCES"), level=1, center=True)
+        _add_para(doc, {
+            "uz": "Topshirishdan oldin mavzu bo‘yicha amalda foydalanilgan manbalarni tekshirib, bibliografik ma’lumotlarini kiriting.",
+            "ru": "Перед сдачей проверьте использованные источники и укажите их библиографические данные.",
+            "en": "Before submission, verify the sources actually used and add their full bibliographic details.",
+            "tr": "Teslim etmeden önce gerçekten kullanılan kaynakları doğrulayın ve bibliyografik bilgilerini ekleyin.",
+            "de": "Prüfen Sie vor der Abgabe die tatsächlich verwendeten Quellen und ergänzen Sie die vollständigen bibliografischen Angaben.",
+            "fr": "Avant la remise, vérifiez les sources réellement utilisées et ajoutez leurs références bibliographiques complètes.",
+        }.get(lc, "Add verified bibliographic details before submission."), indent=False)
+    else:
+        doc.add_page_break()
+        _add_conclusion(doc, topic, lbl, conclusion_key=concl_key)
+        doc.add_page_break()
+        _add_references(doc, topic, lbl)
+
+    buf = io.BytesIO()
+    doc.save(buf)
+    buf.seek(0)
+    return buf
+
+
 # ===== Asosiy funksiya =====
 def generate_docx(topic, service_name, service_code, lang, pages, content_text, author="", extra_data=None):
-    doc = Document()
+    doc = _load_template_document(service_code)
     style = doc.styles["Normal"]
     style.font.name = "Times New Roman"
     style.font.size = Pt(14)
-    section = doc.sections[0]
-    section.top_margin = Cm(2); section.bottom_margin = Cm(2)
-    section.left_margin = Cm(3); section.right_margin = Cm(1.5)
-    _add_footer(section, lang)
+    for section in doc.sections:
+        # Preserve margins and page size from the matching supplied sample.
+        _add_footer(section, lang)
 
     lbl = _lbl(lang)
     content_text = content_text or ""
 
-    # Referat bo'lsa, maxsus funksiyani chaqiramiz
-    if service_code == "referat":
-        return _generate_special_referat(doc, topic, content_text, author, extra_data, lbl, lang)
+    # Page-based document services offer only 10, 15, or 20 pages. The matching
+    # user-supplied DOCX is used as the base, but all hard-coded sample text is
+    # removed so accidental IT placeholders/other-language text cannot leak.
+    if service_code in ("referat", "mustaqil", "kurs", "diplom", "maqola", "tezis"):
+        try:
+            selected_pages = int(pages)
+        except (TypeError, ValueError):
+            selected_pages = 10
+        if selected_pages not in (10, 15, 20):
+            selected_pages = min((10, 15, 20), key=lambda n: abs(n - selected_pages))
+        return _generate_paginated_academic(
+            doc, topic, service_code, selected_pages, content_text, author, lbl, extra_data=extra_data
+        )
 
     if service_code == "test":
         return _generate_test(doc, topic, lang, pages, content_text, author, lbl, extra_data=extra_data)
-    if service_code == "maqola":
-        return _generate_article(doc, topic, lang, content_text, author, lbl, extra_data=extra_data)
-    if service_code == "tezis":
-        return _generate_thesis(doc, topic, lang, content_text, author, lbl, extra_data=extra_data)
     if service_code == "insho":
         return _generate_essay(doc, topic, lang, content_text, author, lbl, extra_data=extra_data)
 
