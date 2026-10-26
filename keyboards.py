@@ -75,13 +75,14 @@ def option_kb_for(service, lang="uz"):
     ot = s.get("option_type", "pages")
     rows = []
     if ot == "pages":
-        for v in [6, 10, 15, 20, 30]:
+        # Keep the page-size menu intentionally small and predictable.
+        for v in (10, 15, 20):
             rows.append([InlineKeyboardButton(text=f"📄 {t('pages_label', lang, n=v)}", callback_data=f"opt:pages:{v}")])
     elif ot == "questions":
-        for v in [10, 20, 30, 50]:
+        for v in (10, 15, 20):
             rows.append([InlineKeyboardButton(text=f"✅ {t('questions_label', lang, n=v)}", callback_data=f"opt:questions:{v}")])
     elif ot == "words":
-        for v in [200, 250, 320, 350, 500, 750, 1000, 1500, 2000]:
+        for v in (200, 300, 500):
             rows.append([InlineKeyboardButton(text=f"✍️ {t('words_label', lang, n=v)}", callback_data=f"opt:words:{v}")])
     rows.append([InlineKeyboardButton(text=t("btn_cancel", lang), callback_data="cancel")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
@@ -94,7 +95,7 @@ def option_label(service, options, lang="uz"):
     if ot == "questions":
         return t("questions_label", lang, n=options.get("questions", 10))
     if ot == "words":
-        return t("words_label", lang, n=options.get("words", 320))
+        return t("words_label", lang, n=options.get("words", 200))
     return "—"
 
 # ===== Tasdiqlash =====
@@ -121,7 +122,7 @@ def subjects_kb(detected_key, lang="uz"):
 # ===== Taqdimot slaydlar soni =====
 def slide_count_kb(lang="uz"):
     rows = []
-    counts = (5, 7, 10, 12, 15, 18, 20, 25, 30)
+    counts = (10, 15, 20)
     labels = {
         "uz": "{n} ta slayd", "ru": "{n} слайдов", "en": "{n} slides",
         "tr": "{n} slayt", "de": "{n} Folien", "fr": "{n} diapositives",
