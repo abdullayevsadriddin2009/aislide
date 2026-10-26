@@ -9,6 +9,7 @@ from __future__ import annotations
 import io
 import os
 import textwrap
+from pathlib import Path
 from typing import Any
 
 from pptx import Presentation
@@ -140,16 +141,85 @@ def _darken_cover_image(path):
     return out
 
 
+def _fallback_visual_bytes(topic, lang, theme):
+    """Create an embedded topic visual when external image search/download fails."""
+    from PIL import Image, ImageDraw, ImageFont
+    canvas = Image.new("RGB", (1600, 900), tuple(theme.get("cover", (20, 32, 50))))
+    draw = ImageDraw.Draw(canvas)
+    accent = tuple(theme.get("accent", (201, 162, 39)))
+    secondary = tuple(theme.get("secondary", (123, 126, 130)))
+    draw.ellipse((1050, -220, 1770, 500), outline=accent, width=14)
+    draw.ellipse((1130, -140, 1650, 380), outline=secondary, width=6)
+    draw.rounded_rectangle((70, 70, 1530, 830), radius=40, outline=accent, width=5)
+    try:
+        font_path = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+        title_font = ImageFont.truetype(font_path, 68)
+        label_font = ImageFont.truetype(font_path, 28)
+    except Exception:
+        title_font = label_font = ImageFont.load_default()
+    title = str(topic or UI.get(lang, UI["en"]).get("presentation", "Presentation")).strip()
+    lines = textwrap.wrap(title, width=28)[:4] or ["Presentation"]
+    y = 260 if len(lines) <= 2 else 190
+    for line in lines:
+        draw.text((130, y), line, font=title_font, fill=(255, 255, 255), stroke_width=1, stroke_fill=tuple(theme.get("cover", (20, 32, 50))))
+        y += 90
+    label = {
+        "uz": "MAVZUGA OID VIZUAL", "ru": "ВИЗУАЛИЗАЦИЯ ТЕМЫ", "en": "TOPIC VISUAL",
+        "tr": "KONU GÖRSELİ", "de": "THEMENVISUALISIERUNG", "fr": "VISUEL DU SUJET",
+    }.get(str(lang).lower(), "TOPIC VISUAL")
+    draw.text((130, 700), label, font=label_font, fill=accent)
+    out = io.BytesIO()
+    canvas.save(out, format="JPEG", quality=90, optimize=True)
+    return out.getvalue()
+
+
+def _valid_image_source(source):
+    """Return True only for decodable images, not merely non-empty files."""
+    try:
+        from PIL import Image
+        if isinstance(source, (bytes, bytearray)):
+            if len(source) < 1000:
+                return False
+            with Image.open(io.BytesIO(source)) as image:
+                if image.width < 120 or image.height < 80:
+                    return False
+                image.verify()
+            return True
+        if isinstance(source, str) and os.path.isfile(source) and os.path.getsize(source) > 1000:
+            with Image.open(source) as image:
+                if image.width < 120 or image.height < 80:
+                    return False
+                image.verify()
+            return True
+    except Exception:
+        return False
+    return False
+
+
+def _add_image_source(slide, source, x, y, width, height):
+    """Add a filesystem or in-memory image source safely to a slide."""
+    if isinstance(source, (bytes, bytearray)):
+        stream = io.BytesIO(source)
+        stream.seek(0)
+        return slide.shapes.add_picture(stream, Inches(x), Inches(y), width=Inches(width), height=Inches(height))
+    return slide.shapes.add_picture(source, Inches(x), Inches(y), width=Inches(width), height=Inches(height))
+
 def _cover(prs, theme, lang, topic, subject, author, total, images=None, description=""):
     labels = UI[lang]
     slide = prs.slides.add_slide(prs.slide_layouts[6])
-    cover_image = next((p for p in (images or []) if isinstance(p, str) and os.path.exists(p)), None)
-    if cover_image:
-        try:
-            slide.shapes.add_picture(_darken_cover_image(cover_image), Inches(0), Inches(0), width=Inches(13.333), height=Inches(7.5))
-        except Exception:
-            _set_bg(slide, theme["cover"])
-    else:
+    cover_image = next((source for source in (images or []) if _valid_image_source(source)), None)
+    try:
+        if isinstance(cover_image, str):
+            source = _darken_cover_image(cover_image)
+        elif isinstance(cover_image, (bytes, bytearray)):
+            source = io.BytesIO(bytes(cover_image))
+        else:
+            source = io.BytesIO(_fallback_visual_bytes(topic, lang, theme))
+        source.seek(0)
+        slide.shapes.add_picture(source, Inches(0), Inches(0), width=Inches(13.333), height=Inches(7.5))
+    except Exception as exc:
+        # Even if an image library fails, keep a designed background rather than a blank slide.
+        print(f"[pptx] Cover image unavailable; using vector background: {exc}", flush=True)
         _set_bg(slide, theme["cover"])
     # A narrow color rail and bold title match the sample files' cover style.
     _shape(slide, 0.0, 0.0, 0.10, 7.5, theme["accent"])
@@ -224,12 +294,12 @@ def _content_slide(prs, th, lang, item, index, total, design_key, images, topic,
     image_path = None
     if images and (index % 3 == 1):
         candidate = images[(index // 3) % len(images)]
-        if isinstance(candidate, str) and os.path.exists(candidate):
+        if _valid_image_source(candidate):
             image_path = candidate
 
     if pattern == 0 and image_path:
         try:
-            slide.shapes.add_picture(image_path, Inches(0.8), Inches(1.75), width=Inches(5.25), height=Inches(4.45))
+            _add_image_source(slide, image_path, 0.8, 1.75, 5.25, 4.45)
             _shape(slide, 6.35, 1.75, 6.05, 4.45, card_color, line_color=th["line"] if not dark else None)
             body = "\n\n".join([f"• {x}" for x in content[:5]])
             _text(slide, 6.62, 2.0, 5.55, 3.95, body, size=16 if len(body) < 750 else 13, color=body_color, margin=0.02)
@@ -311,6 +381,24 @@ def _closing_slide(prs, theme, lang, topic, subject, entries, total):
     _footer(slide, theme, total, total, topic, subject, lang, dark=True)
     return slide
 
+def _new_presentation():
+    """Use the supplied PPTX as a theme/layout source, not as a content source."""
+    template_path = Path(__file__).resolve().parent / "templates" / "presentation_IT.pptx"
+    if template_path.is_file():
+        try:
+            prs = Presentation(str(template_path))
+            # Remove contaminated example slides while retaining theme, masters, and layouts.
+            for slide_id in list(prs.slides._sldIdLst):
+                rel_id = slide_id.rId
+                prs.part.drop_rel(rel_id)
+                prs.slides._sldIdLst.remove(slide_id)
+            return prs
+        except Exception:
+            # Do not break generation if the supplied template is damaged.
+            pass
+    return Presentation()
+
+
 def generate_pptx(topic: str, subject: str, lang: str, design_key: str, slide_count: int,
                   slides_content: list[dict[str, Any]] | None, images=None, author: str = ""):
     """Create a localized deck with cover, agenda, content, and closing slides.
@@ -324,14 +412,23 @@ def generate_pptx(topic: str, subject: str, lang: str, design_key: str, slide_co
     key = str(design_key or "modern").lower()
     if key not in THEMES:
         key = "modern"
-    total = max(5, min(50, int(slide_count or 10)))
+    try:
+        requested = int(slide_count or 10)
+    except (TypeError, ValueError):
+        requested = 10
+    total = requested if requested in (10, 15, 20) else min((10, 15, 20), key=lambda n: abs(n - requested))
     body_count = total - 3
 
-    prs = Presentation()
+    prs = _new_presentation()
     prs.slide_width = Inches(13.333)
     prs.slide_height = Inches(7.5)
 
     th = dict(THEMES[key])
+    image_sources = [source for source in (images or []) if _valid_image_source(source)]
+    if not image_sources:
+        # This means the deck still contains an actual embedded image even if
+        # Wikipedia/Commons or optional image APIs are unavailable.
+        image_sources = [_fallback_visual_bytes(str(topic), lc, th)]
     entries = list(slides_content or [])
     while len(entries) < body_count:
         n = len(entries) + 1
@@ -344,12 +441,12 @@ def generate_pptx(topic: str, subject: str, lang: str, design_key: str, slide_co
         desc = first_content[0] if first_content else ""
 
     _cover(prs, th, lc, str(topic), str(subject), str(author or "").strip(), total,
-           images=images, description=desc)
+           images=image_sources, description=desc)
     _overview_slide(prs, th, lc, str(topic), str(subject), entries, total)
     for i, item in enumerate(entries):
         item = item if isinstance(item, dict) else {}
         actual_slide_number = i + 3
-        _content_slide(prs, th, lc, item, actual_slide_number, total, key, images or [], str(topic), str(subject))
+        _content_slide(prs, th, lc, item, actual_slide_number, total, key, image_sources, str(topic), str(subject))
     _closing_slide(prs, th, lc, str(topic), str(subject), entries, total)
 
     buf = io.BytesIO()
