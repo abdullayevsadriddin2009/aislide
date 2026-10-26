@@ -1,38 +1,46 @@
 import os
 from dotenv import load_dotenv
+
 load_dotenv()
+
 # ===== Bot token =====
 BOT_TOKEN = os.getenv("BOT_TOKEN", "").strip()
 BOT_USERNAME = os.getenv("BOT_USERNAME", "@Talaba_AI_SlideBot")
 ADMIN_ID = int(os.getenv("ADMIN_ID", "0"))
-SUPPORT_CHAT = os.getenv("SUPPORT_CHAT", "@AbduIIayev__7")
+ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "@AbduIIayev__7").strip()
+SUPPORT_CHAT = os.getenv("SUPPORT_CHAT", "@AbduIIayev__7").strip()
+
 # ===== Ma'lumotlar bazasi =====
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-# Renderda doimiy disk ulangan bo'lsa: DATA_DIR=/var/data  (aks holda DB har deployda qayta yoziladi)
+# Renderda doimiy disk ulangan bo'lsa: DATA_DIR=/var/data
 DATA_DIR = os.getenv("DATA_DIR", BASE_DIR)
 try:
     os.makedirs(DATA_DIR, exist_ok=True)
 except Exception:
     DATA_DIR = BASE_DIR
 DB_PATH = os.path.join(DATA_DIR, "bot_database.db")
-# ===== AI API (freellmapi) =====
+
+# ===== AI API =====
 AI_BASE_URL = os.environ.get("AI_BASE_URL", "https://openrouter.ai/api/v1").strip()
-AI_API_URL = AI_BASE_URL  # Boshqa hech narsa qo'shmang!
+AI_API_URL = AI_BASE_URL
 AI_API_KEY = os.environ.get("AI_API_KEY", "").strip()
 AI_MODEL = os.getenv("AI_MODEL", "auto")
 AI_TIMEOUT = int(os.getenv("AI_TIMEOUT", "120"))
-# ===== Proxy (Telegram bloklangan bo'lsa) =====
+
+# ===== Proxy =====
 PROXY_URL = os.getenv("PROXY_URL", "")
+
 # ===== Web admin panel =====
-# Render avtomatik PORT env beradi — shuni o'qiymiz. Lokalda 5000 ishlaydi.
 WEB_ADMIN_HOST = os.getenv("WEB_ADMIN_HOST", "0.0.0.0")
 WEB_ADMIN_PORT = int(os.getenv("PORT", os.getenv("WEB_ADMIN_PORT", "5000")))
 WEB_ADMIN_PASSWORD = os.getenv("WEB_ADMIN_PASSWORD", "").strip()
 WEB_ADMIN_SECRET_KEY = os.getenv("WEB_ADMIN_SECRET_KEY", "").strip()
+
 # ===== To'lov =====
 FREE_MODE = os.getenv("FREE_MODE", "1") == "1"
 DEFAULT_PAYMENT_INFO = os.getenv("DEFAULT_PAYMENT_INFO", "Humo: 9860 0000 0000 0000")
 MIN_TOPUP = int(os.getenv("MIN_TOPUP", "1000"))
+
 # ===== Referal =====
 DEFAULT_REFERRAL_BONUS = int(os.getenv("DEFAULT_REFERRAL_BONUS", "500"))
 REQUIRE_CHANNEL_SUBSCRIPTION = os.getenv("REQUIRE_CHANNEL_SUBSCRIPTION", "0") == "1"
