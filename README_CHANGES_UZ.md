@@ -1,26 +1,29 @@
-# Esse reja va matn tuzilmasi — tuzatish paketi
+# AI Slide Bot — tekshiruv va tuzatishlar (UZ)
 
-## Almashtiriladigan asosiy fayllar
+## Nimalar tuzatildi
 
-GitHub loyihasida faqat quyidagi to‘rtta faylni almashtiring:
+- DOCX xizmatlari uchun foydalanuvchi bergan `templates/*_IT.docx` namunalarining sahifa o‘lchami, chetlar, asosiy stil va mavjud format sozlamalari ishlatiladi. Namunalar ichida buzilgan yoki eski AI matnlari borligi sababli ularning matni tozalanib, hujjat tuzilishi qaytadan quriladi. Shuning uchun natija shablonning uslubiga mos, lekin har bir paragrafning joylashuvi pikselma-piksel bir xil bo‘lishi kafolatlanmaydi.
+- PowerPoint uchun `templates/presentation_IT.pptx` mavzu va layout manbasi sifatida ishlatiladi; namuna slaydlardagi noto‘g‘ri mazmun o‘rniga yangi slaydlar tuziladi.
+- Sahifa/slayd soni tanlovlari faqat `10`, `15`, `20` qilib cheklangan. Test xizmatida savollar soni 10/15/20; insho xizmatida so‘z hajmi 200/300/500 bo‘lib qoladi.
+- Hujjat mazmuni va asosiy statik sarlavhalar tanlangan tilga moslanadi (o‘zbek, rus, ingliz, turk, nemis, fransuz). AI noto‘g‘ri til yoki takrorlangan matn qaytarsa, generator qayta so‘raydi; yaroqsiz natija xom holida hujjatga ko‘chirilmaydi.
+- Esse uchun avval 5 bandli reja, keyin bo‘lim sarlavhalarisiz uzluksiz matn va xulosa berish oqimi saqlangan.
+- Taqdimotga internet rasmlari bo‘lmaganda ham ichki zaxira vizual qo‘shiladi. Yuklangan rasm fayllari haqiqiy rasm ekanligi tekshiriladi; HTML/xato javobi rasm sifatida ishlatilmaydi.
+- PowerPoint yaratishda 3 dizayn va 10/15/20 slayd variantlari bir-biridan mustaqil.
+- `config.py` da `ADMIN_USERNAME` mavjud, `SUPPORT_CHAT` qiymati Render environment orqali o‘zgartirilishi mumkin.
 
-1. `ai_api.py`
-2. `docx_generator.py`
-3. `keyboards.py`
-4. `handlers/creation.py`  (shu fayl `handlers` papkasida qoladi)
+## Tekshiruvlar
 
-`tests/` ichidagi ikkita fayl — avtomatik tekshiruvlar uchun. `README_ESSAY_PLAN_FIX_UZ.md` — yo‘riqnoma.
+Lokal tekshiruvda `python -m compileall -q .` muvaffaqiyatli bajarildi. Generator testlari: 14 testdan 12 tasi o‘tdi, 2 tasi `aiogram`/`aiosqlite` lokal muhitda o‘rnatilmagani sababli skip qilindi. 10/15/20 sahifali referat, mustaqil ish, kurs ishi, diplom ishi, maqola va tezis DOCX fayllari LibreOffice orqali PDFga aylantirilib sahifalari sanalganda, sinov ma’lumotlari bilan mos ravishda 10/15/20 sahifa chiqdi. Taqdimot sinovlari 3 dizayn va 6 tilda 10/15/20 slayd sonini tekshirdi.
 
-## Nima tuzatildi?
+Bu lokal test natijalari Render’dagi haqiqiy AI provayderi, Telegram polling, tashqi rasm qidiruvi yoki barcha admin/to‘lov ssenariylari real vaqtda tekshirilganini anglatmaydi. “Xatosiz” ishlashni kafolatlab bo‘lmaydi; deploydan keyin botdagi oqimlarni amalda sinash kerak.
 
-- Esse hujjatining titul ma’lumotlaridan keyin `REJA` sarlavhasi va aniq 5 band chiqadi: kirish rejasi, asosiy qism uchun 3 band, xulosa rejasi.
-- Rejadan keyin esse matni bevosita boshlanadi. Matn ichida `I. KIRISH QISMI`, `II. ASOSIY QISM`, `III. XULOSA QISMI` kabi bo‘lim sarlavhalari qo‘yilmaydi.
-- AI javobida aralash til, juda qisqa javob yoki takrorlanadigan/g‘alati matn aniqlansa, bir marta qayta yozdiriladi. Qayta urinishi ham sifatsiz bo‘lsa, buzilgan matn o‘rniga shu tildagi ehtiyotkor zaxira matn qo‘llanadi.
-- 200 so‘z tanlovi qo‘shildi. Kod avval so‘z sonini kamida 320 ga ko‘tarib yuborardi; endi 200 tanlansa, taxminiy taqsimot 40 so‘z kirish, 120 so‘z 3 ta asosiy paragrafga, 40 so‘z xulosaga bo‘ladi.
-- Fan nomida `تاريخ` kabi keng tarqalgan arabcha nomlar tanlangan tilga tarjima qilinadi.
+## Render/GitHub’ga joylash
 
-## Yuklash va tekshirish
+1. ZIPni oching va loyiha fayllarini GitHub repozitoriyasiga birgalikda joylang. `templates/` papkasi va ichidagi 9 ta faylni albatta saqlang.
+2. Render’dagi Environment variables’ni saqlab qoling: `BOT_TOKEN`, `ADMIN_ID`, `AI_API_KEY`, `AI_BASE_URL`, `WEB_ADMIN_PASSWORD`, `WEB_ADMIN_SECRET_KEY` va siz ishlatadigan boshqa parametrlar.
+3. `.env` faylini GitHub’ga yuklamang. Faqat `.env.example` namuna sifatida bor.
+4. Deploy tugagach, Telegram’da har bir til, 10/15/20 sahifali Word xizmati, 10/15/20 slaydli taqdimot, rasm va test xizmatlarini sinang.
 
-`ai_api.py`, `docx_generator.py`, `keyboards.py`, `handlers/creation.py` fayllarini birgalikda almashtiring va bitta commit bilan GitHub’ga yuboring. `handlers/admin.py` va `handlers/user.py` ni bu patch uchun almashtirmang — oldingi referal/balans tuzatishlari saqlansin.
+## Muhim farq
 
-Lokal tekshiruvda DOCX xizmatlari uchun 3 ta test va esse sifat nazorati uchun 3 ta test muvaffaqiyatli o‘tdi. Taqdimot shablonlarining to‘liq testi ushbu tuzatish doirasiga kirmaydi.
+Shablon fayllaridagi sahifa sozlamalari va uslublar qayta ishlatiladi, lekin shablon matnlari ichida noto‘g‘ri yoki eski namunaviy kontent bo‘lgani uchun aynan shu matnlar saqlanmaydi. Generator ularning o‘rniga toza, tanlangan tilga mos mazmun yozadi. Bu eski noto‘g‘ri matnni yangi hujjatga ko‘chirishdan afzal, ammo original fayl bilan pikselma-piksel nusxa bo‘lishi emas.
