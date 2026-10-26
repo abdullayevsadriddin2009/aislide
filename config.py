@@ -7,8 +7,8 @@ load_dotenv()
 BOT_TOKEN = os.getenv("BOT_TOKEN", "").strip()
 BOT_USERNAME = os.getenv("BOT_USERNAME", "@Talaba_AI_SlideBot")
 ADMIN_ID = int(os.getenv("ADMIN_ID", "0"))
-ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "@AbduIIayev__7").strip()
-SUPPORT_CHAT = os.getenv("SUPPORT_CHAT", "@AbduIIayev__7").strip()
+ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "@AbduIIayev_7").strip()
+SUPPORT_CHAT = os.getenv("SUPPORT_CHAT", "@AbduIIayev_7").strip()
 
 # ===== Ma'lumotlar bazasi =====
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
