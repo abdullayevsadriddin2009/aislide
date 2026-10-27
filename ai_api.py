@@ -1150,6 +1150,19 @@ async def download_image(url, save_path):
         _log(f"Image download/validation failed: {type(exc).__name__}: {exc}")
         return False
 
+def _error_detail(status, body):
+    """Keep the provider's own reason (rate limit, quota, bad key, unknown model).
+
+    The body is what tells a model-level limit apart from a key-level one, and it is
+    what the user finally sees under the generated file, so never drop it to a bare
+    ``HTTP 429``.
+    """
+    text = re.sub(r"<[^>]{1,120}>", " ", str(body or ""))
+    text = re.sub(r"\s+", " ", text).strip()
+    if not text:
+        return f"HTTP {status}"
+    return f"HTTP {status}: {text[:200]}"
+
 async def _try_post(api, model, payload):
     global LAST_ERROR
     if not api["api_key"]:
@@ -1178,7 +1191,7 @@ async def _try_post(api, model, payload):
                         LAST_ERROR = None
                         try: return 200, json.loads(body)["candidates"][0]["content"]["parts"][0]["text"], None
                         except Exception as e: return resp.status, None, str(e)
-                    return resp.status, None, f"HTTP {resp.status}"
+                    return resp.status, None, _error_detail(resp.status, body)
         else:
             headers = {"Content-Type": "application/json", "Authorization": f"Bearer {api['api_key']}"}
             url = f"{api['base_url']}/chat/completions"
@@ -1190,7 +1203,7 @@ async def _try_post(api, model, payload):
                         LAST_ERROR = None
                         try: return 200, json.loads(body)["choices"][0]["message"]["content"], None
                         except Exception as e: return resp.status, None, str(e)
-                    return resp.status, None, f"HTTP {resp.status}"
+                    return resp.status, None, _error_detail(resp.status, body)
     except Exception as e: return None, None, str(e)
 
 async def _chat_complete(prompt, system=None, max_tokens=2500, temperature=0.5,
@@ -1236,6 +1249,10 @@ async def _chat_complete(prompt, system=None, max_tokens=2500, temperature=0.5,
         if api_index == start_api:
             model_start = CURRENT_MODEL_INDEX % len(models)
             models = models[model_start:] + models[:model_start]
+        # A 429 can mean "this model's limit is gone" or "this whole key is
+        # rate-limited". Give the provider's next model one chance before treating
+        # it as key-level and moving on to the next configured provider.
+        consecutive_rate_limits = 0
         for model_index, model in enumerate(models):
             attempts += 1
             status, answer, error = await _try_post(api, model, payload)
@@ -1248,15 +1265,21 @@ async def _chat_complete(prompt, system=None, max_tokens=2500, temperature=0.5,
                 LAST_ERROR = None
                 _log(f"✅ Ishladi: {api.get('name', 'API')} → {model}")
                 return clean_ai_text(answer).strip()
-            detail = error or f"{api.get('name', 'API')}/{model}: bo'sh javob (HTTP {status})"
+            reason = error or f"bo'sh javob (HTTP {status})"
+            detail = f"{api.get('name', 'API')} / {model}: {reason}"
             errors.append(detail)
             _log(f"❌ {detail}")
-            # Rate limits and invalid credentials usually apply to the provider/key,
-            # not just one model. Move to the next configured provider promptly.
-            if status in (401, 403, 429):
-                if status == 429:
-                    await asyncio.sleep(0.25)
+            # Rejected credentials or an unpaid provider are key-level problems:
+            # every other model on the same key would fail the same way.
+            if status in (401, 402, 403):
                 break
+            if status == 429:
+                consecutive_rate_limits += 1
+                await asyncio.sleep(0.25)
+                if consecutive_rate_limits >= 2:
+                    break
+                continue
+            consecutive_rate_limits = 0
         # brief pause between providers to avoid immediate rate-limit bursts
         if api_offset < len(API_LIST) - 1:
             await asyncio.sleep(0.15)
