@@ -646,7 +646,13 @@ async def cb_confirm(call: CallbackQuery, state: FSMContext):
             fname = f"{prefix}_{safe_topic}.docx".replace(" ", "_")
             doc = BufferedInputFile(docx_bytes, filename=fname)
             
-        caption = t("gen_done", lang) if real else t("gen_failed", lang)
+        if real:
+            caption = t("gen_done", lang)
+        else:
+            caption = t("gen_failed", lang)
+            detail = get_last_error()
+            if detail:
+                caption += f"\n\n🔍 {str(detail)[:350]}"
         await msg.answer_document(doc, caption=caption, reply_markup=main_kb(lang))
         
     await db.add_order(user_id, service, topic, options, 0 if free_mode else price, topic[:100])
@@ -696,7 +702,13 @@ async def cb_essay_go(call: CallbackQuery, state: FSMContext):
     else:
         fname = f"{prefix}_{safe_topic}.docx".replace(" ", "_")
         doc = BufferedInputFile(docx_bytes, filename=fname)
-    caption = t("gen_done", lang) if real else t("gen_failed", lang)
+    if real:
+        caption = t("gen_done", lang)
+    else:
+        caption = t("gen_failed", lang)
+        detail = get_last_error()
+        if detail:
+            caption += f"\n\n🔍 {str(detail)[:350]}"
     await msg.answer_document(doc, caption=caption, reply_markup=main_kb(lang))
     await db.add_order(user_id, service, topic, options, 0 if free_mode else price, topic[:100])
     await state.clear()
