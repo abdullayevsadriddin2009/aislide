@@ -85,6 +85,18 @@ async def cb_bot_lang(call: CallbackQuery, state: FSMContext):
         await call.message.answer(t("welcome", lang_code), reply_markup=main_kb(lang_code))
     except Exception:
         pass
+        await db.update_user(call.from_user.id, lang=lang_code)
+    await call.answer(t("lang_saved", lang_code))
+
+    # ===== Firebase: tilni yangilash =====
+    try:
+        from db_firebase import fb_add_user
+        await fb_add_user(
+            telegram_id=call.from_user.id,
+            lang=lang_code
+        )
+    except: pass
+    # ===== Tugadi =====
 
 @router.message(CommandStart())
 async def cmd_start(message: Message, command: CommandObject, state: FSMContext):
@@ -98,6 +110,25 @@ async def cmd_start(message: Message, command: CommandObject, state: FSMContext)
     # 1. Foydalanuvchini bazaga saqlaymiz
     u = await db.ensure_user(message.from_user.id, message.from_user.username,
                              message.from_user.first_name, referred_by)
+        # ===== Firebase-ga saqlash =====
+    try:
+        from db_firebase import fb_add_user, fb_log_action
+        await fb_add_user(
+            telegram_id=message.from_user.id,
+            username=message.from_user.username,
+            first_name=message.from_user.first_name,
+            last_name=message.from_user.last_name,
+            lang=u.get("lang", "uz") if u else "uz",
+        )
+        await fb_log_action(
+            telegram_id=message.from_user.id,
+            action_type="/start",
+            topic=None,
+            service_type="bot"
+        )
+    except Exception as _e:
+        print(f"[FB] xato: {_e}", flush=True)
+    # ===== Firebase tugadi =====
     from designs import ALL_LANGS
     lang = u["lang"] if u["lang"] in ALL_LANGS else "uz"
 
