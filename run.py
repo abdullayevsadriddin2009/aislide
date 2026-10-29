@@ -1,6 +1,7 @@
 """Ai Slide Bot — asosiy ishga tushirish fayli.
 Ishga tushirish: python run.py
 """
+import db_firebase
 import asyncio
 import logging
 from aiogram import Bot, Dispatcher
@@ -23,6 +24,12 @@ async def main():
     if not config.WEB_ADMIN_PASSWORD:
         log.warning("WEB_ADMIN_PASSWORD sozlanmagan: web-admin login vaqtincha yopiq bo'ladi.")
     await db.get_db()
+    log.info("Database initialized: %s", config.DB_PATH)
+    # Firebase-ga ulanish (agar kalit fayl bo'lsa)
+    if db_firebase.db:
+        log.info("Firebase ulandi: foydalanuvchilar va harakatlar saqlanadi")
+    else:
+        log.warning("Firebase ulanmadi — firebase_key.json yo'q")
     log.info("Database initialized: %s", config.DB_PATH)
 
     session = AiohttpSession(proxy=config.PROXY_URL) if config.PROXY_URL else None
