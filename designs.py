@@ -77,8 +77,8 @@ def lang_full_name(code, ui_lang="uz"):
 
 # Slayd soni va standart narxlar (so‘m). Dizayn tanlovi slayd sonidan mustaqil.
 SLIDE_COUNTS = [
-    (10, 3000), (15, 4000), (20, 5000), (25, 6000),
-    (5, 2000), (7, 2000), (12, 3000), (18, 4000), (30, 7000),
+    (10, 0), (15, 0), (20, 0), (25, 0),
+    (5, 0), (7, 0), (12, 0), (18, 0), (30, 0),
 ]
 
 def select_theme(subject_key=None, design_key=None):
