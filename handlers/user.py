@@ -74,21 +74,14 @@ async def cb_bot_lang(call: CallbackQuery, state: FSMContext):
     lang_code = call.data.split(":")[1]
     if lang_code not in ALL_LANGS:
         lang_code = "uz"
+    
     await db.update_user(call.from_user.id, lang=lang_code)
     await call.answer(t("lang_saved", lang_code))
+    
     # Yangi foydalanuvchi til tanlagan paytda referal bonusini beramiz
     await _award_referral_bonus(call.bot, call.from_user.id)
-    # Welcome xabarini yangi tilda ko'rsatish
-    if not await _is_subscribed(call.bot, call.from_user.id):
-        await _sub_message(call.bot, call, lang_code); return
-    try:
-        await call.message.answer(t("welcome", lang_code), reply_markup=main_kb(lang_code))
-    except Exception:
-        pass
-        await db.update_user(call.from_user.id, lang=lang_code)
-    await call.answer(t("lang_saved", lang_code))
-
-    # ===== Firebase: tilni yangilash =====
+    
+    # Firebase: tilni yangilash
     try:
         from db_firebase import fb_add_user
         await fb_add_user(
@@ -96,7 +89,16 @@ async def cb_bot_lang(call: CallbackQuery, state: FSMContext):
             lang=lang_code
         )
     except: pass
-    # ===== Tugadi =====
+    
+    # Welcome xabarini yangi tilda ko'rsatish
+    if not await _is_subscribed(call.bot, call.from_user.id):
+        await _sub_message(call.bot, call, lang_code)
+        return
+    
+    try:
+        await call.message.answer(t("welcome", lang_code), reply_markup=main_kb(lang_code))
+    except Exception:
+        pass
 
 @router.message(CommandStart())
 async def cmd_start(message: Message, command: CommandObject, state: FSMContext):
