@@ -8,3 +8,4 @@ Pillow>=10.0.0
 aiohttp-socks>=0.8.0
 docx2pdf>=0.1.8
 python-dotenv>=1.0.0  
+firebase-admin>=6.4.0
