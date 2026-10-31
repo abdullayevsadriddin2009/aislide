@@ -1304,7 +1304,7 @@ CHAT_LANGUAGE_NAMES = {
 }
 
 _CHAT_WORDS = {
-    "uz": {"salom", "assalomu", "alaykum", "haqida", "nima", "qanday", "qayerda", "qachon", "nega", "uchun", "bilan", "kerak", "mumkin", "men", "siz", "menga", "tushuntir", "yozib", "yozing", "iltimos", "rahmat", "bo'ladi", "emas", "qaysi", "o'zbek", "o‘zbek", "qilib", "qil", "ber", "ayt"},
+    "uz": {"salom", "assalomu", "alaykum", "haqida", "nima", "nma", "qanday", "qanaqa", "qayerda", "qayer", "qachon", "nega", "ne", "uchun", "bilan", "kerak", "mumkin", "men", "siz", "menga", "sen", "senga", "u", "unga", "bu", "shu", "ana", "ham", "va", "lekin", "ammo", "faqat", "chunki", "yoki", "keyin", "hozir", "endi", "kim", "narsa", "kishi", "qiladi", "qilaman", "qildi", "beradi", "beraman", "aytadi", "aytaman", "yozadi", "yozaman", "o'qiydi", "biladi", "bilaman", "tushuntir", "yozib", "yozing", "iltimos", "rahmat", "bo'ladi", "bo'ldi", "emas", "emasmi", "mi", "mu", "qaysi", "o'zbek", "o‘zbek", "qilib", "qil", "ber", "ayt", "keldi", "ketdi", "bor", "yo'q", "yaxshi", "katta", "kichik", "ko'p", "oz"},
     "en": {"hello", "hi", "hey", "what", "how", "why", "where", "when", "about", "please", "tell", "explain", "help", "thanks", "thank", "you", "your", "can", "could", "would", "is", "are", "the", "and", "for", "with", "from", "does", "do", "make", "write", "answer"},
     "ru": {"привет", "здравствуйте", "добрый", "день", "вечер", "как", "что", "почему", "где", "когда", "расскажи", "объясни", "пожалуйста", "спасибо", "напиши", "ответь", "это", "для", "про", "меня"},
     "tr": {"merhaba", "selam", "nasıl", "neden", "hakkında", "için", "lütfen", "teşekkürler", "anlat", "açıkla", "yaz", "nedir", "hangi"},
@@ -1385,7 +1385,14 @@ def _detect_chat_language(text, fallback="uz"):
 
     tokens = set(_chat_tokens(raw))
     # Uzbek-specific characters and frequent words provide a strong signal.
-    if re.search(r"[ʻʼ‘’]", raw) or any(w in tokens for w in {"haqida", "qanday", "qayerda", "uchun", "mumkin", "kerak", "salom", "rahmat", "iltimos", "o'zbek"}):
+    # "nma" (nima qisqartmasi), "kim", "nega" kabi so'zlar ham qo'shildi.
+    uz_early = {"haqida", "qanday", "qanaqa", "qayerda", "qayer", "qachon", "nega", "ne",
+                "uchun", "mumkin", "kerak", "salom", "rahmat", "iltimos", "o'zbek",
+                "nima", "nma", "kim", "chunki", "lekin", "ammo", "faqat", "tushuntir",
+                "qiladi", "qilaman", "beradi", "aytadi", "yozadi", "bilaman", "emasmi",
+                "narsa", "kishi", "keyin", "hozir", "endi", "yaxshi", "bor", "yo'q",
+                "ko'p", "o'zi", "o'qima", "ayt", "ber", "qil", "yoz"}
+    if re.search(r"[ʻʼ‘’]", raw) or any(w in tokens for w in uz_early):
         return "uz"
     if any(ch in raw for ch in "ğışİı") or any(w in tokens for w in {"merhaba", "nasıl", "hakkında", "teşekkürler"}):
         return "tr"
@@ -1407,7 +1414,6 @@ def _detect_chat_language(text, fallback="uz"):
     # Ambiguous short text falls back to the user's selected interface language,
     # but a clear English greeting such as "hello" was already handled above.
     return fallback if fallback in CHAT_LANGUAGE_NAMES else "uz"
-
 
 def _chat_answer_is_repetitive(text):
     words = _chat_tokens(text)
@@ -1488,6 +1494,7 @@ def _chat_failure_message(lang):
 
 
 async def chat_answer(question, user_lang="uz"):
+    """Javobni savol tilida qaytaradi. Filtrlardan o'tmasa ham eng yaxshi AI javobini ko'rsatadi."""
     q = str(question or "").strip()
     if not q:
         return None
@@ -1500,33 +1507,60 @@ async def chat_answer(question, user_lang="uz"):
         return _CHAT_GREETINGS[compact][1]
 
     lang = _detect_chat_language(q, fallback=user_lang)
-    system = _chat_language_system(lang)
-    ans = await _chat_complete(
-        q, system=system, max_tokens=2200, temperature=0.2,
-        frequency_penalty=0.35, presence_penalty=0.1
-    )
-    if not ans or ans.startswith("⚠️"):
-        return None
-    ans = ans.strip()
-    bad = (_chat_answer_is_repetitive(ans) or _chat_answer_wrong_script(ans, lang)
-           or (lang in ALL_LANGS and _is_lang_mixed(ans, lang)))
-    if bad:
-        retry_prompt = (
-            "Write a fresh answer to the ORIGINAL user question below. Do not reuse the previous draft. "
-            "Keep the answer accurate and useful, with no repeated phrases.\n\n"
-            f"Original user question:\n{q}"
-        )
+    language = CHAT_LANGUAGE_NAMES.get(lang, CHAT_LANGUAGE_NAMES.get("uz"))
+
+    best_answer = None  # AI qaytargan birinchi yaroqli (bo'sh emas) javob
+
+    # 3 ta urinish: har birida til talabi kuchayadi.
+    for attempt in range(3):
+        if attempt == 0:
+            system = _chat_language_system(lang)
+            prompt = q
+            temp = 0.2
+        elif attempt == 1:
+            system = (
+                f"CRITICAL: You MUST write the ENTIRE answer ONLY in {language}. "
+                f"The previous answer was in the wrong language and was rejected. "
+                f"Now answer exclusively in {language} with its normal script. "
+                "Use simple, short, correct sentences. English words are allowed ONLY for "
+                "proper names, brand names and scientific formulas — never for the text itself."
+            )
+            prompt = (
+                f"User's question (must be answered in {language}): {q}\n\n"
+                f"Answer ONLY in {language}. Do not use English."
+            )
+            temp = 0.3
+        else:
+            system = (
+                f"FINAL ATTEMPT. Answer the question below ONLY in {language}. "
+                "If you cannot answer in that language, give the shortest possible correct "
+                f"answer in {language} anyway. Never switch to English."
+            )
+            prompt = q
+            temp = 0.4
+
         ans = await _chat_complete(
-            retry_prompt, system=system, max_tokens=2200, temperature=0.15,
-            frequency_penalty=0.25, presence_penalty=0.0
+            prompt, system=system, max_tokens=2200, temperature=temp,
+            frequency_penalty=0.35, presence_penalty=0.1
         )
         if not ans or ans.startswith("⚠️"):
-            return _chat_failure_message(lang)
+            continue
         ans = ans.strip()
-        if (_chat_answer_is_repetitive(ans) or _chat_answer_wrong_script(ans, lang)
-                or (lang in ALL_LANGS and _is_lang_mixed(ans, lang))):
-            return _chat_failure_message(lang)
-    return ans
+        if best_answer is None:
+            best_answer = ans
+
+        bad = (_chat_answer_is_repetitive(ans) or _chat_answer_wrong_script(ans, lang)
+               or (lang in ALL_LANGS and _is_lang_mixed(ans, lang)))
+        if not bad:
+            return ans  # toza javob topildi → darhol qaytaramiz
+
+    # Barcha urinishlar filtirdan o'tmadi, lekin AI javob qaytargan bo'lsa —
+    # uni ko'rsatamiz (notukkam javob, umuman javob yo'qdan yaxshiroq).
+    if best_answer:
+        return best_answer
+
+    # FAQAT barcha AI provayderlari ishlamagan holatda failure message.
+    return _chat_failure_message(lang)
 
 async def test_api():
     lines = []
