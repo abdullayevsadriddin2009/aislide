@@ -891,101 +891,124 @@ async def _generate_test(service, topic, options, lang):
 
 # ====== SLAYDLAR GENERATSIYASI (Yangi shablonlar uchun QAT'IY struktura) ======
 async def generate_slides_structured(topic, subject, lang, count):
+    """Create exactly ``count`` body slides, all in the requested language.
+
+    Each slide is language-checked on its own, so a foreign-language paragraph is
+    replaced with localized text instead of leaking into the finished deck. The
+    reference material is used for facts only; every sentence is re-written in the
+    selected language.
+    """
     global LAST_ERROR
-    ln = _lang_name(lang)
-    wiki = await wikipedia_fetch(topic, max_chars=5000, gen_lang=lang)
-    wb = wiki_block(wiki, lang)
-    
-    system = (_pure_language_system(lang) +
+    lc = str(lang or "uz").lower()
+    if lc not in ALL_LANGS:
+        lc = "uz"
+    ln = _lang_name(lc)
+    try:
+        count = int(count)
+    except (TypeError, ValueError):
+        count = 7
+    count = max(1, min(60, count))
+
+    wiki = await wikipedia_fetch(topic, max_chars=7000, full=True, gen_lang=lc)
+    wb = wiki_block(wiki, lc)
+    source_line = ""
+    if wiki.get("found"):
+        source_line = (f"\nVerified source: {wiki.get('title')} ({wiki.get('url')}). "
+                       "Copy its dates, names and figures exactly and never contradict it.")
+
+    system = (_pure_language_system(lc) +
               f" You are a professional presentation writer. Write ONLY in {ln}. "
               "Return only a valid JSON array, with no explanation outside the JSON.")
 
     prompt = f"""Topic: {topic}. Subject: {subject}.
-Create exactly {count} CONTENT slides for a professional presentation. The title/cover slide is created separately by the PowerPoint template, so do not return a cover slide or a table-of-contents slide.
+Create exactly {count} CONTENT slides for a professional presentation. The cover and the agenda slide are added by the PowerPoint template, so do not return a cover slide or a table-of-contents slide.
 
 STRICT LANGUAGE RULES:
 1. Write every title and every content sentence only in the selected language ({ln}).
-2. Translate the topic and section headings into {ln} where appropriate. Keep proper names, official product names, and standard technical terms only when they should not be translated.
-3. Do not insert Uzbek, English, Russian, or any other language as decoration or filler when it is not the selected language.
-4. All slide titles, labels and sentences must be natural and grammatically correct in {ln}.
+2. Translate headings into {ln}; keep proper names, official product names and standard technical terms that should not be translated.
+3. Never insert Uzbek, English, Russian or any other language as decoration, filler or a repeated label.
+4. Titles must be short, specific and natural in {ln}.
 
-CONTENT RULES:
+ACCURACY RULES:
+1. Use verifiable facts from the reference below: dates, numbers, names, places, definitions and their meaning.
+2. Never invent statistics, quotations, sources or dates. If a fact is unknown, describe it generally instead of inventing a figure.
+3. Every slide must carry a different, topic-specific point; no generic filler and no repeated wording.
+
+STRUCTURE RULES:
 1. Return only a valid JSON array with exactly {count} objects.
-2. Each object must contain the keys "title" and "content".
-3. The content array must contain 3-5 concise, meaningful sentences suitable for a slide.
-4. Cover distinct aspects such as background, concepts, evidence, practical uses, comparison and implications. Do not repeat the same generic text.
-5. The final content slide must present a concise conclusion and practical recommendations in {ln}; make its title a natural localized equivalent of “Conclusion”.
-6. Do not invent citations or claim a source was consulted unless the source is explicitly supplied.
-7. If relevant dates or numbers are known, state them accurately.
+2. Each object has "title" and "content"; "content" is an array of 4-6 concise sentences.
+3. Cover background, key concepts, evidence, comparison, practical application and implications across the deck.
+4. The last slide must be a conclusion with practical recommendations, titled with the natural {ln} equivalent of "Conclusion".
 
-Reference material (use only to check facts; do not copy its language if different from {ln}):
-{wb}
+Reference material (facts only; translate its meaning into {ln} and never copy its language):
+{wb}{source_line}
 
-JSON example (translate the example's sample wording into {ln} in the actual response):
-[{{"title":"Section title","content":["Sentence one.","Sentence two.","Sentence three."]}}]"""
+JSON example (translate the sample wording into {ln} in the actual response):
+[{{"title":"Section title","content":["Sentence one.","Sentence two.","Sentence three.","Sentence four."]}}]"""
 
-    txt = await _chat_complete(prompt, system=system, max_tokens=4500)
-    parsed = _extract_json(txt)
-    
-    all_slides = []
-    
-    if parsed and isinstance(parsed, list):
-        all_text = " ".join([str(s.get("title", "")) + " " + " ".join(s.get("content", [])) for s in parsed if isinstance(s, dict)])
-        if _is_lang_mixed(all_text, lang) or _document_text_is_repetitive(all_text):
-            retry_txt = await _chat_complete(prompt + f"\nFINAL LANGUAGE CHECK: rewrite every title and sentence only in {ln}. Remove any phrases in other languages.", system=system, max_tokens=4500)
-            retry_parsed = _extract_json(retry_txt)
-            retry_text = " ".join([str(item.get("title", "")) + " " + " ".join(item.get("content", [])) for item in retry_parsed if isinstance(item, dict)]) if isinstance(retry_parsed, list) else ""
-            if (retry_parsed and isinstance(retry_parsed, list)
-                    and not _is_lang_mixed(retry_text, lang)
-                    and not _document_text_is_repetitive(retry_text)):
-                parsed = retry_parsed
-            else:
-                parsed = None
-            
-        if parsed and isinstance(parsed, list):
-            for s in parsed:
-                if isinstance(s, dict):
-                    cl = s.get("content", [])
-                    if isinstance(cl, str): cl = [p.strip() for p in cl.split("\n") if p.strip()]
-                    all_slides.append({
-                        "title": clean_ai_text(str(s.get("title", f"Bo'lim {len(all_slides)+1}"))),
-                        "content": [clean_ai_text(str(c)) for c in cl]
-                    })
-    
-    if not parsed and not str(txt or "").strip().startswith("⚠️") and not LAST_ERROR:
-        LAST_ERROR = "AI javobi yaroqli JSON/til tekshiruvidan o'tmadi; taqdimot zaxira mazmun bilan tuzildi."
+    async def request(extra=""):
+        txt = await _chat_complete(prompt + extra, system=system, max_tokens=5000)
+        return _extract_json(txt)
 
-    # Keep count exact without inserting text from another language.
-    used_fallback = not bool(all_slides)
+    def clean_entries(parsed):
+        entries = []
+        for item in parsed if isinstance(parsed, list) else []:
+            if not isinstance(item, dict):
+                continue
+            title = clean_ai_text(str(item.get("title") or "")).strip()
+            content = item.get("content", [])
+            if isinstance(content, str):
+                content = [part.strip(" •-\t") for part in content.splitlines() if part.strip()]
+            content = [clean_ai_text(str(value)).strip() for value in content if str(value).strip()]
+            if not title or not content:
+                continue
+            if _is_lang_mixed(" ".join(content), lc):
+                continue  # foreign-language slide: replaced by localized text below
+            if _is_lang_mixed(title, lc):
+                # Keep the accurate body but never leave a title in another language.
+                title, _ = _localized_slide_fallback(topic, lc, len(entries) + 1)
+            entries.append({"title": title, "content": content})
+        return entries
+
+    all_slides = clean_entries(await request())
+    combined = " ".join(f"{item['title']} {' '.join(item['content'])}" for item in all_slides)
+    if len(all_slides) < count or _document_text_is_repetitive(combined):
+        repaired = clean_entries(await request(
+            f"\nFINAL CHECK: return exactly {count} slides. Every title and sentence must be in {ln} only, "
+            "with no repeated wording and no phrases from any other language."
+        ))
+        if len(repaired) >= len(all_slides):
+            all_slides = repaired
+
+    used_fallback = False
     if not all_slides:
-        if not LAST_ERROR:
-            LAST_ERROR = "AI mazmuni yaroqsiz yoki bo'sh; taqdimot uchun zaxira slaydlar ishlatildi."
+        LAST_ERROR = ("AI javobi yaroqli JSON/til tekshiruvidan o'tmadi; "
+                      "taqdimot zaxira mazmun bilan tuzildi.")
         used_fallback = True
-        all_slides = _fallback_slides(topic, count, lang)
-    else:
-        if len(all_slides) < count:
-            used_fallback = True
-            if not LAST_ERROR:
-                LAST_ERROR = f"AI faqat {len(all_slides)} ta slayd qaytardi; qolgan slaydlar zaxiradan to'ldirildi."
-        while len(all_slides) < count:
-            idx = len(all_slides) + 1
-            title_fallback, body_fallback = _localized_slide_fallback(topic, lang, idx)
-            all_slides.append({"title": title_fallback, "content": body_fallback})
-        all_slides = all_slides[:count]
+
+    # Keep the requested count exactly, filling gaps with localized content only.
+    if len(all_slides) < count:
+        if all_slides and not LAST_ERROR:
+            LAST_ERROR = (f"AI faqat {len(all_slides)} ta yaroqli slayd qaytardi; "
+                          "qolgan slaydlar zaxira mazmun bilan to'ldirildi.")
+        used_fallback = True
+    while len(all_slides) < count:
+        index = len(all_slides) + 1
+        title_fallback, body_fallback = _localized_slide_fallback(topic, lc, index)
+        all_slides.append({"title": title_fallback, "content": list(body_fallback)})
+    all_slides = all_slides[:count]
 
     out = []
-    for i, s in enumerate(all_slides):
-        cl = s.get("content", [])
-        if isinstance(cl, str): cl = [p.strip() for p in cl.split("\n") if p.strip()]
-        while len(cl) < 3:
-            _, body_fallback = _localized_slide_fallback(topic, lang, i + 1)
-            cl.append(body_fallback[len(cl) % len(body_fallback)])
-        
+    for i, item in enumerate(all_slides):
+        content = list(item["content"])
+        while len(content) < 3:
+            _, body_fallback = _localized_slide_fallback(topic, lc, i + 1)
+            content.append(body_fallback[len(content) % len(body_fallback)])
         out.append({
-            "slide_number": i+1,
-            "title": s.get("title", f"Bo'lim {i+1}"),
-            "content": cl[:6],
-            "wiki_source": wiki["url"] if wiki["found"] else None
+            "slide_number": i + 1,
+            "title": item["title"],
+            "content": content[:6],
+            "wiki_source": wiki["url"] if wiki.get("found") else None,
         })
     return out, not used_fallback
 
