@@ -8,12 +8,13 @@
 - Hujjat mazmuni va asosiy statik sarlavhalar tanlangan tilga moslanadi (o‘zbek, rus, ingliz, turk, nemis, fransuz). AI noto‘g‘ri til yoki takrorlangan matn qaytarsa, generator qayta so‘raydi; yaroqsiz natija xom holida hujjatga ko‘chirilmaydi.
 - Esse uchun avval 5 bandli reja, keyin bo‘lim sarlavhalarisiz uzluksiz matn va xulosa berish oqimi saqlangan.
 - Taqdimotga internet rasmlari bo‘lmaganda ham ichki zaxira vizual qo‘shiladi. Yuklangan rasm fayllari haqiqiy rasm ekanligi tekshiriladi; HTML/xato javobi rasm sifatida ishlatilmaydi.
-- PowerPoint yaratishda 3 dizayn va 10/15/20 slayd variantlari bir-biridan mustaqil.
+- PowerPoint yaratishda 6 dizayn (Temuriylar, Neon, Texnika, Geometrik pop, Tabiat, Minimal premium) va 10/15/20 slayd variantlari bir-biridan mustaqil. Slayd soni tanlangach 6 ta shablon ko‘rsatiladi va tanlangani to‘liq qo‘llanadi.
+- Slayd mazmuni har bir slayd bo‘yicha alohida til tekshiruvidan o‘tadi: boshqa tilda yozilgan slayd tanlangan tilga mos zaxira matn bilan almashtiriladi, aralash matn taqdimotga tushmaydi. Faktlar Wikipedia manbasidan olinib, tanlangan tilga o‘giriladi.
 - `config.py` da `ADMIN_USERNAME` mavjud, `SUPPORT_CHAT` qiymati Render environment orqali o‘zgartirilishi mumkin.
 
 ## Tekshiruvlar
 
-Lokal tekshiruvda `python -m compileall -q .` muvaffaqiyatli bajarildi. Generator testlari: 14 testdan 12 tasi o‘tdi, 2 tasi `aiogram`/`aiosqlite` lokal muhitda o‘rnatilmagani sababli skip qilindi. 10/15/20 sahifali referat, mustaqil ish, kurs ishi, diplom ishi, maqola va tezis DOCX fayllari LibreOffice orqali PDFga aylantirilib sahifalari sanalganda, sinov ma’lumotlari bilan mos ravishda 10/15/20 sahifa chiqdi. Taqdimot sinovlari 3 dizayn va 6 tilda 10/15/20 slayd sonini tekshirdi.
+Lokal tekshiruvda `python -m compileall -q .` muvaffaqiyatli bajarildi. Generator testlari: 14 testdan 12 tasi o‘tdi, 2 tasi `aiogram`/`aiosqlite` lokal muhitda o‘rnatilmagani sababli skip qilindi. 10/15/20 sahifali referat, mustaqil ish, kurs ishi, diplom ishi, maqola va tezis DOCX fayllari LibreOffice orqali PDFga aylantirilib sahifalari sanalganda, sinov ma’lumotlari bilan mos ravishda 10/15/20 sahifa chiqdi. Taqdimot sinovlari 6 dizayn, 6 til va 10/15/20 slayd sonini (108 kombinatsiya) tekshirdi: slayd soni aniq, matn tanlangan tilda, rasm joylashtirilgan. DOCX bo‘yicha 144 kombinatsiya (6 til × 8 xizmat × 10/15/20) til aralashuvisiz chiqdi.
 
 Bu lokal test natijalari Render’dagi haqiqiy AI provayderi, Telegram polling, tashqi rasm qidiruvi yoki barcha admin/to‘lov ssenariylari real vaqtda tekshirilganini anglatmaydi. “Xatosiz” ishlashni kafolatlab bo‘lmaydi; deploydan keyin botdagi oqimlarni amalda sinash kerak.
 
