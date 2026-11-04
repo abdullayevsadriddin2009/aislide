@@ -8,7 +8,8 @@ from states import Creation
 from services import SERVICES, service_name, ALL_LANGS
 from keyboards import (option_kb_for, confirm_kb, main_kb, option_label,
                        subjects_kb, languages_kb, format_kb, template_kb, slide_count_kb)
-from designs import (subject_name, detect_subject_key, lang_full_name, SLIDE_COUNTS, design_name)
+from designs import (subject_name, detect_subject_key, lang_full_name, SLIDE_COUNTS,
+                     design_name, DESIGNS, DESIGN_KEYS)
 from ai_api import generate, generate_slides_structured, get_last_error, search_images, download_image, generate_outline, localize_topic
 from pptx_generator import generate_pptx
 from docx_generator import generate_docx
@@ -29,13 +30,14 @@ def _slide_count_prompt(lang):
 
 
 def _slide_design_prompt(lang):
+    total = len(DESIGN_KEYS)
     prompts = {
-        "uz": "🎨 Taqdimot dizaynini tanlang. Uchala variant ham siz tanlagan slayd sonida ishlaydi.",
-        "ru": "🎨 Выберите дизайн презентации. Все три варианта поддерживают выбранное количество слайдов.",
-        "en": "🎨 Choose a presentation design. All three options support your selected slide count.",
-        "tr": "🎨 Sunum tasarımını seçin. Üç tasarım da seçtiğiniz slayt sayısını destekler.",
-        "de": "🎨 Wählen Sie ein Präsentationsdesign. Alle drei Varianten unterstützen die gewählte Folienzahl.",
-        "fr": "🎨 Choisissez le design de la présentation. Les trois options prennent en charge le nombre de diapositives choisi.",
+        "uz": f"🎨 Taqdimot shablonini tanlang ({total} ta variant). Har bir shablon siz tanlagan slayd sonida ishlaydi.",
+        "ru": f"🎨 Выберите шаблон презентации (вариантов: {total}). Каждый шаблон работает с выбранным количеством слайдов.",
+        "en": f"🎨 Choose a presentation template ({total} options). Every template supports your selected slide count.",
+        "tr": f"🎨 Sunum şablonunu seçin ({total} seçenek). Her şablon seçtiğiniz slayt sayısını destekler.",
+        "de": f"🎨 Wählen Sie eine Präsentationsvorlage ({total} Varianten). Jede Vorlage unterstützt die gewählte Folienzahl.",
+        "fr": f"🎨 Choisissez un modèle de présentation ({total} options). Chaque modèle prend en charge le nombre de diapositives choisi.",
     }
     return prompts.get(lang, prompts["en"])
 
@@ -259,8 +261,7 @@ async def cb_language(call: CallbackQuery, state: FSMContext):
 async def cb_format(call: CallbackQuery, state: FSMContext):
     fmt = call.data.split(":")[1]
     await state.update_data(file_format=fmt)
-    data = await state.get_data()
-    
+
     # Barcha hujjat xizmatlari uchun muallif va qo'shimcha ma'lumotlar oldindan so'ralgan.
     await _show_confirm(call, state)
     await call.answer()
@@ -290,7 +291,7 @@ async def cb_slide_count(call: CallbackQuery, state: FSMContext):
 @router.callback_query(Creation.slide_design, F.data.startswith("tmpl:"))
 async def cb_template(call: CallbackQuery, state: FSMContext):
     design_key = call.data.split(":", 1)[1]
-    if design_key not in ("modern", "nature", "elegant"):
+    if design_key not in DESIGNS:
         await call.answer()
         return
     user_id, _ = _eid(call)
@@ -455,7 +456,7 @@ async def _show_confirm(event, state):
         language_code = data.get("language", lang)
         language_name = data.get("language_name", lang_full_name(language_code, lang))
         slide_count = data.get("slide_count", 10)
-        template_name = data.get("template_name", "Modern blue")
+        template_name = data.get("template_name", design_name(data.get("design_key", DESIGN_KEYS[0]), lang))
         subj_name = subject_name(subject_key, language_code)
         param = f"{subj_name} • {language_name} • {template_name} • {t('slides_label', lang, n=slide_count)}"
         price = data.get("slide_price", await db.get_price(service))
@@ -573,7 +574,7 @@ async def cb_confirm(call: CallbackQuery, state: FSMContext):
             topic=generation_topic,
             subject=subj_display,
             lang=language_code,
-            design_key=data.get("design_key", "modern"),
+            design_key=data.get("design_key", DESIGN_KEYS[0]),
             slide_count=slide_count,
             slides_content=slides_content,
             images=img_paths,
