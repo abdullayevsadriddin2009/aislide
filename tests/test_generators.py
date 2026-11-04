@@ -3,6 +3,7 @@ Run with: python -m unittest discover -s tests -v
 """
 import asyncio
 import io
+import json
 import os
 import shutil
 import tempfile
@@ -18,15 +19,18 @@ from PIL import Image
 from docx_generator import generate_docx, L, _split_into_page_chunks
 from pptx_generator import generate_pptx, THEMES, UI, _valid_image_source
 from ai_api import (_generate_outline, _is_lang_mixed, _numbered_question_count,
-                    _fallback_test_questions)
+                    _fallback_test_questions, _localized_slide_fallback)
+import ai_api
 try:
-    from keyboards import option_kb_for, slide_count_kb
+    from keyboards import option_kb_for, slide_count_kb, template_kb
+    from designs import DESIGN_KEYS
     from handlers import creation
     HAS_BOT_RUNTIME = True
 except ModuleNotFoundError:
     # The production requirements include aiogram/aiosqlite; generator-only
     # environments can still run DOCX/PPTX and language regression tests.
-    option_kb_for = slide_count_kb = creation = None
+    option_kb_for = slide_count_kb = template_kb = creation = None
+    DESIGN_KEYS = ()
     HAS_BOT_RUNTIME = False
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -90,6 +94,73 @@ class PPTXGeneratorTests(unittest.TestCase):
         picture_slides = [slide for slide in deck.slides
                           if any(shape.shape_type == MSO_SHAPE_TYPE.PICTURE for shape in slide.shapes)]
         self.assertGreaterEqual(len(picture_slides), 1)
+
+
+class SlideLanguageTests(unittest.TestCase):
+    """The deck must stay in the selected language and keep the exact count."""
+
+    FOREIGN_JSON = json.dumps([
+        {"title": "Introduction",
+         "content": ["Amir Timur was one of the most powerful rulers in the history of Central Asia.",
+                     "He built a large empire and supported the arts, trade, and scholarship.",
+                     "His campaigns changed the political map of the region for centuries."]},
+    ])
+
+    NATIVE_JSON = {
+        "uz": "Amir Temur Markaziy Osiyo tarixidagi eng qudratli hukmdorlardan biri bo‘lgan. U yirik davlat barpo etib, ilm-fan va savdo-sotiqni qo‘llab-quvvatlagan. Uning yurishlari mintaqa siyosiy xaritasini uzoq asrlar davomida o‘zgartirgan.",
+        "ru": "Амир Темур был одним из самых могущественных правителей в истории Средней Азии. Он создал крупное государство и поддерживал науку, ремесла и торговлю. Его походы надолго изменили политическую карту региона.",
+        "en": "Amir Timur was one of the most powerful rulers in the history of Central Asia. He built a large empire and supported the arts, trade, and scholarship. His campaigns changed the political map of the region for centuries.",
+        "tr": "Emir Timur, Orta Asya tarihinin en güçlü hükümdarlarından biriydi. Büyük bir devlet kurdu ve sanatı, ticareti ve bilimi destekledi. Seferleri bölgenin siyasi haritasını yüzyıllar boyunca değiştirdi.",
+        "de": "Amir Timur war einer der mächtigsten Herrscher in der Geschichte Zentralasiens. Er schuf ein großes Reich und förderte Kunst, Handel und Wissenschaft. Seine Feldzüge veränderten die politische Landkarte der Region über Jahrhunderte.",
+        "fr": "Amir Timur fut l’un des dirigeants les plus puissants de l’histoire de l’Asie centrale. Il a bâti un vaste empire et soutenu les arts, le commerce et les sciences. Ses campagnes ont modifié la carte politique de la région pendant des siècles.",
+    }
+
+    def _run(self, lang, payload, count=4):
+        async def fake_chat(prompt, **kwargs):
+            return payload
+        async def fake_wiki(topic, **kwargs):
+            return {"found": False, "text": "", "image": "", "url": "", "title": "", "lang": ""}
+        with patch.object(ai_api, "_chat_complete", new=fake_chat), \
+             patch.object(ai_api, "wikipedia_fetch", new=fake_wiki):
+            return asyncio.run(ai_api.generate_slides_structured("Amir Temur", "Tarix", lang, count))
+
+    def test_foreign_language_slides_are_replaced_and_count_is_exact(self):
+        for lang in LANGS:
+            if lang == "en":
+                continue
+            with self.subTest(lang=lang):
+                slides, real = self._run(lang, self.FOREIGN_JSON, count=4)
+                self.assertEqual(len(slides), 4)
+                self.assertFalse(real)
+                for item in slides:
+                    text = f"{item['title']} {' '.join(item['content'])}"
+                    self.assertFalse(_is_lang_mixed(text, lang), f"foreign text kept for {lang}: {text[:80]}")
+                    self.assertGreaterEqual(len(item["content"]), 3)
+
+    def test_native_language_slides_are_accepted(self):
+        for lang in LANGS:
+            with self.subTest(lang=lang):
+                payload = json.dumps([{"title": "Kirish" if lang == "uz" else "Intro",
+                                       "content": [self.NATIVE_JSON[lang]]}])
+                slides, real = self._run(lang, payload, count=1)
+                self.assertEqual(len(slides), 1)
+                self.assertTrue(real)
+                self.assertFalse(_is_lang_mixed(slides[0]["title"], lang))
+                self.assertGreaterEqual(len(slides[0]["content"]), 3)
+
+    def test_localized_slide_fallback_is_pure_in_every_language(self):
+        for lang in LANGS:
+            with self.subTest(lang=lang):
+                title, content = _localized_slide_fallback("Amir Temur", lang, 3)
+                self.assertFalse(_is_lang_mixed(f"{title} {' '.join(content)}", lang))
+
+    @unittest.skipUnless(HAS_BOT_RUNTIME, "Install requirements.txt to test Telegram keyboard/handler imports")
+    def test_six_designs_are_offered_and_all_render(self):
+        buttons = [button for row in template_kb("uz").inline_keyboard for button in row]
+        data = [button.callback_data for button in buttons if button.callback_data.startswith("tmpl:")]
+        self.assertEqual(data, [f"tmpl:{key}" for key in DESIGN_KEYS])
+        self.assertEqual(len(data), 6)
+        self.assertEqual(set(THEMES), set(DESIGN_KEYS))
 
 
 class DOCXGeneratorTests(unittest.TestCase):
