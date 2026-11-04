@@ -1,8 +1,9 @@
 # -*- coding: utf-8 -*-
-"""PowerPoint generator with three independent, fully localized designs.
+"""PowerPoint generator with six independent, fully localized designs.
 
-Design keys: modern, nature, elegant. The selected design never changes the
-requested slide count. All template/UI text is localized to ``lang``.
+Design keys: modern, neon, amber, pop, nature, elegant. The selected design
+never changes the requested slide count. All template/UI text is localized to
+``lang``.
 """
 from __future__ import annotations
 
@@ -18,34 +19,65 @@ from pptx.dml.color import RGBColor
 from pptx.enum.text import PP_ALIGN, MSO_ANCHOR
 from pptx.enum.shapes import MSO_SHAPE
 
+from designs import DESIGNS, DESIGN_KEYS
+
 BOT_USERNAME = "@Talaba_AI_SlideBot"
 
+# Each theme carries its own palette, page mode and decoration style so the six
+# designs are visibly different rather than recolored copies of one layout.
 THEMES = {
-    # Inspired by the supplied Timurid presentation: navy, warm paper and gold.
+    # Warm Timurid paper, terracotta and gold.
     "modern": {
-        "bg": (248, 245, 240), "panel": (255, 255, 255), "primary": (27, 42, 65),
-        "accent": (201, 162, 39), "secondary": (123, 126, 130), "text": (48, 49, 50),
-        "cover": (20, 32, 50), "soft": (239, 232, 214), "line": (220, 217, 208),
+        "bg": (250, 246, 240), "panel": (255, 255, 255), "primary": (124, 58, 32),
+        "accent": (196, 106, 58), "secondary": (150, 130, 115), "text": (58, 46, 38),
+        "cover": (92, 42, 22), "soft": (245, 232, 219), "line": (228, 214, 201),
+        "header": (124, 58, 32), "dark_content": False, "card": (255, 255, 255),
+        "on_dark": (245, 240, 235), "decorate": "arc",
     },
-    # Inspired by the supplied cell / biology presentation: deep green, bright green.
+    # Neon tech: deep indigo with cyan and magenta glow.
+    "neon": {
+        "bg": (18, 22, 48), "panel": (28, 33, 72), "primary": (240, 240, 255),
+        "accent": (46, 224, 224), "secondary": (140, 152, 205), "text": (226, 232, 246),
+        "cover": (11, 15, 38), "soft": (34, 39, 88), "line": (54, 60, 116),
+        "header": (36, 41, 92), "dark_content": True, "card": (30, 35, 78),
+        "on_dark": (224, 230, 248), "decorate": "bubbles",
+    },
+    # Engineering: black plates with amber accents.
+    "amber": {
+        "bg": (24, 24, 24), "panel": (34, 34, 34), "primary": (255, 255, 255),
+        "accent": (247, 178, 42), "secondary": (155, 155, 155), "text": (232, 232, 232),
+        "cover": (14, 14, 14), "soft": (44, 44, 44), "line": (64, 64, 64),
+        "header": (40, 40, 40), "dark_content": True, "card": (32, 32, 32),
+        "on_dark": (234, 234, 234), "decorate": "hex",
+    },
+    # Geometric pop: red, pink and yellow blocks on white.
+    "pop": {
+        "bg": (250, 250, 247), "panel": (255, 255, 255), "primary": (26, 26, 26),
+        "accent": (230, 51, 35), "secondary": (120, 120, 120), "text": (34, 34, 34),
+        "cover": (26, 26, 26), "soft": (255, 214, 224), "line": (232, 232, 228),
+        "header": (26, 26, 26), "dark_content": False, "card": (255, 255, 255),
+        "on_dark": (245, 240, 235), "decorate": "shapes",
+    },
+    # Scientific nature: deep green and bright leaf green.
     "nature": {
         "bg": (248, 245, 240), "panel": (255, 255, 255), "primary": (27, 67, 50),
         "accent": (74, 222, 128), "secondary": (111, 128, 116), "text": (42, 48, 44),
         "cover": (8, 38, 30), "soft": (231, 239, 232), "line": (205, 219, 207),
+        "header": (27, 67, 50), "dark_content": False, "card": (255, 255, 255),
+        "on_dark": (236, 244, 238), "decorate": "leaf",
     },
-    # A separate premium variant with plum and champagne accents.
+    # Premium minimal: plum and champagne with occasional dark slides.
     "elegant": {
         "bg": (248, 244, 240), "panel": (255, 255, 255), "primary": (65, 35, 56),
         "accent": (194, 158, 103), "secondary": (136, 118, 128), "text": (54, 45, 51),
         "cover": (39, 23, 36), "soft": (243, 232, 222), "line": (227, 213, 207),
+        "header": (65, 35, 56), "dark_content": False, "card": (255, 255, 255),
+        "on_dark": (239, 233, 239), "decorate": "frame",
     },
 }
 
-DESIGN_NAMES = {
-    "modern": {"uz": "Temuriylar — ko‘k va oltin", "ru": "Тимуриды — синий и золото", "en": "Timurid — navy and gold", "tr": "Timurlu — lacivert ve altın", "de": "Timuriden — Marineblau und Gold", "fr": "Timouride — bleu nuit et or"},
-    "nature": {"uz": "Ilmiy tabiat — yashil", "ru": "Научная природа — зелёный", "en": "Scientific nature — green", "tr": "Bilimsel doğa — yeşil", "de": "Wissenschaftliche Natur — Grün", "fr": "Nature scientifique — vert"},
-    "elegant": {"uz": "Minimal premium", "ru": "Минимализм премиум", "en": "Minimal premium", "tr": "Minimal premium", "de": "Minimal Premium", "fr": "Minimal premium"},
-}
+DESIGN_NAMES = {key: {lang: DESIGNS[key][f"name_{lang}"] for lang in ("uz", "ru", "en", "tr", "de", "fr")}
+                for key in DESIGN_KEYS}
 
 # Static template strings only. The generated subject matter is supplied by the AI
 # and must be generated in the same language as this dictionary's language key.
@@ -80,6 +112,41 @@ def _shape(slide, x, y, w, h, color, kind=MSO_SHAPE.RECTANGLE, line_color=None, 
     return sh
 
 
+def _outline(slide, kind, x, y, w, h, color, width=2.0):
+    """Transparent shape used for design-specific decorative motifs."""
+    sh = slide.shapes.add_shape(kind, Inches(x), Inches(y), Inches(w), Inches(h))
+    sh.fill.background()
+    sh.line.color.rgb = _rgb(color)
+    sh.line.width = Pt(width)
+    return sh
+
+
+def _cover_motif(slide, theme, style):
+    """Corner motif that makes each of the six covers visually distinct."""
+    accent = theme["accent"]
+    try:
+        if style == "bubbles":
+            _outline(slide, MSO_SHAPE.OVAL, 11.55, 0.15, 1.35, 1.35, accent, 3)
+            _outline(slide, MSO_SHAPE.OVAL, 12.35, 1.15, 0.72, 0.72, (214, 51, 193), 2.5)
+        elif style == "hex":
+            _outline(slide, MSO_SHAPE.HEXAGON, 11.75, 0.22, 1.3, 1.3, accent, 3)
+            _shape(slide, 12.55, 6.28, 0.62, 0.62, accent)
+        elif style == "shapes":
+            _shape(slide, 11.95, 0.22, 1.0, 1.0, accent)
+            _shape(slide, 12.35, 1.24, 0.6, 0.6, theme["soft"], kind=MSO_SHAPE.OVAL)
+            _shape(slide, 12.85, 1.9, 0.3, 0.3, (26, 26, 26))
+        elif style == "leaf":
+            _outline(slide, MSO_SHAPE.OVAL, 11.55, 0.28, 1.35, 0.82, accent, 2.5)
+            _outline(slide, MSO_SHAPE.OVAL, 12.15, 1.02, 0.78, 0.5, accent, 2)
+        elif style == "frame":
+            _outline(slide, MSO_SHAPE.RECTANGLE, 0.46, 0.44, 12.4, 6.62, accent, 1.5)
+        else:  # arc
+            _outline(slide, MSO_SHAPE.OVAL, 11.35, -0.65, 2.5, 2.5, accent, 3)
+            _outline(slide, MSO_SHAPE.OVAL, 11.7, -0.3, 1.8, 1.8, (255, 255, 255), 1)
+    except Exception as exc:
+        print(f"[pptx] Cover motif skipped: {exc}", flush=True)
+
+
 def _text(slide, x, y, w, h, value, size=18, color=(35, 46, 65), bold=False,
           align=PP_ALIGN.LEFT, font="Aptos", valign=MSO_ANCHOR.TOP, margin=0.06, italic=False):
     box = slide.shapes.add_textbox(Inches(x), Inches(y), Inches(w), Inches(h))
@@ -105,6 +172,16 @@ def _text(slide, x, y, w, h, value, size=18, color=(35, 46, 65), bold=False,
         r.font.italic = italic
         r.font.color.rgb = _rgb(color)
     return box
+
+
+def _body_size(value, base=16):
+    """Keep long AI paragraphs inside their card instead of overflowing it."""
+    length = len(str(value or ""))
+    if length > 1150:
+        return 11
+    if length > 750:
+        return 13
+    return base
 
 
 def _safe_text_list(content):
@@ -235,6 +312,7 @@ def _cover(prs, theme, lang, topic, subject, author, total, images=None, descrip
     if author:
         _text(slide, 0.88, 5.82, 10.8, 0.35, f"{labels['prepared']}: {author}", size=11, color=(228, 228, 228), margin=0)
     _text(slide, 0.88, 6.60, 10.8, 0.28, f"{subject} · {labels['presentation']}", size=9, color=(215, 215, 215), margin=0)
+    _cover_motif(slide, theme, theme.get("decorate", "arc"))
     _footer(slide, theme, 1, total, topic, subject, lang, dark=True)
     return slide
 
@@ -256,7 +334,7 @@ def _overview_slide(prs, theme, lang, topic, subject, entries, total):
     else:
         agenda = valid
     _shape(slide, 0.82, 2.23, 11.68, 3.88, theme["panel"], kind=MSO_SHAPE.ROUNDED_RECTANGLE, line_color=theme["line"])
-    _shape(slide, 0.82, 2.23, 11.68, 0.72, theme["primary"], kind=MSO_SHAPE.ROUNDED_RECTANGLE)
+    _shape(slide, 0.82, 2.23, 11.68, 0.72, theme["header"], kind=MSO_SHAPE.ROUNDED_RECTANGLE)
     _text(slide, 1.12, 2.42, 10.95, 0.32, labels["overview_list_heading"], size=13, color=(255, 255, 255), bold=True, margin=0)
     for i, item in enumerate(agenda):
         y = 3.18 + i * 0.45
@@ -271,12 +349,25 @@ def _overview_slide(prs, theme, lang, topic, subject, entries, total):
 def _content_slide(prs, th, lang, item, index, total, design_key, images, topic, subject):
     labels = UI[lang]
     slide = prs.slides.add_slide(prs.slide_layouts[6])
-    dark = design_key == "elegant" and index % 4 == 0
+    dark = bool(th.get("dark_content")) or (design_key == "elegant" and index % 4 == 0)
     _set_bg(slide, th["cover"] if dark else th["bg"])
-    _shape(slide, 0.0, 0.0, 0.10, 7.5, th["accent"])
+    # Every design marks its pages with a different frame: side rail, top band or
+    # corner blocks. The decoration never covers the text area.
+    band = th.get("decorate", "arc")
+    if band == "bubbles":
+        _shape(slide, 0.0, 0.0, 13.333, 0.09, th["accent"])
+        _shape(slide, 0.0, 7.41, 13.333, 0.09, th["accent"])
+    elif band == "hex":
+        _shape(slide, 0.0, 0.0, 13.333, 0.16, th["accent"])
+        _shape(slide, 0.0, 7.34, 13.333, 0.16, (70, 70, 70))
+    elif band == "shapes":
+        _shape(slide, 0.0, 0.0, 2.7, 0.14, th["accent"])
+        _shape(slide, 0.0, 0.0, 0.10, 1.7, (26, 26, 26))
+    else:
+        _shape(slide, 0.0, 0.0, 0.10, 7.5, th["accent"])
     title_color = (255, 255, 255) if dark else th["primary"]
-    body_color = (239, 233, 239) if dark else th["text"]
-    card_color = (73, 47, 66) if dark else th["panel"]
+    body_color = th.get("on_dark", (239, 233, 239)) if dark else th["text"]
+    card_color = th.get("card", th["panel"]) if dark else th["panel"]
     accent_color = th["accent"]
 
     title = str(item.get("title") or labels["empty_title"]).strip()
@@ -302,7 +393,7 @@ def _content_slide(prs, th, lang, item, index, total, design_key, images, topic,
             _add_image_source(slide, image_path, 0.8, 1.75, 5.25, 4.45)
             _shape(slide, 6.35, 1.75, 6.05, 4.45, card_color, line_color=th["line"] if not dark else None)
             body = "\n\n".join([f"• {x}" for x in content[:5]])
-            _text(slide, 6.62, 2.0, 5.55, 3.95, body, size=16 if len(body) < 750 else 13, color=body_color, margin=0.02)
+            _text(slide, 6.62, 2.0, 5.55, 3.95, body, size=_body_size(body), color=body_color, margin=0.02)
         except Exception:
             image_path = None
 
@@ -318,7 +409,7 @@ def _content_slide(prs, th, lang, item, index, total, design_key, images, topic,
             _text(slide, x + 0.25, 2.12, 5.15, 0.42, headings[col], size=16, color=accent_color if dark else th["primary"], bold=True, margin=0)
             group = groups[col] or [labels["empty_body"]]
             body = "\n\n".join(f"• {v}" for v in group)
-            _text(slide, x + 0.25, 2.68, 5.15, 3.15, body, size=16 if len(body) < 600 else 13, color=body_color, margin=0.02)
+            _text(slide, x + 0.25, 2.68, 5.15, 3.15, body, size=_body_size(body, base=15), color=body_color, margin=0.02)
 
     elif pattern == 1:
         # Vertical numbered points with generous spacing.
@@ -326,18 +417,18 @@ def _content_slide(prs, th, lang, item, index, total, design_key, images, topic,
             y = 1.72 + i * 0.88
             _shape(slide, 0.88, y, 0.58, 0.58, accent_color, kind=MSO_SHAPE.OVAL)
             _text(slide, 0.88, y + 0.12, 0.58, 0.28, str(i + 1), size=14, color=(255, 255, 255), bold=True, align=PP_ALIGN.CENTER, margin=0)
-            card = _shape(slide, 1.7, y - 0.03, 10.75, 0.66, card_color, line_color=th["line"] if not dark else None)
-            fontsize = 15 if len(value) < 120 else 12
+            _shape(slide, 1.7, y - 0.03, 10.75, 0.66, card_color, line_color=th["line"] if not dark else None)
+            fontsize = 15 if len(value) < 120 else 12 if len(value) < 190 else 10
             _text(slide, 1.95, y + 0.08, 10.25, 0.47, value, size=fontsize, color=body_color, margin=0)
 
     elif pattern == 2:
         # Large statement on the left and concise points on the right.
-        _shape(slide, 0.8, 1.82, 4.05, 4.42, th["primary"] if not dark else th["accent"])
+        _shape(slide, 0.8, 1.82, 4.05, 4.42, th["header"])
         _text(slide, 1.08, 2.15, 3.48, 0.35, labels["part"], size=11, color=(255, 255, 255), bold=True, margin=0)
         _text(slide, 1.08, 2.85, 3.45, 2.6, title, size=25 if len(title) < 55 else 19, color=(255, 255, 255), bold=True, margin=0)
         _shape(slide, 5.2, 1.82, 7.2, 4.42, card_color, line_color=th["line"] if not dark else None)
         body = "\n\n".join(f"✓ {v}" for v in content[:5])
-        _text(slide, 5.52, 2.12, 6.55, 3.8, body, size=16 if len(body) < 650 else 13, color=body_color, margin=0.02)
+        _text(slide, 5.52, 2.12, 6.55, 3.8, body, size=_body_size(body, base=15), color=body_color, margin=0.02)
 
     _footer(slide, th, index, total, topic, subject, lang, dark=dark)
     return slide
@@ -363,7 +454,7 @@ def _closing_slide(prs, theme, lang, topic, subject, entries, total):
         recap = _safe_text_list(entries[-1].get("content"))[:4]
     if not recap:
         recap = [labels["empty_body"]]
-    _shape(slide, 0.84, 2.62, 7.7, 3.05, (255, 255, 255))
+    _shape(slide, 0.84, 2.62, 7.7, 3.05, theme["panel"], line_color=theme["line"])
     for i, value in enumerate(recap[:4]):
         y = 2.92 + i * 0.61
         _shape(slide, 1.08, y + 0.03, 0.34, 0.34, theme["accent"], kind=MSO_SHAPE.OVAL)
@@ -372,7 +463,7 @@ def _closing_slide(prs, theme, lang, topic, subject, entries, total):
         value = value if len(value) <= 100 else value[:97].rstrip() + "…"
         _text(slide, 1.62, y, 6.55, 0.44, value, size=14, color=theme["text"], margin=0)
 
-    _shape(slide, 8.95, 2.62, 3.55, 3.05, theme["primary"])
+    _shape(slide, 8.95, 2.62, 3.55, 3.05, theme["header"])
     _text(slide, 9.25, 3.10, 2.95, 1.0, labels["thanks"], size=21,
           color=(255, 255, 255), bold=True, align=PP_ALIGN.CENTER, valign=MSO_ANCHOR.MIDDLE, margin=0.04)
     _shape(slide, 10.22, 4.38, 1.05, 0.05, theme["accent"])
@@ -409,14 +500,15 @@ def generate_pptx(topic: str, subject: str, lang: str, design_key: str, slide_co
     lc = str(lang or "en").lower()
     if lc not in UI:
         lc = "en"
-    key = str(design_key or "modern").lower()
+    key = str(design_key or DESIGN_KEYS[0]).lower()
     if key not in THEMES:
-        key = "modern"
+        key = DESIGN_KEYS[0]
     try:
         requested = int(slide_count or 10)
     except (TypeError, ValueError):
         requested = 10
-    total = requested if requested in (10, 15, 20) else min((10, 15, 20), key=lambda n: abs(n - requested))
+    # The requested slide count is honoured exactly (cover + agenda + body + closing).
+    total = max(4, min(60, requested))
     body_count = total - 3
 
     prs = _new_presentation()
