@@ -1,40 +1,34 @@
 Talaba AI Slide Bot
 Telegram bot for creating academic documents and PowerPoint presentations. The current source has 9 active services: presentation, report, independent assignment, coursework, diploma work, essay, test, article, and thesis/abstract.
-
 Main features
 6 supported output languages: Uzbek, Russian, English, Turkish, German, and French.
-Presentation generator with 3 separate designs: Timurid navy/gold, scientific green, and minimal premium.
-Presentation slide count is selected separately from the design. All 3 styles support 10, 15 and 20 slides.
+Presentation generator with 6 separate designs: Timurid warm gold, neon technology, amber tech, geometric pop, scientific green, and minimal premium.
+The slide count is selected first, then the template. All 6 styles support the selected slide count (10, 15 or 20).
 Presentations include a cover, localized agenda, body slides, and final summary/thanks slide.
 DOCX templates use academic page layout and localized headings. PDF export uses LibreOffice when installed.
 Required service options are requested before creation: page/word/question count, output language, title-page information when applicable, author, format, and presentation design.
 Balance, referrals, Telegram admin tools, and a web-admin panel.
 Setup
 Python 3.11 or newer is recommended.
-
 bash
 Copy
 python -m venv .venv
-# Windows: .venv\\Scripts\\activate
-# Linux/macOS: source .venv/bin/activate
+Windows: .venv\Scripts\activate
+Linux/macOS: source .venv/bin/activate
 pip install -r requirements.txt
 Copy .env.example to .env and fill in your own values. Do not commit .env or upload it to a public repository.
-
 Required configuration:
-
 BOT_TOKEN — a fresh Telegram bot token from BotFather.
 ADMIN_ID — Telegram numeric ID of the bot administrator.
 AI_BASE_URL and AI_API_KEY — a valid compatible AI endpoint and its key.
 WEB_ADMIN_PASSWORD — a strong, unique web-admin password.
 WEB_ADMIN_SECRET_KEY — a long, random secret, different from the AI API key.
 Then run the generator smoke tests and start the bot:
-
 bash
 Copy
 python -m unittest discover -s tests -v
 python run.py
 If BOT_TOKEN is empty, the bot deliberately does not start. Configure credentials before running it.
-
 Deployment notes
 On Render, configure environment variables in the service dashboard. Never put tokens in source code.
 SQLite files are not persistent on a typical ephemeral service filesystem. Attach a persistent disk and set DATA_DIR to its mount path, or move to a managed database before relying on production balances/orders.
