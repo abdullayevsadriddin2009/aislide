@@ -2,7 +2,7 @@ from aiogram.types import (ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMa
 from texts import t
 from services import SERVICES, service_name
 # Eski dizaynlarga tegishli importlar olib tashlandi
-from designs import SUBJECT_KEYS, subject_name, LANGUAGES, DESIGNS, design_name
+from designs import SUBJECT_KEYS, subject_name, LANGUAGES, DESIGNS, DESIGN_KEYS, design_name
 
 # ===== Asosiy menyu =====
 def main_kb(lang="uz"):
@@ -136,11 +136,11 @@ def slide_count_kb(lang="uz"):
     rows.append([InlineKeyboardButton(text=t("btn_cancel", lang), callback_data="cancel")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
-# ===== Taqdimot dizayni: 3 ta mustaqil variant =====
+# ===== Taqdimot dizayni: 6 ta mustaqil variant =====
 def template_kb(lang="uz"):
-    """Three new presentation designs, with names localized to the selected language."""
+    """Six presentation designs, with names localized to the selected language."""
     rows = []
-    for key in ("modern", "nature", "elegant"):
+    for key in DESIGN_KEYS:
         design = DESIGNS[key]
         label = design_name(key, lang)
         rows.append([InlineKeyboardButton(
