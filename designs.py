@@ -1,9 +1,27 @@
-# ===== Yangi taqdimot dizaynlari (faqat 3 ta faol variant) =====
+# ===== Taqdimot dizaynlari (6 ta faol variant) =====
+# Har bir shablon o'z rang palitrasi, fon va bezak uslubiga ega.
+DESIGN_KEYS = ("modern", "neon", "amber", "pop", "nature", "elegant")
+
 DESIGNS = {
     "modern": {
         "emoji": "🏛️",
-        "name_uz": "Temuriylar — ko‘k va oltin", "name_ru": "Тимуриды — синий и золото", "name_en": "Timurid — navy and gold",
-        "name_tr": "Timurlu — lacivert ve altın", "name_de": "Timuriden — Marineblau und Gold", "name_fr": "Timouride — bleu nuit et or",
+        "name_uz": "Temuriylar — issiq oltin", "name_ru": "Тимуриды — тёплое золото", "name_en": "Timurid — warm gold",
+        "name_tr": "Timurlu — sıcak altın", "name_de": "Timuriden — warmes Gold", "name_fr": "Timouride — or chaleureux",
+    },
+    "neon": {
+        "emoji": "🌈",
+        "name_uz": "Neon texnologiya", "name_ru": "Неоновые технологии", "name_en": "Neon technology",
+        "name_tr": "Neon teknoloji", "name_de": "Neon-Technologie", "name_fr": "Technologie néon",
+    },
+    "amber": {
+        "emoji": "🟡",
+        "name_uz": "Texnika — sariq va qora", "name_ru": "Техника — жёлтый и чёрный", "name_en": "Tech — amber and black",
+        "name_tr": "Teknik — sarı ve siyah", "name_de": "Technik — Gelb und Schwarz", "name_fr": "Tech — ambre et noir",
+    },
+    "pop": {
+        "emoji": "🔺",
+        "name_uz": "Geometrik pop — qizil", "name_ru": "Геометрический поп — красный", "name_en": "Geometric pop — red",
+        "name_tr": "Geometrik pop — kırmızı", "name_de": "Geometrisches Pop — Rot", "name_fr": "Pop géométrique — rouge",
     },
     "nature": {
         "emoji": "🌿",
@@ -18,10 +36,19 @@ DESIGNS = {
 }
 
 
+def normalize_design_key(key):
+    """Return a valid design key, defaulting to the first design."""
+    return key if key in DESIGNS else DESIGN_KEYS[0]
+
+
 def design_name(key, lang="uz"):
-    """Return one of the three active, localized presentation design names."""
-    design = DESIGNS.get(key, DESIGNS["modern"])
+    """Return one of the six active, localized presentation design names."""
+    design = DESIGNS.get(key, DESIGNS[DESIGN_KEYS[0]])
     return design.get(f"name_{str(lang).lower()}", design["name_en"])
+
+
+def design_count():
+    return len(DESIGN_KEYS)
 
 # Fanlar (subjects) — 6 tilda
 SUBJECTS = {
