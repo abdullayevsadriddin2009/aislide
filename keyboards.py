@@ -150,6 +150,29 @@ def template_kb(lang="uz"):
     rows.append([InlineKeyboardButton(text=t("btn_cancel", lang), callback_data="cancel")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
+# ===== AI Chat: tarixni tozalash tugmasi =====
+CHAT_UI = {
+    "uz": {"clear": "🧹 Suhbat tarixini tozalash", "cleared": "🧹 <b>Suhbat tarixi tozalandi.</b>\n\nYangi mavzuni yozing — avvalgi suhbatga bog'lanmayman.", "start": "💬 <b>AI Chat</b>\n\nSavolingizni yozing — men javob beraman va suhbatni davom ettiraman.\nYangi mavzu kerak bo'lsa «🧹 Suhbat tarixini tozalash» tugmasini bosing."},
+    "ru": {"clear": "🧹 Очистить историю чата", "cleared": "🧹 <b>История чата очищена.</b>\n\nНапишите новую тему — предыдущий разговор учитываться не будет.", "start": "💬 <b>ИИ Чат</b>\n\nНапишите вопрос — я отвечу и продолжу разговор.\nДля новой темы нажмите «🧹 Очистить историю чата»."},
+    "en": {"clear": "🧹 Clear chat history", "cleared": "🧹 <b>Chat history cleared.</b>\n\nType a new topic — I won't refer to the previous conversation.", "start": "💬 <b>AI Chat</b>\n\nType your question — I'll answer and continue the conversation.\nFor a new topic press «🧹 Clear chat history»."},
+    "tr": {"clear": "🧹 Sohbet geçmişini temizle", "cleared": "🧹 <b>Sohbet geçmişi temizlendi.</b>\n\nYeni konuyu yazın — önceki sohbete bağlanmayacağım.", "start": "💬 <b>AI Sohbet</b>\n\nSorunuzu yazın — cevaplayıp sohbeti sürdüreceğim.\nYeni konu için «🧹 Sohbet geçmişini temizle» düğmesine basın."},
+    "de": {"clear": "🧹 Chatverlauf löschen", "cleared": "🧹 <b>Chatverlauf gelöscht.</b>\n\nSchreiben Sie ein neues Thema — ich beziehe mich nicht auf das vorherige Gespräch.", "start": "💬 <b>KI-Chat</b>\n\nSchreiben Sie Ihre Frage — ich antworte und setze das Gespräch fort.\nFür ein neues Thema «🧹 Chatverlauf löschen» drücken."},
+    "fr": {"clear": "🧹 Effacer l’historique du chat", "cleared": "🧹 <b>Historique du chat effacé.</b>\n\nÉcrivez un nouveau sujet — je ne tiendrai pas compte de la conversation précédente.", "start": "💬 <b>Chat IA</b>\n\nÉcrivez votre question — je répondrai et poursuivrai la conversation.\nPour un nouveau sujet, appuyez sur «🧹 Effacer l’historique du chat»."},
+}
+
+
+def chat_labels(lang="uz"):
+    lang = str(lang).lower()
+    return CHAT_UI.get(lang) or CHAT_UI["en"]
+
+
+def chat_kb(lang="uz"):
+    """Inline tugma: suhbat tarixini tozalab, yangi mavzu boshlash."""
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text=chat_labels(lang)["clear"], callback_data="chat:clear")],
+    ])
+
+
 # ===== Chek ko'rib chiqish =====
 def check_review_kb(check_id, lang="uz"):
     return InlineKeyboardMarkup(inline_keyboard=[
