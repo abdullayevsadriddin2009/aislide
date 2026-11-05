@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import io
 import os
-import textwrap
 from pathlib import Path
 from typing import Any
 
@@ -82,12 +81,12 @@ DESIGN_NAMES = {key: {lang: DESIGNS[key][f"name_{lang}"] for lang in ("uz", "ru"
 # Static template strings only. The generated subject matter is supplied by the AI
 # and must be generated in the same language as this dictionary's language key.
 UI = {
-    "uz": {"overview": "TAQDIMOT", "overview_tag": "REJA · ASOSIY BO‘LIMLAR", "overview_title": "Taqdimot mazmuni", "overview_list_heading": "MAVZUNING ASOSIY QISMLARI", "section": "BO‘LIM", "presentation": "taqdimoti", "key_points": "Asosiy fikrlar", "details": "Muhim jihatlar", "part": "BO‘LIM", "prepared": "Tayyorladi", "summary": "Yakuniy xulosalar", "thanks": "E’tiboringiz uchun rahmat!", "slide": "S L A Y D", "continued": "Davomi", "empty_title": "Qo‘shimcha tahlil", "empty_body": "Bu bo‘lim mavzuning muhim jihatlarini umumlashtiradi."},
-    "ru": {"overview": "ПРЕЗЕНТАЦИЯ", "overview_tag": "ПЛАН · ОСНОВНЫЕ РАЗДЕЛЫ", "overview_title": "Содержание презентации", "overview_list_heading": "ОСНОВНЫЕ РАЗДЕЛЫ ТЕМЫ", "section": "РАЗДЕЛ", "presentation": "презентация", "key_points": "Ключевые идеи", "details": "Важные аспекты", "part": "РАЗДЕЛ", "prepared": "Подготовил(а)", "summary": "Итоговые выводы", "thanks": "Спасибо за внимание!", "slide": "С Л А Й Д", "continued": "Продолжение", "empty_title": "Дополнительный анализ", "empty_body": "В этом разделе обобщены важные аспекты темы."},
-    "en": {"overview": "PRESENTATION", "overview_tag": "AGENDA · MAIN SECTIONS", "overview_title": "Presentation overview", "overview_list_heading": "MAIN TOPIC SECTIONS", "section": "SECTION", "presentation": "presentation", "key_points": "Key ideas", "details": "Important details", "part": "SECTION", "prepared": "Prepared by", "summary": "Key takeaways", "thanks": "Thank you for your attention!", "slide": "S L I D E", "continued": "Continued", "empty_title": "Further analysis", "empty_body": "This section summarizes important aspects of the topic."},
-    "tr": {"overview": "SUNUM", "overview_tag": "PLAN · ANA BÖLÜMLER", "overview_title": "Sunum içeriği", "overview_list_heading": "KONUNUN ANA BÖLÜMLERİ", "section": "BÖLÜM", "presentation": "sunumu", "key_points": "Temel fikirler", "details": "Önemli noktalar", "part": "BÖLÜM", "prepared": "Hazırlayan", "summary": "Genel sonuçlar", "thanks": "Dinlediğiniz için teşekkürler!", "slide": "S L A Y T", "continued": "Devamı", "empty_title": "Ek analiz", "empty_body": "Bu bölüm konunun önemli yönlerini özetler."},
-    "de": {"overview": "PRÄSENTATION", "overview_tag": "AGENDA · HAUPTABSCHNITTE", "overview_title": "Präsentationsübersicht", "overview_list_heading": "ZENTRALE THEMENABSCHNITTE", "section": "ABSCHNITT", "presentation": "Präsentation", "key_points": "Kernaussagen", "details": "Wichtige Aspekte", "part": "ABSCHNITT", "prepared": "Erstellt von", "summary": "Wichtigste Erkenntnisse", "thanks": "Vielen Dank für Ihre Aufmerksamkeit!", "slide": "F O L I E", "continued": "Fortsetzung", "empty_title": "Weitere Analyse", "empty_body": "Dieser Abschnitt fasst wichtige Aspekte des Themas zusammen."},
-    "fr": {"overview": "PRÉSENTATION", "overview_tag": "PLAN · SECTIONS PRINCIPALES", "overview_title": "Sommaire de la présentation", "overview_list_heading": "SECTIONS PRINCIPALES DU SUJET", "section": "SECTION", "presentation": "présentation", "key_points": "Idées clés", "details": "Points importants", "part": "SECTION", "prepared": "Préparé par", "summary": "Conclusions essentielles", "thanks": "Merci de votre attention !", "slide": "D I A P O", "continued": "Suite", "empty_title": "Analyse complémentaire", "empty_body": "Cette section résume les aspects importants du sujet."},
+    "uz": {"overview": "TAQDIMOT", "overview_tag": "REJA · ASOSIY BO‘LIMLAR", "overview_title": "Taqdimot mazmuni", "overview_list_heading": "MAVZUNING ASOSIY QISMLARI", "section": "BO‘LIM", "presentation": "taqdimoti", "key_points": "Asosiy fikrlar", "details": "Muhim jihatlar", "part": "BO‘LIM", "prepared": "Tayyorladi", "summary": "Yakuniy xulosalar", "thanks": "E’tiboringiz uchun rahmat!", "slide": "S L A Y D", "continued": "Davomi", "image_label": "RASM UCHUN JOY", "empty_title": "Qo‘shimcha tahlil", "empty_body": "Bu bo‘lim mavzuning muhim jihatlarini umumlashtiradi."},
+    "ru": {"overview": "ПРЕЗЕНТАЦИЯ", "overview_tag": "ПЛАН · ОСНОВНЫЕ РАЗДЕЛЫ", "overview_title": "Содержание презентации", "overview_list_heading": "ОСНОВНЫЕ РАЗДЕЛЫ ТЕМЫ", "section": "РАЗДЕЛ", "presentation": "презентация", "key_points": "Ключевые идеи", "details": "Важные аспекты", "part": "РАЗДЕЛ", "prepared": "Подготовил(а)", "summary": "Итоговые выводы", "thanks": "Спасибо за внимание!", "slide": "С Л А Й Д", "continued": "Продолжение", "image_label": "МЕСТО ДЛЯ ИЗОБРАЖЕНИЯ", "empty_title": "Дополнительный анализ", "empty_body": "В этом разделе обобщены важные аспекты темы."},
+    "en": {"overview": "PRESENTATION", "overview_tag": "AGENDA · MAIN SECTIONS", "overview_title": "Presentation overview", "overview_list_heading": "MAIN TOPIC SECTIONS", "section": "SECTION", "presentation": "presentation", "key_points": "Key ideas", "details": "Important details", "part": "SECTION", "prepared": "Prepared by", "summary": "Key takeaways", "thanks": "Thank you for your attention!", "slide": "S L I D E", "continued": "Continued", "image_label": "IMAGE AREA", "empty_title": "Further analysis", "empty_body": "This section summarizes important aspects of the topic."},
+    "tr": {"overview": "SUNUM", "overview_tag": "PLAN · ANA BÖLÜMLER", "overview_title": "Sunum içeriği", "overview_list_heading": "KONUNUN ANA BÖLÜMLERİ", "section": "BÖLÜM", "presentation": "sunumu", "key_points": "Temel fikirler", "details": "Önemli noktalar", "part": "BÖLÜM", "prepared": "Hazırlayan", "summary": "Genel sonuçlar", "thanks": "Dinlediğiniz için teşekkürler!", "slide": "S L A Y T", "continued": "Devamı", "image_label": "GÖRSEL ALANI", "empty_title": "Ek analiz", "empty_body": "Bu bölüm konunun önemli yönlerini özetler."},
+    "de": {"overview": "PRÄSENTATION", "overview_tag": "AGENDA · HAUPTABSCHNITTE", "overview_title": "Präsentationsübersicht", "overview_list_heading": "ZENTRALE THEMENABSCHNITTE", "section": "ABSCHNITT", "presentation": "Präsentation", "key_points": "Kernaussagen", "details": "Wichtige Aspekte", "part": "ABSCHNITT", "prepared": "Erstellt von", "summary": "Wichtigste Erkenntnisse", "thanks": "Vielen Dank für Ihre Aufmerksamkeit!", "slide": "F O L I E", "continued": "Fortsetzung", "image_label": "BILD BEREICH", "empty_title": "Weitere Analyse", "empty_body": "Dieser Abschnitt fasst wichtige Aspekte des Themas zusammen."},
+    "fr": {"overview": "PRÉSENTATION", "overview_tag": "PLAN · SECTIONS PRINCIPALES", "overview_title": "Sommaire de la présentation", "overview_list_heading": "SECTIONS PRINCIPALES DU SUJET", "section": "SECTION", "presentation": "présentation", "key_points": "Idées clés", "details": "Points importants", "part": "SECTION", "prepared": "Préparé par", "summary": "Conclusions essentielles", "thanks": "Merci de votre attention !", "slide": "D I A P O", "continued": "Suite", "image_label": "ZONE IMAGE", "empty_title": "Analyse complémentaire", "empty_body": "Cette section résume les aspects importants du sujet."},
 }
 
 
@@ -194,16 +193,28 @@ def _safe_text_list(content):
     return values
 
 
-def _footer(slide, th, index, total, topic, subject, lang, dark=False):
-    color = (221, 227, 238) if dark else th["secondary"]
+def _footer(slide, th, index, total, topic, subject, lang, dark=False, x=0.72, y=7.11,
+            width=10.3, page_x=11.45, page_dark=None):
     labels = UI[lang]
+    if dark:
+        color = (221, 227, 238)
+    elif sum(th["text"]) > 600:
+        # Amber theme carries light body text because most of its pages are dark;
+        # on its white pages the footer needs a readable grey instead.
+        color = (110, 110, 110)
+    else:
+        color = th["secondary"]
+    page_color = (221, 227, 238) if (page_dark if page_dark is not None else dark) else color
     short_topic = str(topic or "").strip()
     if len(short_topic) > 45:
         short_topic = short_topic[:42].rstrip() + "…"
     footer_text = f"{short_topic} · {subject} {labels['presentation']}"
-    _text(slide, 0.72, 7.11, 10.3, 0.22, footer_text, size=8, color=color, margin=0)
-    _text(slide, 11.45, 7.09, 1.1, 0.25, f"{index:02d} / {total:02d}", size=9,
-          color=color, align=PP_ALIGN.RIGHT, margin=0)
+    topic_box = _text(slide, x, y, width, 0.22, footer_text, size=8, color=color, margin=0)
+    page_box = _text(slide, page_x, y - 0.02, 1.1, 0.25, f"{index:02d} / {total:02d}", size=9,
+                      color=page_color, align=PP_ALIGN.RIGHT, margin=0)
+    # Marked so the mirrored repeat of a layout keeps the footer on its side.
+    topic_box.name = "footer-topic"
+    page_box.name = "footer-page"
 
 
 def _darken_cover_image(path):
@@ -219,32 +230,31 @@ def _darken_cover_image(path):
 
 
 def _fallback_visual_bytes(topic, lang, theme):
-    """Create an embedded topic visual when external image search/download fails."""
-    from PIL import Image, ImageDraw, ImageFont
-    canvas = Image.new("RGB", (1600, 900), tuple(theme.get("cover", (20, 32, 50))))
-    draw = ImageDraw.Draw(canvas)
+    """Abstract, theme-colored artwork used only when no real photo is available.
+
+    No text is drawn: the picture is cropped differently by every template, so a
+    geometric composition stays readable in any frame while the actual wording is
+    always PowerPoint text on top of it.
+    """
+    from PIL import Image, ImageDraw
+    width, height = 1600, 900
+    cover = tuple(theme.get("cover", (20, 32, 50)))
     accent = tuple(theme.get("accent", (201, 162, 39)))
-    secondary = tuple(theme.get("secondary", (123, 126, 130)))
-    draw.ellipse((1050, -220, 1770, 500), outline=accent, width=14)
-    draw.ellipse((1130, -140, 1650, 380), outline=secondary, width=6)
-    draw.rounded_rectangle((70, 70, 1530, 830), radius=40, outline=accent, width=5)
-    try:
-        font_path = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
-        title_font = ImageFont.truetype(font_path, 68)
-        label_font = ImageFont.truetype(font_path, 28)
-    except Exception:
-        title_font = label_font = ImageFont.load_default()
-    title = str(topic or UI.get(lang, UI["en"]).get("presentation", "Presentation")).strip()
-    lines = textwrap.wrap(title, width=28)[:4] or ["Presentation"]
-    y = 260 if len(lines) <= 2 else 190
-    for line in lines:
-        draw.text((130, y), line, font=title_font, fill=(255, 255, 255), stroke_width=1, stroke_fill=tuple(theme.get("cover", (20, 32, 50))))
-        y += 90
-    label = {
-        "uz": "MAVZUGA OID VIZUAL", "ru": "ВИЗУАЛИЗАЦИЯ ТЕМЫ", "en": "TOPIC VISUAL",
-        "tr": "KONU GÖRSELİ", "de": "THEMENVISUALISIERUNG", "fr": "VISUEL DU SUJET",
-    }.get(str(lang).lower(), "TOPIC VISUAL")
-    draw.text((130, 700), label, font=label_font, fill=accent)
+    soft = tuple(theme.get("soft", (240, 232, 220)))
+    panel = tuple(theme.get("panel", (255, 255, 255)))
+
+    canvas = Image.new("RGB", (width, height), cover)
+    overlay = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(overlay)
+    draw.ellipse((780, -320, 1820, 720), fill=accent + (70,))
+    draw.ellipse((1030, -180, 1720, 510), outline=accent + (235,), width=12)
+    draw.ellipse((1130, -80, 1600, 390), outline=panel + (110,), width=5)
+    draw.polygon([(0, 900), (0, 640), (620, 900)], fill=soft + (38,))
+    draw.rounded_rectangle((90, 96, 700, 804), radius=34, outline=accent + (150,), width=4)
+    for i in range(4):
+        cx, cy = 1150 + i * 96, 660 - i * 34
+        draw.ellipse((cx, cy, cx + 22, cy + 22), fill=accent + (220,))
+    canvas = Image.alpha_composite(canvas.convert("RGBA"), overlay).convert("RGB")
     out = io.BytesIO()
     canvas.save(out, format="JPEG", quality=90, optimize=True)
     return out.getvalue()
@@ -281,196 +291,962 @@ def _add_image_source(slide, source, x, y, width, height):
         return slide.shapes.add_picture(stream, Inches(x), Inches(y), width=Inches(width), height=Inches(height))
     return slide.shapes.add_picture(source, Inches(x), Inches(y), width=Inches(width), height=Inches(height))
 
-def _cover(prs, theme, lang, topic, subject, author, total, images=None, description=""):
+# ===========================================================================
+#  SHABLONLASHTIRILGAN SLAYDLAR
+#  Har bir dizayn (modern/neon/amber/pop/nature/elegant) o'z muqovasi, reja
+#  slaydi, 5 xil kontent joylashuvi va yakuniy slaydiga ega. Ya'ni shablon
+#  tanlanganda faqat rang emas, rasm va matn joylashuvi ham o'zgaradi.
+# ===========================================================================
+_IMG_CACHE: dict[Any, bytes] = {}
+
+
+def _crop_stream(source, w_in, h_in, circle=False):
+    """Cover-crop an image to the target box so photos are never stretched."""
+    key = (source if isinstance(source, str) else hash(bytes(source)), round(w_in, 2), round(h_in, 2), circle)
+    cached = _IMG_CACHE.get(key)
+    if cached:
+        return io.BytesIO(cached)
+    from PIL import Image, ImageDraw, ImageOps
+    if isinstance(source, (bytes, bytearray)):
+        image = Image.open(io.BytesIO(bytes(source)))
+    else:
+        image = Image.open(source)
+    px_w = max(320, int(w_in * 150))
+    px_h = max(180, int(h_in * 150))
+    image = image.convert("RGBA" if circle else "RGB")
+    image = ImageOps.fit(image, (px_w, px_h), method=Image.Resampling.LANCZOS, centering=(0.5, 0.4))
+    out = io.BytesIO()
+    if circle:
+        mask = Image.new("L", (px_w, px_h), 0)
+        ImageDraw.Draw(mask).ellipse((0, 0, px_w, px_h), fill=255)
+        image.putalpha(mask)
+        image.save(out, format="PNG", optimize=True)
+    else:
+        image.save(out, format="JPEG", quality=86, optimize=True)
+    data = out.getvalue()
+    if len(_IMG_CACHE) > 60:
+        _IMG_CACHE.clear()
+    _IMG_CACHE[key] = data
+    return io.BytesIO(data)
+
+
+def _photo(slide, th, lang, x, y, w, h, source=None, circle=False, rounded=False, frame=None,
+           label=True):
+    """Place a photo cropped to the box; otherwise draw the localized image slot."""
+    pic = None
+    if source and _valid_image_source(source):
+        try:
+            pic = slide.shapes.add_picture(_crop_stream(source, w, h, circle=circle),
+                                           Inches(x), Inches(y), Inches(w), Inches(h))
+        except Exception as exc:
+            print(f"[pptx] image skipped: {exc}", flush=True)
+    if pic is None:
+        kind = MSO_SHAPE.OVAL if circle else (MSO_SHAPE.ROUNDED_RECTANGLE if rounded else MSO_SHAPE.RECTANGLE)
+        _shape(slide, x, y, w, h, th.get("soft", th["panel"]), kind=kind)
+        if label and w >= 1.15:
+            _text(slide, x + 0.1, y + h / 2 - 0.16, max(0.6, w - 0.2), 0.32, UI[lang]["image_label"],
+                  size=9, color=th.get("secondary", th["text"]), bold=True,
+                  align=PP_ALIGN.CENTER, margin=0)
+    if frame:
+        kind = MSO_SHAPE.OVAL if circle else (MSO_SHAPE.ROUNDED_RECTANGLE if rounded else MSO_SHAPE.RECTANGLE)
+        _outline(slide, kind, x, y, w, h, frame, 1.6)
+    return pic
+
+
+def _entry(item, lang):
+    title = str((item or {}).get("title") or UI[lang]["empty_title"]).strip()
+    content = _safe_text_list((item or {}).get("content")) or [UI[lang]["empty_body"]]
+    return title, content
+
+
+def _head(slide, th, lang, item, index, subject, color, rule, x=0.78, y=0.46,
+          w=11.8, big=30, eyebrow=None):
+    title, content = _entry(item, lang)
+    _text(slide, x, y, w, 0.26, f"{UI[lang]['section']} {max(1, index - 2):02d} · {subject.upper()}",
+          size=9, color=eyebrow or rule, bold=True, margin=0)
+    tsize = big if len(title) < 42 else max(18, int(big * 0.8)) if len(title) < 72 else max(16, int(big * 0.64))
+    _text(slide, x, y + 0.34, w, 0.95, title, size=tsize, color=color, bold=True,
+          font="Aptos Display", margin=0)
+    _shape(slide, x, y + 1.34, 0.9, 0.045, rule)
+    return title, content
+
+
+def _points(content, marker="•", limit=5):
+    return "\n\n".join(f"{marker} {v}" for v in content[:limit])
+
+
+# ============================== MUQOVALAR ==============================
+def _cover_modern(slide, th, lang, topic, subject, author, total, image, description):
     labels = UI[lang]
-    slide = prs.slides.add_slide(prs.slide_layouts[6])
-    cover_image = next((source for source in (images or []) if _valid_image_source(source)), None)
-    try:
-        if isinstance(cover_image, str):
-            source = _darken_cover_image(cover_image)
-        elif isinstance(cover_image, (bytes, bytearray)):
-            source = io.BytesIO(bytes(cover_image))
-        else:
-            source = io.BytesIO(_fallback_visual_bytes(topic, lang, theme))
-        source.seek(0)
-        slide.shapes.add_picture(source, Inches(0), Inches(0), width=Inches(13.333), height=Inches(7.5))
-    except Exception as exc:
-        # Even if an image library fails, keep a designed background rather than a blank slide.
-        print(f"[pptx] Cover image unavailable; using vector background: {exc}", flush=True)
-        _set_bg(slide, theme["cover"])
-    # A narrow color rail and bold title match the sample files' cover style.
-    _shape(slide, 0.0, 0.0, 0.10, 7.5, theme["accent"])
-    eyebrow = f"{subject.upper()} · {str(topic).upper()}"
-    _text(slide, 0.88, 1.35, 11.5, 0.42, eyebrow[:100], size=12, color=theme["accent"], bold=True, margin=0)
-    title_size = 39 if len(str(topic)) < 42 else 32 if len(str(topic)) < 70 else 25
-    _text(slide, 0.86, 2.05, 11.7, 1.6, topic, size=title_size, color=(255, 255, 255), bold=True, font="Aptos Display", margin=0)
-    _shape(slide, 0.88, 4.03, 1.75, 0.055, theme["accent"])
-    description = str(description or labels["empty_body"]).strip()
-    if len(description) > 180:
-        description = description[:177].rstrip() + "…"
-    _text(slide, 0.88, 4.38, 10.8, 0.95, description, size=16, color=(241, 241, 241), margin=0)
+    _set_bg(slide, (255, 252, 247))
+    _shape(slide, 7.05, 0.55, 6.3, 6.6, th["cover"])
+    _photo(slide, th, lang, 7.3, 0.8, 5.8, 6.1, image)
+    _shape(slide, 0.72, 0.72, 0.55, 0.045, th["accent"])
+    _text(slide, 1.42, 0.6, 5.2, 0.28, subject.upper(), size=10, color=th["accent"], bold=True, margin=0)
+    title_size = 40 if len(topic) < 34 else 33 if len(topic) < 58 else 26
+    _text(slide, 0.72, 1.5, 6.1, 2.5, topic, size=title_size, color=th["primary"], bold=True,
+          font="Georgia", margin=0)
+    _shape(slide, 0.72, 4.22, 1.55, 0.05, th["accent"])
+    _text(slide, 0.72, 4.5, 5.85, 1.0, (description or labels["empty_body"])[:200],
+          size=14, color=th["text"], margin=0)
+    _shape(slide, 0.72, 5.72, 2.5, 0.46, th["accent"], kind=MSO_SHAPE.ROUNDED_RECTANGLE)
+    _text(slide, 0.72, 5.82, 2.5, 0.28, labels["presentation"].upper(), size=10, color=(255, 255, 255),
+          bold=True, align=PP_ALIGN.CENTER, margin=0)
     if author:
-        _text(slide, 0.88, 5.82, 10.8, 0.35, f"{labels['prepared']}: {author}", size=11, color=(228, 228, 228), margin=0)
-    _text(slide, 0.88, 6.60, 10.8, 0.28, f"{subject} · {labels['presentation']}", size=9, color=(215, 215, 215), margin=0)
-    _cover_motif(slide, theme, theme.get("decorate", "arc"))
-    _footer(slide, theme, 1, total, topic, subject, lang, dark=True)
-    return slide
+        _text(slide, 0.72, 6.44, 5.9, 0.3, f"{labels['prepared']}: {author}", size=11,
+              color=th["secondary"], margin=0)
+    _outline(slide, MSO_SHAPE.OVAL, 6.35, 5.95, 0.6, 0.6, th["accent"], 2)
+    _outline(slide, MSO_SHAPE.OVAL, 6.14, 6.2, 0.32, 0.32, th["accent"], 1.5)
 
 
-def _overview_slide(prs, theme, lang, topic, subject, entries, total):
+def _cover_neon(slide, th, lang, topic, subject, author, total, image, description):
     labels = UI[lang]
-    slide = prs.slides.add_slide(prs.slide_layouts[6])
-    _set_bg(slide, theme["bg"])
-    _shape(slide, 0.0, 0.0, 13.333, 0.075, theme["accent"])
-    _text(slide, 0.82, 0.52, 11.7, 0.30, labels["overview_tag"], size=10, color=theme["primary"], bold=True, margin=0)
-    _text(slide, 0.82, 0.97, 11.7, 0.74, labels["overview_title"], size=30, color=theme["primary"], bold=True, font="Aptos Display", margin=0)
-    _shape(slide, 0.82, 1.77, 0.92, 0.045, theme["accent"])
+    _set_bg(slide, th["cover"])
+    band = _shape(slide, 8.55, -2.4, 7.4, 12.6, th["accent"])
+    band.rotation = -21
+    glow = _shape(slide, 10.9, -2.8, 3.1, 12.8, (198, 56, 214))
+    glow.rotation = -21
+    _photo(slide, th, lang, 7.55, 1.05, 4.6, 5.45, image, rounded=True, frame=th["accent"])
+    _outline(slide, MSO_SHAPE.OVAL, 12.2, 5.95, 1.0, 1.0, th["accent"], 2)
+    _outline(slide, MSO_SHAPE.OVAL, 6.4, 6.45, 0.55, 0.55, th["accent"], 1.8)
+    _text(slide, 0.88, 0.9, 6.3, 0.3, f"{subject.upper()} · {labels['overview']}", size=10,
+          color=th["accent"], bold=True, margin=0)
+    title_size = 42 if len(topic) < 32 else 34 if len(topic) < 58 else 27
+    _text(slide, 0.86, 1.55, 6.5, 2.6, topic, size=title_size, color=(255, 255, 255), bold=True,
+          font="Aptos Display", margin=0)
+    _text(slide, 0.88, 4.42, 6.0, 0.95, (description or labels["empty_body"])[:170], size=13,
+          color=th["secondary"], margin=0)
+    _shape(slide, 0.88, 5.52, 2.35, 0.5, th["accent"], kind=MSO_SHAPE.ROUNDED_RECTANGLE)
+    _text(slide, 0.88, 5.64, 2.35, 0.28, labels["overview"], size=10, color=th["cover"],
+          bold=True, align=PP_ALIGN.CENTER, margin=0)
+    if author:
+        _text(slide, 0.88, 6.35, 5.9, 0.3, f"{labels['prepared']}: {author}", size=11,
+              color=th["secondary"], margin=0)
 
-    # Select up to six representative section titles, spread across larger decks.
+
+def _cover_amber(slide, th, lang, topic, subject, author, total, image, description):
+    labels = UI[lang]
+    _set_bg(slide, th["cover"])
+    corner = _shape(slide, 11.15, -3.3, 4.6, 4.6, th["accent"])
+    corner.rotation = 45
+    _photo(slide, th, lang, 7.85, 1.5, 4.3, 4.3, image)
+    _outline(slide, MSO_SHAPE.HEXAGON, 7.68, 1.33, 4.65, 4.65, th["accent"], 4)
+    _shape(slide, 0.88, 0.92, 0.9, 0.09, th["accent"])
+    _text(slide, 0.88, 1.12, 6.4, 0.28, f"{subject.upper()} // {labels['overview']}", size=10,
+          color=th["accent"], bold=True, margin=0)
+    title_size = 41 if len(topic) < 32 else 33 if len(topic) < 58 else 26
+    _text(slide, 0.88, 1.62, 6.4, 2.7, topic, size=title_size, color=(255, 255, 255), bold=True,
+          font="Aptos Display", margin=0)
+    _text(slide, 0.88, 4.55, 6.0, 0.95, (description or labels["empty_body"])[:175], size=13,
+          color=th["text"], margin=0)
+    _shape(slide, 0.88, 5.62, 2.4, 0.5, th["accent"], kind=MSO_SHAPE.ROUNDED_RECTANGLE)
+    _text(slide, 0.88, 5.74, 2.4, 0.28, labels["overview"], size=10, color=th["cover"],
+          bold=True, align=PP_ALIGN.CENTER, margin=0)
+    if author:
+        _text(slide, 0.88, 6.4, 5.9, 0.3, f"{labels['prepared']}: {author}", size=11,
+              color=th["secondary"], margin=0)
+    _shape(slide, 12.4, 1.6, 0.45, 0.45, th["accent"])
+
+
+def _cover_pop(slide, th, lang, topic, subject, author, total, image, description):
+    labels = UI[lang]
+    _set_bg(slide, (250, 250, 246))
+    _shape(slide, 9.55, 0.0, 3.78, 3.05, th["accent"])
+    _shape(slide, 8.55, 3.25, 2.6, 2.1, (247, 183, 51))
+    _shape(slide, 11.55, 4.05, 1.78, 1.78, th["soft"], kind=MSO_SHAPE.OVAL)
+    _shape(slide, 12.05, 0.55, 1.1, 1.1, (26, 26, 26))
+    _photo(slide, th, lang, 9.95, 3.85, 2.55, 2.55, image, circle=True)
+    _shape(slide, 0.78, 1.05, 0.9, 0.12, th["accent"])
+    _text(slide, 0.78, 1.32, 6.6, 0.28, f"{subject.upper()} · {labels['overview']}", size=10,
+          color=th["accent"], bold=True, margin=0)
+    title_size = 46 if len(topic) < 30 else 37 if len(topic) < 54 else 29
+    _text(slide, 0.76, 1.95, 7.55, 2.6, topic, size=title_size, color=(26, 26, 26), bold=True,
+          font="Aptos Display", margin=0)
+    _shape(slide, 0.78, 4.35, 1.7, 0.16, th["accent"])
+    _text(slide, 0.78, 4.72, 6.6, 1.0, (description or labels["empty_body"])[:180], size=14,
+          color=th["text"], margin=0)
+    if author:
+        _text(slide, 0.78, 6.25, 6.6, 0.3, f"{labels['prepared']}: {author}", size=11,
+              color=th["secondary"], margin=0)
+    _shape(slide, 0.78, 5.95, 2.3, 0.5, (26, 26, 26), kind=MSO_SHAPE.ROUNDED_RECTANGLE)
+    _text(slide, 0.78, 6.07, 2.3, 0.28, labels["overview"], size=10, color=(255, 255, 255),
+          bold=True, align=PP_ALIGN.CENTER, margin=0)
+
+
+def _cover_nature(slide, th, lang, topic, subject, author, total, image, description):
+    labels = UI[lang]
+    _set_bg(slide, (250, 248, 243))
+    _outline(slide, MSO_SHAPE.OVAL, 8.05, 0.35, 4.9, 4.9, th["primary"], 3)
+    _photo(slide, th, lang, 8.75, 1.05, 3.9, 3.9, image, circle=True, frame=th["accent"])
+    _outline(slide, MSO_SHAPE.OVAL, 11.9, 4.75, 1.05, 1.05, th["accent"], 2.5)
+    _shape(slide, 0.8, 0.95, 1.1, 0.06, th["primary"])
+    _text(slide, 0.8, 1.15, 6.4, 0.28, f"{subject.upper()} · {labels['overview']}", size=10,
+          color=th["primary"], bold=True, margin=0)
+    title_size = 41 if len(topic) < 32 else 33 if len(topic) < 58 else 26
+    _text(slide, 0.8, 1.7, 6.6, 2.6, topic, size=title_size, color=th["primary"], bold=True,
+          font="Georgia", margin=0)
+    _text(slide, 0.8, 4.55, 6.2, 1.0, (description or labels["empty_body"])[:185], size=14,
+          color=th["text"], margin=0)
+    _shape(slide, 0.8, 5.68, 2.45, 0.5, th["primary"], kind=MSO_SHAPE.ROUNDED_RECTANGLE)
+    _text(slide, 0.8, 5.8, 2.45, 0.28, labels["overview"], size=10, color=(255, 255, 255),
+          bold=True, align=PP_ALIGN.CENTER, margin=0)
+    if author:
+        _text(slide, 0.8, 6.42, 6.0, 0.3, f"{labels['prepared']}: {author}", size=11,
+              color=th["secondary"], margin=0)
+    for i in range(3):
+        _shape(slide, 12.05 + i * 0.34, 6.28 - i * 0.16, 0.16, 0.16, th["primary"], kind=MSO_SHAPE.OVAL)
+
+
+def _cover_elegant(slide, th, lang, topic, subject, author, total, image, description):
+    labels = UI[lang]
+    _set_bg(slide, (249, 246, 242))
+    _outline(slide, MSO_SHAPE.RECTANGLE, 0.5, 0.46, 12.33, 6.58, th["accent"], 1.2)
+    _shape(slide, 8.15, 1.5, 4.35, 4.35, th["soft"])
+    _photo(slide, th, lang, 7.95, 1.3, 4.35, 4.35, image, frame=th["accent"])
+    _text(slide, 0.95, 1.35, 6.6, 0.26, subject.upper(), size=9, color=th["accent"], bold=True, margin=0)
+    title_size = 42 if len(topic) < 32 else 34 if len(topic) < 58 else 27
+    _text(slide, 0.95, 1.78, 6.55, 2.6, topic, size=title_size, color=th["primary"], bold=True,
+          font="Georgia", margin=0)
+    _shape(slide, 0.97, 4.42, 1.35, 0.04, th["accent"])
+    _text(slide, 0.95, 4.68, 6.35, 1.0, (description or labels["empty_body"])[:190], size=13,
+          color=th["text"], margin=0)
+    if author:
+        _text(slide, 0.95, 6.15, 6.4, 0.3, f"{labels['prepared']}: {author}", size=10,
+              color=th["secondary"], margin=0)
+    _text(slide, 0.95, 6.55, 6.4, 0.28, labels["presentation"], size=9, color=th["secondary"],
+          margin=0, italic=True)
+
+
+# ================================ REJA ================================
+def _agenda_modern(slide, th, lang, topic, subject, entries, total):
+    labels = UI[lang]
+    _set_bg(slide, (255, 252, 247))
+    _text(slide, 0.8, 0.85, 4.3, 0.28, labels["overview_tag"], size=10, color=th["accent"], bold=True, margin=0)
+    _text(slide, 0.78, 1.22, 4.15, 1.75, labels["overview_title"], size=30, color=th["primary"],
+          bold=True, font="Georgia", margin=0)
+    _shape(slide, 0.8, 3.05, 1.45, 0.05, th["accent"])
+    _outline(slide, MSO_SHAPE.OVAL, 0.9, 4.7, 1.35, 1.35, th["accent"], 2)
+    _outline(slide, MSO_SHAPE.OVAL, 2.15, 5.6, 0.62, 0.62, th["accent"], 1.5)
+    _text(slide, 0.8, 6.4, 3.9, 0.3, f"{len(entries) + 3:02d} · {labels['slide']}", size=9,
+          color=th["secondary"], margin=0)
+    _shape(slide, 5.15, 1.1, 7.5, 5.6, th["panel"], line_color=th["line"])
+    _shape(slide, 5.15, 1.1, 0.16, 5.6, th["accent"])
+    _text(slide, 5.6, 1.35, 6.7, 0.3, labels["overview_list_heading"], size=11, color=th["primary"], bold=True, margin=0)
+    agenda = _agenda_entries(entries)
+    for i, (title, _) in enumerate(agenda):
+        y = 1.95 + i * 0.75
+        _text(slide, 5.6, y, 0.5, 0.34, f"{i + 1}", size=17, color=th["accent"], bold=True, margin=0)
+        _text(slide, 6.2, y, 6.0, 0.34, title, size=13, color=th["text"], margin=0)
+        _shape(slide, 5.6, y + 0.45, 6.6, 0.012, th["line"])
+
+
+def _agenda_neon(slide, th, lang, topic, subject, entries, total):
+    labels = UI[lang]
+    _set_bg(slide, th["cover"])
+    _shape(slide, 0.0, 0.0, 13.333, 0.09, th["accent"])
+    _text(slide, 0.85, 0.72, 11.7, 0.3, labels["overview_tag"], size=10, color=th["accent"], bold=True, margin=0)
+    _text(slide, 0.82, 1.05, 11.7, 0.8, labels["overview_title"], size=30, color=(255, 255, 255),
+          bold=True, font="Aptos Display", margin=0)
+    agenda = _agenda_entries(entries)[:6]
+    n = max(1, len(agenda))
+    gap = 0.35
+    w = (11.75 - gap * (n - 1)) / n
+    for i, (title, _) in enumerate(agenda):
+        x = 0.8 + i * (w + gap)
+        _shape(slide, x, 2.35, w, 3.85, th["panel"], kind=MSO_SHAPE.ROUNDED_RECTANGLE, line_color=th["line"])
+        _shape(slide, x, 2.35, w, 0.1, th["accent"])
+        _text(slide, x + 0.25, 2.65, 0.9, 0.5, f"{i + 1:02d}", size=22, color=th["accent"], bold=True, margin=0)
+        _text(slide, x + 0.25, 3.35, w - 0.5, 2.6, title, size=13, color=(240, 243, 255), bold=True, margin=0)
+    _text(slide, 0.85, 6.6, 11.5, 0.3, f"{subject} · {labels['presentation']}", size=9, color=th["secondary"], margin=0)
+
+
+def _agenda_amber(slide, th, lang, topic, subject, entries, total):
+    labels = UI[lang]
+    _set_bg(slide, (250, 250, 250))
+    _shape(slide, 0.0, 0.0, 13.333, 1.35, th["cover"])
+    _text(slide, 0.85, 0.72, 9.0, 0.4, labels["overview_title"], size=26, color=(255, 255, 255),
+          bold=True, font="Aptos Display", margin=0)
+    _text(slide, 10.2, 0.8, 2.4, 0.3, f"{subject.upper()}", size=9, color=th["accent"], bold=True,
+          align=PP_ALIGN.RIGHT, margin=0)
+    agenda = _agenda_entries(entries)[:6]
+    for i, (title, _) in enumerate(agenda):
+        y = 1.75 + i * 0.82
+        _shape(slide, 0.9, y, 0.62, 0.62, th["accent"], kind=MSO_SHAPE.HEXAGON)
+        _text(slide, 0.9, y + 0.16, 0.62, 0.3, f"{i + 1}", size=13, color=th["cover"], bold=True,
+              align=PP_ALIGN.CENTER, margin=0)
+        _shape(slide, 1.75, y - 0.02, 10.6, 0.66, (255, 255, 255), line_color=(226, 226, 226))
+        _text(slide, 2.0, y + 0.12, 10.1, 0.4, title, size=14, color=(34, 34, 34), margin=0)
+    _shape(slide, 12.45, 1.62, 0.42, 0.42, th["accent"])
+
+
+def _agenda_pop(slide, th, lang, topic, subject, entries, total):
+    labels = UI[lang]
+    _set_bg(slide, (250, 250, 246))
+    _shape(slide, 0.0, 0.0, 0.42, 7.5, th["accent"])
+    _shape(slide, 10.9, 1.0, 2.44, 2.44, (247, 183, 51))
+    _shape(slide, 12.0, 5.55, 0.95, 0.95, th["soft"], kind=MSO_SHAPE.OVAL)
+    _text(slide, 0.9, 0.8, 5.7, 1.4, labels["overview_title"], size=32, color=(26, 26, 26),
+          bold=True, font="Aptos Display", margin=0)
+    _shape(slide, 0.92, 2.25, 1.5, 0.14, th["accent"])
+    agenda = _agenda_entries(entries)[:6]
+    for i, (title, _) in enumerate(agenda):
+        y = 2.62 + i * 0.66
+        _shape(slide, 0.9, y, 0.34, 0.34, [(230, 51, 35), (247, 183, 51), (26, 26, 26), (255, 178, 196), (230, 51, 35), (247, 183, 51)][i % 6])
+        _text(slide, 1.45, y - 0.02, 8.9, 0.4, title, size=14, color=(26, 26, 26), bold=i % 2 == 0, margin=0)
+
+
+def _agenda_nature(slide, th, lang, topic, subject, entries, total):
+    labels = UI[lang]
+    _set_bg(slide, (250, 248, 243))
+    _shape(slide, 0.0, 0.0, 4.35, 7.5, th["primary"])
+    _outline(slide, MSO_SHAPE.OVAL, 1.55, 5.15, 2.1, 2.1, th["accent"], 2)
+    _text(slide, 0.75, 1.05, 3.3, 0.3, labels["overview_tag"], size=9, color=th["accent"], bold=True, margin=0)
+    _text(slide, 0.72, 1.45, 3.35, 1.7, labels["overview_title"], size=25, color=(255, 255, 255),
+          bold=True, font="Georgia", margin=0)
+    _shape(slide, 0.75, 3.35, 1.1, 0.05, th["accent"])
+    _text(slide, 0.75, 3.62, 3.2, 0.3, f"{len(entries) + 3:02d} {labels['slide']}", size=9,
+          color=(210, 228, 214), margin=0)
+    agenda = _agenda_entries(entries)[:6]
+    for i, (title, _) in enumerate(agenda):
+        y = 1.15 + i * 0.86
+        _text(slide, 4.95, y, 0.55, 0.36, f"{i + 1:02d}", size=15, color=th["accent"], bold=True, margin=0)
+        _text(slide, 5.6, y, 7.0, 0.36, title, size=14, color=th["text"], margin=0)
+        if i < len(agenda) - 1:
+            _shape(slide, 4.95, y + 0.62, 7.4, 0.015, th["line"])
+
+
+def _agenda_elegant(slide, th, lang, topic, subject, entries, total):
+    labels = UI[lang]
+    _set_bg(slide, (249, 246, 242))
+    _shape(slide, 12.0, 0.0, 1.333, 7.5, th["soft"])
+    _text(slide, 0.85, 1.1, 7.0, 0.28, labels["overview_tag"], size=9, color=th["accent"], bold=True, margin=0)
+    _text(slide, 0.82, 1.5, 7.4, 1.1, labels["overview_title"], size=30, color=th["primary"],
+          bold=True, font="Georgia", margin=0)
+    _shape(slide, 0.85, 2.72, 11.1, 0.02, th["line"])
+    agenda = _agenda_entries(entries)[:6]
+    for i, (title, _) in enumerate(agenda):
+        y = 3.05 + i * 0.64
+        _text(slide, 0.85, y, 0.6, 0.3, f"{i + 1:02d}", size=11, color=th["accent"], bold=True, margin=0)
+        _text(slide, 1.6, y - 0.04, 8.4, 0.36, title, size=14, color=th["text"], margin=0)
+        _shape(slide, 1.6, y + 0.33, 10.35, 0.012, th["line"])
+
+
+def _agenda_entries(entries):
     valid = [e for e in entries if isinstance(e, dict) and str(e.get("title", "")).strip()]
     if len(valid) > 6:
         idxs = [round(i * (len(valid) - 1) / 5) for i in range(6)]
-        agenda = [valid[i] for i in idxs]
-    else:
-        agenda = valid
-    _shape(slide, 0.82, 2.23, 11.68, 3.88, theme["panel"], kind=MSO_SHAPE.ROUNDED_RECTANGLE, line_color=theme["line"])
-    _shape(slide, 0.82, 2.23, 11.68, 0.72, theme["header"], kind=MSO_SHAPE.ROUNDED_RECTANGLE)
-    _text(slide, 1.12, 2.42, 10.95, 0.32, labels["overview_list_heading"], size=13, color=(255, 255, 255), bold=True, margin=0)
-    for i, item in enumerate(agenda):
-        y = 3.18 + i * 0.45
-        _text(slide, 1.15, y, 0.42, 0.31, f"{i + 1}.", size=13, color=theme["accent"], bold=True, margin=0)
-        heading = str(item.get("title", "")).strip()
-        if len(heading) > 100:
-            heading = heading[:97].rstrip() + "…"
-        _text(slide, 1.62, y, 10.35, 0.32, heading, size=13, color=theme["text"], margin=0)
-    _footer(slide, theme, 2, total, topic, subject, lang)
+        valid = [valid[i] for i in idxs]
+    rows = []
+    for item in valid:
+        title = str(item.get("title", "")).strip()
+        rows.append((title if len(title) <= 90 else title[:87].rstrip() + "…", item))
+    return rows
+
+
+def _overview_slide(prs, theme, lang, topic, subject, entries, total):
+    slide = prs.slides.add_slide(prs.slide_layouts[6])
+    builder = {"arc": _agenda_modern, "bubbles": _agenda_neon, "hex": _agenda_amber,
+               "shapes": _agenda_pop, "leaf": _agenda_nature, "frame": _agenda_elegant}.get(
+        theme.get("decorate"), _agenda_modern)
+    builder(slide, theme, lang, str(topic), str(subject), entries or [], total)
+    _footer(slide, theme, 2, total, topic, subject, lang,
+            dark=theme.get("decorate") == "bubbles")
     return slide
+
+
+# ============================ KONTENT SLAYDLAR ============================
+def _m_photo_right(slide, th, lang, item, index, total, image, gallery, topic, subject):
+    _set_bg(slide, (255, 252, 247))
+    _shape(slide, 0.0, 0.0, 13.333, 0.06, th["accent"])
+    title, content = _head(slide, th, lang, item, index, subject, th["primary"], th["accent"], big=28)
+    body = _points(content)
+    _text(slide, 0.8, 2.05, 6.5, 4.3, body, size=_body_size(body, base=15), color=th["text"])
+    _shape(slide, 7.55, 1.2, 5.0, 5.5, th["cover"])
+    _photo(slide, th, lang, 7.78, 1.42, 4.55, 5.05, image)
+    _shape(slide, 0.8, 6.55, 1.9, 0.34, th["accent"], kind=MSO_SHAPE.ROUNDED_RECTANGLE)
+    _text(slide, 0.8, 6.6, 1.9, 0.24, UI[lang]["details"].upper(), size=8, color=(255, 255, 255),
+          bold=True, align=PP_ALIGN.CENTER, margin=0)
+    _footer(slide, th, index, total, topic, subject, lang)
+
+
+def _m_panel_left(slide, th, lang, item, index, total, image, gallery, topic, subject):
+    title, content = _entry(item, lang)
+    _set_bg(slide, (255, 252, 247))
+    _photo(slide, th, lang, 0.0, 0.0, 6.15, 7.5, image)
+    _shape(slide, 6.05, 0.0, 7.29, 7.5, th["primary"])
+    _text(slide, 6.55, 0.85, 6.2, 0.26, f"{UI[lang]['section']} {max(1, index - 2):02d}", size=9,
+          color=th["accent"], bold=True, margin=0)
+    tsize = 30 if len(title) < 40 else 24 if len(title) < 70 else 19
+    _text(slide, 6.52, 1.25, 6.2, 1.5, title, size=tsize, color=(255, 255, 255), bold=True,
+          font="Aptos Display", margin=0)
+    _shape(slide, 6.55, 2.9, 0.9, 0.045, th["accent"])
+    body = _points(content, "—")
+    _text(slide, 6.55, 3.2, 6.2, 3.4, body, size=_body_size(body, base=14), color=(246, 239, 233))
+    _footer(slide, th, index, total, topic, subject, lang, dark=True, x=6.55, y=7.11,
+            width=5.6, page_x=11.45, page_dark=True)
+
+
+def _m_band(slide, th, lang, item, index, total, image, gallery, topic, subject):
+    _set_bg(slide, (255, 252, 247))
+    title, content = _head(slide, th, lang, item, index, subject, th["primary"], th["accent"], big=26)
+    mid = max(1, (len(content) + 1) // 2)
+    left, right = content[:mid], content[mid:] or content[:1]
+    _text(slide, 0.8, 1.98, 6.0, 2.1, _points(left), size=_body_size(_points(left), base=13), color=th["text"])
+    _text(slide, 6.95, 1.98, 5.55, 2.1, _points(right), size=_body_size(_points(right), base=13), color=th["text"])
+    _photo(slide, th, lang, 0.8, 4.28, 11.75, 2.62, image)
+    _shape(slide, 10.0, 4.28, 2.55, 0.55, th["accent"])
+    _text(slide, 10.0, 4.4, 2.55, 0.3, subject.upper()[:26], size=9, color=(255, 255, 255), bold=True,
+          align=PP_ALIGN.CENTER, margin=0)
+    _footer(slide, th, index, total, topic, subject, lang)
+
+
+def _m_feature(slide, th, lang, item, index, total, image, gallery, topic, subject):
+    _set_bg(slide, (255, 252, 247))
+    title, content = _entry(item, lang)
+    _photo(slide, th, lang, 0.8, 1.9, 6.35, 4.55, image)
+    _shape(slide, 0.8, 1.9, 0.16, 4.55, th["accent"])
+    _text(slide, 7.55, 0.7, 5.0, 0.26, f"{UI[lang]['section']} {max(1, index - 2):02d} · {subject.upper()}",
+          size=9, color=th["accent"], bold=True, margin=0)
+    _text(slide, 7.52, 1.05, 4.95, 1.2, title, size=26 if len(title) < 44 else 20,
+          color=th["primary"], bold=True, font="Aptos Display", margin=0)
+    body = _points(content[:4], "▸")
+    _text(slide, 7.55, 2.55, 4.95, 3.7, body, size=_body_size(body, base=13), color=th["text"])
+    _footer(slide, th, index, total, topic, subject, lang)
+
+
+def _m_numbered(slide, th, lang, item, index, total, image, gallery, topic, subject):
+    _set_bg(slide, (255, 252, 247))
+    title, content = _head(slide, th, lang, item, index, subject, th["primary"], th["accent"], big=28)
+    rows = content[:4]
+    for i, value in enumerate(rows):
+        y = 2.0 + i * 1.18
+        _shape(slide, 0.82, y, 10.9, 0.98, (255, 255, 255), line_color=th["line"])
+        _shape(slide, 0.82, y, 0.11, 0.98, th["accent"])
+        _text(slide, 1.15, y + 0.12, 0.7, 0.5, f"{i + 1:02d}", size=20, color=th["accent"], bold=True, margin=0)
+        _text(slide, 2.0, y + 0.1, 9.4, 0.78, value, size=_body_size(value, base=14), color=th["text"])
+    _photo(slide, th, lang, 11.95, 2.0, 0.9, 4.1, image, rounded=True, label=False)
+    _footer(slide, th, index, total, topic, subject, lang)
+
+
+def _n_glass_right(slide, th, lang, item, index, total, image, gallery, topic, subject):
+    _set_bg(slide, th["cover"])
+    _photo(slide, th, lang, 7.9, 1.15, 4.75, 5.2, image, rounded=True, frame=th["accent"])
+    _outline(slide, MSO_SHAPE.OVAL, 0.55, 5.9, 0.9, 0.9, th["accent"], 2)
+    title, content = _head(slide, th, lang, item, index, subject, (255, 255, 255), th["accent"], w=6.7, big=27)
+    body = _points(content)
+    _text(slide, 0.82, 2.05, 6.75, 4.3, body, size=_body_size(body, base=14), color=th["on_dark"])
+    _footer(slide, th, index, total, topic, subject, lang, dark=True)
+
+
+def _n_photo_left(slide, th, lang, item, index, total, image, gallery, topic, subject):
+    title, content = _entry(item, lang)
+    _set_bg(slide, th["cover"])
+    _photo(slide, th, lang, 0.0, 0.0, 5.9, 7.5, image)
+    _shape(slide, 5.8, 0.0, 7.54, 7.5, th["panel"])
+    _shape(slide, 5.8, 0.0, 0.1, 7.5, th["accent"])
+    _text(slide, 6.3, 0.95, 6.5, 0.26, f"{UI[lang]['section']} {max(1, index - 2):02d}", size=9,
+          color=th["accent"], bold=True, margin=0)
+    _text(slide, 6.28, 1.3, 6.55, 1.3, title, size=27 if len(title) < 46 else 21,
+          color=(244, 246, 255), bold=True, font="Aptos Display", margin=0)
+    _shape(slide, 6.3, 2.72, 0.9, 0.05, th["accent"])
+    body = _points(content[:4], "▪")
+    _text(slide, 6.3, 3.0, 6.5, 3.4, body, size=_body_size(body, base=13), color=th["on_dark"])
+    _footer(slide, th, index, total, topic, subject, lang, dark=True, x=6.3, y=7.11,
+            width=5.7, page_x=11.45, page_dark=True)
+
+
+def _n_full_band(slide, th, lang, item, index, total, image, gallery, topic, subject):
+    title, content = _entry(item, lang)
+    _set_bg(slide, th["cover"])
+    _photo(slide, th, lang, 0.0, 0.0, 13.333, 4.0, image)
+    _shape(slide, 0.0, 3.65, 13.333, 3.85, th["panel"])
+    _shape(slide, 0.0, 3.65, 13.333, 0.07, th["accent"])
+    _text(slide, 0.85, 3.95, 11.6, 0.26, f"{UI[lang]['section']} {max(1, index - 2):02d} · {subject.upper()}",
+          size=9, color=th["accent"], bold=True, margin=0)
+    _text(slide, 0.82, 4.28, 11.6, 0.7, title, size=25 if len(title) < 50 else 20, color=(255, 255, 255),
+          bold=True, font="Aptos Display", margin=0)
+    mid = max(1, (len(content) + 1) // 2)
+    _text(slide, 0.85, 5.1, 5.8, 1.85, _points(content[:mid], "•"), size=11, color=th["on_dark"])
+    _text(slide, 6.95, 5.1, 5.6, 1.85, _points(content[mid:] or content[:1], "•"), size=11, color=th["on_dark"])
+    _footer(slide, th, index, total, topic, subject, lang, dark=True)
+
+
+def _n_cards(slide, th, lang, item, index, total, image, gallery, topic, subject):
+    _set_bg(slide, th["cover"])
+    _outline(slide, MSO_SHAPE.OVAL, 10.6, -0.9, 3.4, 3.4, th["accent"], 2)
+    title, content = _head(slide, th, lang, item, index, subject, (255, 255, 255), th["accent"], big=26)
+    rows = content[:3]
+    n = max(1, len(rows))
+    gap = 0.3
+    w = (11.75 - gap * (n - 1)) / n
+    for i, value in enumerate(rows):
+        x = 0.8 + i * (w + gap)
+        _shape(slide, x, 2.2, w, 3.1, th["panel"], kind=MSO_SHAPE.ROUNDED_RECTANGLE, line_color=th["accent"])
+        _shape(slide, x + 0.28, 2.48, 0.55, 0.55, th["accent"], kind=MSO_SHAPE.OVAL)
+        _text(slide, x + 0.28, 2.6, 0.55, 0.3, f"{i + 1}", size=13, color=th["cover"], bold=True,
+              align=PP_ALIGN.CENTER, margin=0)
+        _text(slide, x + 0.28, 3.2, w - 0.56, 1.9, value, size=_body_size(value, base=12), color=th["on_dark"])
+    _footer(slide, th, index, total, topic, subject, lang, dark=True)
+
+
+def _n_orbit(slide, th, lang, item, index, total, image, gallery, topic, subject):
+    _set_bg(slide, th["cover"])
+    _outline(slide, MSO_SHAPE.OVAL, 0.75, 1.35, 4.85, 4.85, th["line"], 1.5)
+    _outline(slide, MSO_SHAPE.OVAL, 1.05, 1.65, 4.25, 4.25, th["accent"], 2.5)
+    _photo(slide, th, lang, 1.5, 2.1, 3.35, 3.35, image, circle=True)
+    title, content = _entry(item, lang)
+    _text(slide, 6.35, 0.75, 6.4, 0.26, f"{UI[lang]['section']} {max(1, index - 2):02d} · {subject.upper()}",
+          size=9, color=th["accent"], bold=True, margin=0)
+    _text(slide, 6.32, 1.1, 6.4, 1.1, title, size=26 if len(title) < 46 else 20,
+          color=(255, 255, 255), bold=True, font="Aptos Display", margin=0)
+    body = _points(content[:4], "◆")
+    _text(slide, 6.35, 2.45, 6.35, 3.9, body, size=_body_size(body, base=13), color=th["on_dark"])
+    _footer(slide, th, index, total, topic, subject, lang, dark=True)
+
+
+def _a_light_blocks(slide, th, lang, item, index, total, image, gallery, topic, subject):
+    _set_bg(slide, (250, 250, 250))
+    _shape(slide, 0.0, 0.0, 0.16, 7.5, th["accent"])
+    title, content = _head(slide, th, lang, item, index, subject, (26, 26, 26), th["accent"], big=28)
+    body = _points(content)
+    _text(slide, 0.85, 2.0, 6.6, 4.3, body, size=_body_size(body, base=14), color=(44, 44, 44))
+    _shape(slide, 8.05, 1.55, 4.4, 3.55, (28, 28, 28))
+    _photo(slide, th, lang, 7.85, 1.33, 4.4, 3.55, image)
+    _shape(slide, 12.0, 4.55, 0.58, 0.58, th["accent"])
+    _text(slide, 7.85, 5.35, 4.4, 0.5, subject.upper()[:30], size=9, color=(120, 120, 120), bold=True, margin=0)
+    _footer(slide, th, index, total, topic, subject, lang)
+
+
+def _a_hex_photo(slide, th, lang, item, index, total, image, gallery, topic, subject):
+    _set_bg(slide, th["cover"])
+    _photo(slide, th, lang, 0.95, 1.55, 4.55, 4.55, image)
+    _outline(slide, MSO_SHAPE.HEXAGON, 0.78, 1.38, 4.9, 4.9, th["accent"], 4)
+    title, content = _entry(item, lang)
+    _text(slide, 6.5, 0.8, 6.2, 0.26, f"{UI[lang]['section']} {max(1, index - 2):02d}", size=9,
+          color=th["accent"], bold=True, margin=0)
+    _text(slide, 6.47, 1.15, 6.25, 1.2, title, size=27 if len(title) < 44 else 21,
+          color=(255, 255, 255), bold=True, font="Aptos Display", margin=0)
+    _shape(slide, 6.5, 2.5, 0.9, 0.06, th["accent"])
+    body = _points(content[:4], "▪")
+    _text(slide, 6.5, 2.8, 6.2, 3.6, body, size=_body_size(body, base=13), color=th["text"])
+    _footer(slide, th, index, total, topic, subject, lang, dark=True)
+
+
+def _a_chart(slide, th, lang, item, index, total, image, gallery, topic, subject):
+    """Numbered key-point cards beside a squared photo, amber/black styling."""
+    _set_bg(slide, (250, 250, 250))
+    title, content = _head(slide, th, lang, item, index, subject, (26, 26, 26), th["accent"], big=27)
+    rows = content[:3]
+    for i, value in enumerate(rows):
+        y = 2.05 + i * 1.45
+        _shape(slide, 0.9, y, 7.35, 1.2, (255, 255, 255), line_color=(226, 226, 226))
+        _shape(slide, 0.9, y, 0.12, 1.2, th["accent"])
+        _text(slide, 1.2, y + 0.16, 0.7, 0.32, f"{i + 1:02d}", size=15, color=th["accent"], bold=True, margin=0)
+        _text(slide, 1.95, y + 0.12, 6.1, 0.95, value, size=_body_size(value, base=12), color=(44, 44, 44))
+    _photo(slide, th, lang, 8.65, 1.95, 3.85, 3.85, image)
+    _shape(slide, 8.85, 5.75, 3.45, 0.16, th["accent"])
+    _footer(slide, th, index, total, topic, subject, lang)
+
+
+def _a_duo_cards(slide, th, lang, item, index, total, image, gallery, topic, subject):
+    _set_bg(slide, th["cover"])
+    _photo(slide, th, lang, 0.0, 0.0, 13.333, 2.35, image)
+    _shape(slide, 0.0, 2.35, 13.333, 0.09, th["accent"])
+    title, content = _entry(item, lang)
+    _text(slide, 0.85, 2.62, 11.6, 0.55, title, size=24 if len(title) < 50 else 19, color=(255, 255, 255),
+          bold=True, font="Aptos Display", margin=0)
+    mid = max(1, (len(content) + 1) // 2)
+    for col, group in enumerate((content[:mid], content[mid:] or content[:1])):
+        x = 0.85 + col * 5.95
+        _shape(slide, x, 3.4, 5.6, 2.85, th["panel"], line_color=th["accent"])
+        _shape(slide, x, 3.4, 5.6, 0.1, th["accent"])
+        body = _points(group[:3], "▪")
+        _text(slide, x + 0.25, 3.66, 5.1, 2.4, body, size=_body_size(body, base=12), color=(46, 46, 46))
+    _footer(slide, th, index, total, topic, subject, lang, dark=True)
+
+
+def _a_number_rows(slide, th, lang, item, index, total, image, gallery, topic, subject):
+    _set_bg(slide, (250, 250, 250))
+    title, content = _head(slide, th, lang, item, index, subject, (26, 26, 26), th["accent"], big=27)
+    rows = content[:4]
+    for i, value in enumerate(rows):
+        y = 2.05 + i * 1.12
+        _shape(slide, 0.9, y + 0.06, 0.72, 0.72, th["accent"], kind=MSO_SHAPE.ROUNDED_RECTANGLE)
+        _text(slide, 0.9, y + 0.24, 0.72, 0.34, f"{i + 1}", size=14, color=(26, 26, 26), bold=True,
+              align=PP_ALIGN.CENTER, margin=0)
+        _text(slide, 1.9, y, 6.1, 0.8, value, size=_body_size(value, base=13), color=(44, 44, 44))
+        _shape(slide, 1.9, y + 0.86, 6.1, 0.012, (228, 228, 228))
+    _photo(slide, th, lang, 8.55, 1.85, 3.95, 3.95, image)
+    _shape(slide, 8.75, 5.55, 3.6, 0.16, th["accent"])
+    _footer(slide, th, index, total, topic, subject, lang)
+
+
+def _p_split_blocks(slide, th, lang, item, index, total, image, gallery, topic, subject):
+    _set_bg(slide, (250, 250, 246))
+    _shape(slide, 0.0, 0.0, 0.38, 7.5, th["accent"])
+    title, content = _head(slide, th, lang, item, index, subject, (26, 26, 26), th["accent"], big=30)
+    body = _points(content, "●")
+    _text(slide, 0.85, 2.0, 6.2, 4.2, body, size=_body_size(body, base=14), color=(30, 30, 30))
+    _photo(slide, th, lang, 8.15, 1.45, 4.3, 3.55, image, frame=th["accent"])
+    _shape(slide, 7.85, 3.85, 1.45, 1.45, th["soft"], kind=MSO_SHAPE.OVAL)
+    _shape(slide, 12.05, 4.95, 0.9, 0.9, (247, 183, 51))
+    _footer(slide, th, index, total, topic, subject, lang)
+
+
+def _p_red_panel(slide, th, lang, item, index, total, image, gallery, topic, subject):
+    title, content = _entry(item, lang)
+    _set_bg(slide, (250, 250, 246))
+    _photo(slide, th, lang, 0.0, 0.0, 6.15, 7.5, image)
+    _shape(slide, 6.05, 0.0, 7.29, 7.5, th["accent"])
+    _shape(slide, 6.05, 0.0, 7.29, 0.18, (247, 183, 51))
+    _text(slide, 6.5, 0.9, 6.3, 0.26, f"{UI[lang]['section']} {max(1, index - 2):02d}", size=9,
+          color=(255, 255, 255), bold=True, margin=0)
+    _text(slide, 6.47, 1.25, 6.35, 1.3, title, size=28 if len(title) < 44 else 22,
+          color=(255, 255, 255), bold=True, font="Aptos Display", margin=0)
+    _shape(slide, 6.5, 2.7, 1.2, 0.1, (247, 183, 51))
+    body = _points(content[:4], "•")
+    _text(slide, 6.5, 3.0, 6.3, 3.4, body, size=_body_size(body, base=13), color=(255, 255, 255))
+    _footer(slide, th, index, total, topic, subject, lang, dark=True, x=6.5, y=7.11,
+            width=6.0, page_x=11.45, page_dark=True)
+
+
+def _p_grid_cards(slide, th, lang, item, index, total, image, gallery, topic, subject):
+    _set_bg(slide, (250, 250, 246))
+    _shape(slide, 0.0, 0.0, 13.333, 0.14, th["accent"])
+    title, content = _head(slide, th, lang, item, index, subject, (26, 26, 26), th["accent"], big=26)
+    rows = content[:4]
+    colors = [(230, 51, 35), (247, 183, 51), (26, 26, 26), (255, 178, 196)]
+    for i, value in enumerate(rows):
+        col, row = i % 2, i // 2
+        x = 0.85 + col * 5.95
+        y = 2.05 + row * 1.9
+        _shape(slide, x, y, 5.6, 1.65, (255, 255, 255), line_color=(232, 232, 228))
+        _shape(slide, x, y, 0.14, 1.65, colors[i % 4])
+        _text(slide, x + 0.35, y + 0.16, 4.9, 1.3, value, size=_body_size(value, base=12), color=(30, 30, 30))
+    _footer(slide, th, index, total, topic, subject, lang)
+
+
+def _p_circle_feature(slide, th, lang, item, index, total, image, gallery, topic, subject):
+    _set_bg(slide, (250, 250, 246))
+    _photo(slide, th, lang, 0.85, 1.35, 4.5, 4.5, image, circle=True, frame=th["accent"])
+    _shape(slide, 5.0, 5.35, 0.55, 0.55, (247, 183, 51), kind=MSO_SHAPE.OVAL)
+    _shape(slide, 0.4, 6.3, 1.0, 1.0, th["soft"], kind=MSO_SHAPE.OVAL)
+    title, content = _entry(item, lang)
+    _text(slide, 6.35, 0.8, 6.2, 0.26, f"{UI[lang]['section']} {max(1, index - 2):02d} · {subject.upper()}",
+          size=9, color=th["accent"], bold=True, margin=0)
+    _text(slide, 6.32, 1.15, 6.3, 1.2, title, size=28 if len(title) < 44 else 22,
+          color=(26, 26, 26), bold=True, font="Aptos Display", margin=0)
+    _shape(slide, 6.35, 2.55, 1.1, 0.12, th["accent"])
+    body = _points(content[:4], "—")
+    _text(slide, 6.35, 2.9, 6.25, 3.5, body, size=_body_size(body, base=13), color=(30, 30, 30))
+    _footer(slide, th, index, total, topic, subject, lang)
+
+
+def _p_bar_statement(slide, th, lang, item, index, total, image, gallery, topic, subject):
+    _set_bg(slide, (250, 250, 246))
+    title, content = _entry(item, lang)
+    _shape(slide, 0.0, 1.55, 13.333, 1.85, (26, 26, 26))
+    _shape(slide, 0.0, 1.55, 1.1, 1.85, th["accent"])
+    _text(slide, 1.35, 1.85, 11.0, 1.25, title, size=30 if len(title) < 44 else 23,
+          color=(255, 255, 255), bold=True, font="Aptos Display", margin=0)
+    mid = max(1, (len(content) + 1) // 2)
+    _text(slide, 0.85, 3.75, 6.0, 2.7, _points(content[:mid], "•"), size=_body_size(_points(content[:mid]), base=13), color=(30, 30, 30))
+    _text(slide, 7.0, 3.75, 5.5, 2.7, _points(content[mid:] or content[:1], "•"), size=11, color=(30, 30, 30))
+    _shape(slide, 11.35, 0.55, 1.5, 0.5, (247, 183, 51))
+    _footer(slide, th, index, total, topic, subject, lang)
+
+
+def _g_rounded_photo(slide, th, lang, item, index, total, image, gallery, topic, subject):
+    _set_bg(slide, (250, 248, 243))
+    _shape(slide, 0.0, 0.0, 13.333, 0.07, th["primary"])
+    title, content = _head(slide, th, lang, item, index, subject, th["primary"], th["accent"], big=28)
+    body = _points(content, "•")
+    _text(slide, 0.82, 2.0, 6.5, 4.3, body, size=_body_size(body, base=14), color=th["text"])
+    _photo(slide, th, lang, 7.85, 1.3, 4.55, 4.5, image, rounded=True)
+    _outline(slide, MSO_SHAPE.ROUNDED_RECTANGLE, 7.62, 1.52, 4.55, 4.5, th["primary"], 1.4)
+    _shape(slide, 11.0, 6.15, 1.35, 0.16, th["accent"])
+    _footer(slide, th, index, total, topic, subject, lang)
+
+
+def _g_two_cards(slide, th, lang, item, index, total, image, gallery, topic, subject):
+    _set_bg(slide, (250, 248, 243))
+    title, content = _head(slide, th, lang, item, index, subject, th["primary"], th["accent"], big=27)
+    mid = max(1, (len(content) + 1) // 2)
+    left, right = content[:mid], content[mid:] or content[:1]
+    height = min(4.0, 1.15 + 0.95 * max(len(left), len(right)))
+    for col, (heading, group) in enumerate(((UI[lang]["key_points"], left),
+                                           (UI[lang]["details"], right))):
+        x = 0.85 + col * 5.95
+        _shape(slide, x, 2.0, 5.6, height, (255, 255, 255) if col else th["soft"],
+               kind=MSO_SHAPE.ROUNDED_RECTANGLE, line_color=th["line"])
+        _shape(slide, x + 0.3, 2.28, 0.14, 0.5, th["accent"])
+        _text(slide, x + 0.6, 2.2, 4.7, 0.4, heading, size=15, color=th["primary"], bold=True, margin=0)
+        body = _points(group[:3], "▪")
+        _text(slide, x + 0.32, 2.85, 5.0, height - 1.0, body, size=_body_size(body, base=12), color=th["text"])
+    _footer(slide, th, index, total, topic, subject, lang)
+
+
+def _g_band_caption(slide, th, lang, item, index, total, image, gallery, topic, subject):
+    _set_bg(slide, (250, 248, 243))
+    title, content = _entry(item, lang)
+    _text(slide, 0.82, 0.72, 11.6, 0.8, title, size=26 if len(title) < 46 else 20, color=th["primary"],
+          bold=True, font="Georgia", margin=0)
+    _shape(slide, 0.85, 1.55, 1.0, 0.05, th["accent"])
+    _photo(slide, th, lang, 0.82, 1.85, 11.7, 3.15, image, rounded=True)
+    _shape(slide, 0.95, 4.55, 3.3, 0.45, th["accent"], kind=MSO_SHAPE.ROUNDED_RECTANGLE)
+    _text(slide, 0.95, 4.64, 3.3, 0.28, subject.upper()[:34], size=9, color=(255, 255, 255), bold=True,
+          align=PP_ALIGN.CENTER, margin=0)
+    mid = max(1, (len(content) + 1) // 2)
+    _text(slide, 0.85, 5.28, 5.75, 1.7, _points(content[:mid], "•"), size=11, color=th["text"])
+    _text(slide, 6.95, 5.28, 5.5, 1.7, _points(content[mid:] or content[:1], "•"), size=11, color=th["text"])
+    _footer(slide, th, index, total, topic, subject, lang)
+
+
+def _g_insight(slide, th, lang, item, index, total, image, gallery, topic, subject):
+    _set_bg(slide, th["primary"])
+    _outline(slide, MSO_SHAPE.OVAL, 9.55, -1.0, 4.6, 4.6, th["accent"], 2)
+    _outline(slide, MSO_SHAPE.OVAL, 10.3, -0.25, 3.1, 3.1, th["accent"], 1.2)
+    title, content = _entry(item, lang)
+    _text(slide, 0.9, 0.8, 7.0, 0.3, UI[lang]["key_points"].upper(), size=10, color=th["accent"], bold=True, margin=0)
+    _text(slide, 0.88, 1.25, 8.6, 1.5, title, size=32 if len(title) < 40 else 24, color=(255, 255, 255),
+          bold=True, font="Georgia", margin=0)
+    _shape(slide, 0.9, 2.95, 2.2, 0.05, th["accent"])
+    _text(slide, 0.9, 3.25, 7.9, 2.0, content[0], size=17, color=(236, 244, 238), margin=0)
+    body = _points(content[1:4], "•")
+    _text(slide, 0.9, 5.35, 7.6, 1.6, body, size=11, color=(206, 222, 210))
+    _photo(slide, th, lang, 9.0, 3.55, 3.3, 3.3, image, circle=True, frame=th["accent"])
+    _footer(slide, th, index, total, topic, subject, lang, dark=True)
+
+
+def _g_circle_stats(slide, th, lang, item, index, total, image, gallery, topic, subject):
+    _set_bg(slide, (250, 248, 243))
+    _photo(slide, th, lang, 1.05, 1.7, 4.2, 4.2, image, circle=True, frame=th["accent"])
+    _outline(slide, MSO_SHAPE.OVAL, 0.75, 1.4, 4.8, 4.8, th["line"], 1.4)
+    title, content = _entry(item, lang)
+    _text(slide, 6.2, 0.8, 6.3, 0.26, f"{UI[lang]['section']} {max(1, index - 2):02d} · {subject.upper()}",
+          size=9, color=th["primary"], bold=True, margin=0)
+    _text(slide, 6.18, 1.15, 6.4, 1.2, title, size=27 if len(title) < 44 else 21, color=th["primary"],
+          bold=True, font="Georgia", margin=0)
+    rows = content[:3]
+    for i, value in enumerate(rows):
+        y = 2.65 + i * 1.3
+        _shape(slide, 6.2, y, 5.9, 1.05, (255, 255, 255), kind=MSO_SHAPE.ROUNDED_RECTANGLE, line_color=th["line"])
+        _shape(slide, 6.2, y, 0.12, 1.05, th["accent"])
+        _text(slide, 6.52, y + 0.1, 5.35, 0.85, value, size=_body_size(value, base=11), color=th["text"])
+    _footer(slide, th, index, total, topic, subject, lang)
+
+
+def _e_photo_offset(slide, th, lang, item, index, total, image, gallery, topic, subject):
+    _set_bg(slide, (249, 246, 242))
+    title, content = _head(slide, th, lang, item, index, subject, th["primary"], th["accent"], big=28)
+    body = _points(content)
+    _text(slide, 0.85, 2.0, 6.6, 4.3, body, size=_body_size(body, base=14), color=th["text"])
+    _shape(slide, 8.3, 1.65, 3.95, 3.95, th["soft"])
+    _photo(slide, th, lang, 8.05, 1.4, 3.95, 3.95, image, frame=th["accent"])
+    _footer(slide, th, index, total, topic, subject, lang)
+
+
+def _e_centered(slide, th, lang, item, index, total, image, gallery, topic, subject):
+    _set_bg(slide, (249, 246, 242))
+    title, content = _entry(item, lang)
+    _text(slide, 1.2, 0.85, 10.9, 0.85, title, size=30 if len(title) < 42 else 23, color=th["primary"],
+          bold=True, font="Georgia", align=PP_ALIGN.CENTER, margin=0)
+    _shape(slide, 5.95, 1.85, 1.4, 0.03, th["accent"])
+    mid = max(1, (len(content) + 1) // 2)
+    _text(slide, 1.0, 2.2, 5.3, 2.4, _points(content[:mid], "—"), size=_body_size(_points(content[:mid]), base=12), color=th["text"])
+    _text(slide, 6.9, 2.2, 5.3, 2.4, _points(content[mid:] or content[:1], "—"), size=11, color=th["text"])
+    _photo(slide, th, lang, 1.0, 4.9, 11.3, 1.95, image)
+    _footer(slide, th, index, total, topic, subject, lang)
+
+
+def _e_plate(slide, th, lang, item, index, total, image, gallery, topic, subject):
+    title, content = _entry(item, lang)
+    _set_bg(slide, (249, 246, 242))
+    _photo(slide, th, lang, 0.0, 0.0, 7.0, 7.5, image)
+    _shape(slide, 6.15, 1.0, 6.75, 5.5, (255, 255, 255), line_color=th["line"])
+    _shape(slide, 6.15, 1.0, 0.1, 5.5, th["accent"])
+    _text(slide, 6.6, 1.4, 6.0, 0.26, f"{UI[lang]['section']} {max(1, index - 2):02d}", size=9,
+          color=th["accent"], bold=True, margin=0)
+    _text(slide, 6.57, 1.72, 6.0, 1.2, title, size=26 if len(title) < 44 else 20, color=th["primary"],
+          bold=True, font="Georgia", margin=0)
+    _shape(slide, 6.6, 3.05, 0.9, 0.03, th["accent"])
+    body = _points(content[:4], "—")
+    _text(slide, 6.6, 3.3, 5.95, 3.0, body, size=_body_size(body, base=12), color=th["text"])
+    _footer(slide, th, index, total, topic, subject, lang, dark=False, x=6.6, y=7.11,
+            width=5.9, page_x=11.45, page_dark=False)
+
+
+def _e_quote(slide, th, lang, item, index, total, image, gallery, topic, subject):
+    _set_bg(slide, (249, 246, 242))
+    _shape(slide, 0.0, 0.0, 0.35, 7.5, th["soft"])
+    title, content = _entry(item, lang)
+    _text(slide, 1.35, 1.35, 8.4, 0.3, f"{UI[lang]['section']} {max(1, index - 2):02d} · {subject.upper()}",
+          size=9, color=th["accent"], bold=True, margin=0)
+    _text(slide, 1.32, 1.75, 8.6, 1.9, title, size=33 if len(title) < 40 else 25, color=th["primary"],
+          bold=True, font="Georgia", margin=0)
+    _shape(slide, 1.35, 3.85, 1.8, 0.03, th["accent"])
+    _text(slide, 1.35, 4.15, 8.0, 2.1, content[0], size=15, color=th["text"], italic=True, margin=0)
+    _photo(slide, th, lang, 10.1, 2.35, 2.5, 2.5, image, circle=True, frame=th["accent"])
+    _footer(slide, th, index, total, topic, subject, lang)
+
+
+def _e_cards(slide, th, lang, item, index, total, image, gallery, topic, subject):
+    _set_bg(slide, (249, 246, 242))
+    title, content = _head(slide, th, lang, item, index, subject, th["primary"], th["accent"], big=27)
+    rows = content[:4]
+    for i, value in enumerate(rows):
+        col, row = i % 2, i // 2
+        x = 0.85 + col * 5.95
+        y = 2.05 + row * 1.95
+        _shape(slide, x, y, 5.6, 1.7, (255, 255, 255), line_color=th["line"])
+        _text(slide, x + 0.35, y + 0.16, 0.8, 0.3, f"{i + 1:02d}", size=11, color=th["accent"], bold=True, margin=0)
+        _shape(slide, x + 0.35, y + 0.5, 4.9, 0.015, th["line"])
+        _text(slide, x + 0.35, y + 0.65, 4.9, 0.9, value, size=_body_size(value, base=11), color=th["text"])
+    _footer(slide, th, index, total, topic, subject, lang)
+
+
+CONTENT_LAYOUTS = {
+    "modern": [_m_photo_right, _m_panel_left, _m_band, _m_feature, _m_numbered],
+    "neon": [_n_glass_right, _n_photo_left, _n_full_band, _n_cards, _n_orbit],
+    "amber": [_a_light_blocks, _a_hex_photo, _a_chart, _a_duo_cards, _a_number_rows],
+    "pop": [_p_split_blocks, _p_red_panel, _p_grid_cards, _p_circle_feature, _p_bar_statement],
+    "nature": [_g_rounded_photo, _g_two_cards, _g_band_caption, _g_insight, _g_circle_stats],
+    "elegant": [_e_photo_offset, _e_centered, _e_plate, _e_quote, _e_cards],
+}
+
 
 def _content_slide(prs, th, lang, item, index, total, design_key, images, topic, subject):
-    labels = UI[lang]
     slide = prs.slides.add_slide(prs.slide_layouts[6])
-    dark = bool(th.get("dark_content")) or (design_key == "elegant" and index % 4 == 0)
-    _set_bg(slide, th["cover"] if dark else th["bg"])
-    # Every design marks its pages with a different frame: side rail, top band or
-    # corner blocks. The decoration never covers the text area.
-    band = th.get("decorate", "arc")
-    if band == "bubbles":
-        _shape(slide, 0.0, 0.0, 13.333, 0.09, th["accent"])
-        _shape(slide, 0.0, 7.41, 13.333, 0.09, th["accent"])
-    elif band == "hex":
-        _shape(slide, 0.0, 0.0, 13.333, 0.16, th["accent"])
-        _shape(slide, 0.0, 7.34, 13.333, 0.16, (70, 70, 70))
-    elif band == "shapes":
-        _shape(slide, 0.0, 0.0, 2.7, 0.14, th["accent"])
-        _shape(slide, 0.0, 0.0, 0.10, 1.7, (26, 26, 26))
-    else:
-        _shape(slide, 0.0, 0.0, 0.10, 7.5, th["accent"])
-    title_color = (255, 255, 255) if dark else th["primary"]
-    body_color = th.get("on_dark", (239, 233, 239)) if dark else th["text"]
-    card_color = th.get("card", th["panel"]) if dark else th["panel"]
-    accent_color = th["accent"]
-
-    title = str(item.get("title") or labels["empty_title"]).strip()
-    content = _safe_text_list(item.get("content"))
-    if not content:
-        content = [labels["empty_body"]]
-    title_size = 27 if len(title) < 46 else 22 if len(title) < 75 else 18
-    eyebrow = f"{labels['section']} {max(1, index - 2):02d} · {subject.upper()}"
-    _text(slide, 0.78, 0.40, 11.8, 0.28, eyebrow, size=10, color=accent_color, bold=True, margin=0)
-    _text(slide, 0.78, 0.82, 11.8, 0.8, title, size=title_size, color=title_color, bold=True, font="Aptos Display", margin=0)
-    _shape(slide, 0.78, 1.68, 0.85, 0.045, accent_color)
-
-    # Three visible layout patterns are reused differently in each design.
-    pattern = (index - 1) % 3
-    image_path = None
-    if images and (index % 3 == 1):
-        candidate = images[(index // 3) % len(images)]
-        if _valid_image_source(candidate):
-            image_path = candidate
-
-    if pattern == 0 and image_path:
-        try:
-            _add_image_source(slide, image_path, 0.8, 1.75, 5.25, 4.45)
-            _shape(slide, 6.35, 1.75, 6.05, 4.45, card_color, line_color=th["line"] if not dark else None)
-            body = "\n\n".join([f"• {x}" for x in content[:5]])
-            _text(slide, 6.62, 2.0, 5.55, 3.95, body, size=_body_size(body), color=body_color, margin=0.02)
-        except Exception:
-            image_path = None
-
-    if pattern == 0 and not image_path:
-        # Two clear cards, not a fixed foreign-language placeholder.
-        mid = max(1, (len(content) + 1) // 2)
-        groups = [content[:mid], content[mid:]]
-        headings = [labels["key_points"], labels["details"]]
-        for col in range(2):
-            x = 0.8 + col * 6.05
-            _shape(slide, x, 1.85, 5.7, 4.25, card_color, line_color=th["line"] if not dark else None)
-            _shape(slide, x, 1.85, 5.7, 0.12, accent_color)
-            _text(slide, x + 0.25, 2.12, 5.15, 0.42, headings[col], size=16, color=accent_color if dark else th["primary"], bold=True, margin=0)
-            group = groups[col] or [labels["empty_body"]]
-            body = "\n\n".join(f"• {v}" for v in group)
-            _text(slide, x + 0.25, 2.68, 5.15, 3.15, body, size=_body_size(body, base=15), color=body_color, margin=0.02)
-
-    elif pattern == 1:
-        # Vertical numbered points with generous spacing.
-        for i, value in enumerate(content[:5]):
-            y = 1.72 + i * 0.88
-            _shape(slide, 0.88, y, 0.58, 0.58, accent_color, kind=MSO_SHAPE.OVAL)
-            _text(slide, 0.88, y + 0.12, 0.58, 0.28, str(i + 1), size=14, color=(255, 255, 255), bold=True, align=PP_ALIGN.CENTER, margin=0)
-            _shape(slide, 1.7, y - 0.03, 10.75, 0.66, card_color, line_color=th["line"] if not dark else None)
-            fontsize = 15 if len(value) < 120 else 12 if len(value) < 190 else 10
-            _text(slide, 1.95, y + 0.08, 10.25, 0.47, value, size=fontsize, color=body_color, margin=0)
-
-    elif pattern == 2:
-        # Large statement on the left and concise points on the right.
-        _shape(slide, 0.8, 1.82, 4.05, 4.42, th["header"])
-        _text(slide, 1.08, 2.15, 3.48, 0.35, labels["part"], size=11, color=(255, 255, 255), bold=True, margin=0)
-        _text(slide, 1.08, 2.85, 3.45, 2.6, title, size=25 if len(title) < 55 else 19, color=(255, 255, 255), bold=True, margin=0)
-        _shape(slide, 5.2, 1.82, 7.2, 4.42, card_color, line_color=th["line"] if not dark else None)
-        body = "\n\n".join(f"✓ {v}" for v in content[:5])
-        _text(slide, 5.52, 2.12, 6.55, 3.8, body, size=_body_size(body, base=15), color=body_color, margin=0.02)
-
-    _footer(slide, th, index, total, topic, subject, lang, dark=dark)
+    variants = CONTENT_LAYOUTS.get(design_key) or CONTENT_LAYOUTS["modern"]
+    n = max(0, index - 3)
+    gallery = [src for src in (images or []) if _valid_image_source(src)]
+    image = gallery[n % len(gallery)] if gallery else None
+    variants[n % len(variants)](slide, th, lang, item or {}, index, total, image, gallery,
+                                str(topic), str(subject))
     return slide
 
+
+def _cover(prs, theme, lang, topic, subject, author, total, images=None, description=""):
+    slide = prs.slides.add_slide(prs.slide_layouts[6])
+    gallery = [src for src in (images or []) if _valid_image_source(src)]
+    image = gallery[0] if gallery else _fallback_visual_bytes(topic, lang, theme)
+    builder = {"arc": _cover_modern, "bubbles": _cover_neon, "hex": _cover_amber,
+               "shapes": _cover_pop, "leaf": _cover_nature, "frame": _cover_elegant}.get(
+        theme.get("decorate"), _cover_modern)
+    builder(slide, theme, lang, str(topic), str(subject), str(author or "").strip(), total,
+            image, str(description or ""))
+    # A cover is not numbered: every design already ends the slide with its own
+    # author/footer line, and a page number there collided with the artwork.
+    return slide
+
+
+# ============================== YAKUNIY SLAYDLAR ==============================
+def _c_modern(slide, th, lang, topic, subject, recap, total):
+    labels = UI[lang]
+    _set_bg(slide, (255, 252, 247))
+    _shape(slide, 0.0, 0.0, 0.14, 7.5, th["accent"])
+    _shape(slide, 8.9, 0.0, 4.44, 7.5, th["primary"])
+    _text(slide, 0.85, 0.9, 7.4, 0.3, labels["summary"].upper(), size=10, color=th["accent"], bold=True, margin=0)
+    _text(slide, 0.82, 1.3, 7.5, 1.0, labels["summary"], size=30, color=th["primary"], bold=True, font="Georgia", margin=0)
+    _shape(slide, 0.85, 2.45, 1.2, 0.05, th["accent"])
+    for i, value in enumerate(recap[:4]):
+        y = 2.85 + i * 0.85
+        _text(slide, 0.85, y, 0.5, 0.34, f"{i + 1:02d}", size=13, color=th["accent"], bold=True, margin=0)
+        _text(slide, 1.45, y - 0.03, 7.0, 0.72, value[:110], size=13, color=th["text"], margin=0)
+    _text(slide, 9.2, 2.6, 3.8, 1.65, labels["thanks"], size=24, color=(255, 255, 255), bold=True,
+          align=PP_ALIGN.CENTER, valign=MSO_ANCHOR.MIDDLE, margin=0.05, font="Georgia")
+    _shape(slide, 10.65, 4.45, 0.9, 0.04, th["accent"])
+    _text(slide, 9.2, 4.7, 3.8, 0.6, str(topic)[:70], size=10, color=(240, 230, 222),
+          align=PP_ALIGN.CENTER, margin=0.02)
+
+
+def _c_neon(slide, th, lang, topic, subject, recap, total):
+    labels = UI[lang]
+    _set_bg(slide, th["cover"])
+    band = _shape(slide, 9.5, -2.6, 6.2, 12.0, th["accent"])
+    band.rotation = -24
+    _shape(slide, 0.0, 0.0, 13.333, 0.1, th["accent"])
+    _text(slide, 0.88, 1.0, 7.6, 0.3, labels["summary"].upper(), size=10, color=th["accent"], bold=True, margin=0)
+    _text(slide, 0.85, 2.3, 8.1, 1.5, labels["thanks"], size=40, color=(255, 255, 255), bold=True,
+          font="Aptos Display", margin=0)
+    _text(slide, 0.88, 4.0, 7.2, 0.6, str(topic)[:90], size=13, color=th["secondary"], margin=0)
+    _shape(slide, 0.88, 4.85, 2.0, 0.06, th["accent"])
+    for i, value in enumerate(recap[:3]):
+        _text(slide, 0.88, 5.15 + i * 0.5, 7.8, 0.42, f"◆ {value[:95]}", size=11, color=th["on_dark"], margin=0)
+
+
+def _c_amber(slide, th, lang, topic, subject, recap, total):
+    labels = UI[lang]
+    _set_bg(slide, th["cover"])
+    corner = _shape(slide, 10.6, 4.4, 4.4, 4.4, th["accent"])
+    corner.rotation = 45
+    _text(slide, 0.9, 0.9, 8.0, 0.3, labels["summary"].upper(), size=10, color=th["accent"], bold=True, margin=0)
+    _text(slide, 0.88, 1.3, 8.4, 1.4, labels["thanks"], size=38, color=(255, 255, 255), bold=True,
+          font="Aptos Display", margin=0)
+    _shape(slide, 0.9, 2.85, 2.0, 0.1, th["accent"])
+    for i, value in enumerate(recap[:4]):
+        _text(slide, 0.9, 3.2 + i * 0.55, 9.4, 0.45, f"{i + 1:02d}  {value[:90]}", size=11,
+              color=th["text"], margin=0)
+    _text(slide, 0.9, 6.6, 8.0, 0.3, str(topic)[:80], size=9, color=th["secondary"], margin=0)
+
+
+def _c_pop(slide, th, lang, topic, subject, recap, total):
+    labels = UI[lang]
+    _set_bg(slide, (250, 250, 246))
+    _shape(slide, 9.6, 3.85, 3.7, 3.7, th["accent"], kind=MSO_SHAPE.OVAL)
+    _shape(slide, 11.5, 0.4, 1.5, 1.5, (247, 183, 51))
+    _shape(slide, 0.0, 0.0, 0.42, 7.5, th["accent"])
+    _text(slide, 0.95, 0.9, 8.3, 0.3, labels["summary"].upper(), size=10, color=th["accent"], bold=True, margin=0)
+    _text(slide, 0.92, 1.3, 8.6, 1.6, labels["thanks"], size=44, color=(26, 26, 26), bold=True,
+          font="Aptos Display", margin=0)
+    _shape(slide, 0.95, 2.95, 2.0, 0.16, th["accent"])
+    for i, value in enumerate(recap[:4]):
+        _text(slide, 0.95, 3.35 + i * 0.62, 8.2, 0.5, f"• {value[:95]}", size=12, color=(30, 30, 30), margin=0)
+    _text(slide, 0.95, 6.6, 8.0, 0.3, str(topic)[:80], size=9, color=(120, 120, 120), margin=0)
+
+
+def _c_nature(slide, th, lang, topic, subject, recap, total):
+    labels = UI[lang]
+    _set_bg(slide, th["primary"])
+    _outline(slide, MSO_SHAPE.OVAL, 9.4, -1.2, 5.4, 5.4, th["accent"], 2)
+    _outline(slide, MSO_SHAPE.OVAL, 10.25, -0.35, 3.7, 3.7, th["accent"], 1.2)
+    _text(slide, 0.9, 0.95, 8.0, 0.3, labels["summary"].upper(), size=10, color=th["accent"], bold=True, margin=0)
+    _text(slide, 0.88, 1.35, 8.4, 1.4, labels["thanks"], size=36, color=(255, 255, 255), bold=True,
+          font="Georgia", margin=0)
+    _shape(slide, 0.9, 2.88, 2.0, 0.05, th["accent"])
+    for i, value in enumerate(recap[:4]):
+        _text(slide, 0.9, 3.2 + i * 0.6, 9.0, 0.5, f"• {value[:95]}", size=12, color=(226, 240, 230), margin=0)
+    _text(slide, 0.9, 6.6, 8.0, 0.3, str(topic)[:80], size=9, color=(190, 214, 196), margin=0)
+
+
+def _c_elegant(slide, th, lang, topic, subject, recap, total):
+    labels = UI[lang]
+    _set_bg(slide, (249, 246, 242))
+    _outline(slide, MSO_SHAPE.RECTANGLE, 0.5, 0.46, 12.33, 6.58, th["accent"], 1.2)
+    _text(slide, 0.95, 1.15, 6.0, 0.3, labels["summary"].upper(), size=9, color=th["accent"], bold=True, margin=0)
+    _text(slide, 0.92, 1.55, 8.0, 1.4, labels["thanks"], size=38, color=th["primary"], bold=True,
+          font="Georgia", margin=0)
+    _shape(slide, 0.95, 3.05, 2.2, 0.03, th["accent"])
+    mid = max(1, (len(recap) + 1) // 2)
+    _text(slide, 0.95, 3.35, 5.3, 2.3, _points(recap[:mid], "—"), size=11, color=th["text"])
+    _text(slide, 6.9, 3.35, 5.3, 2.3, _points(recap[mid:] or recap[:1], "—"), size=11, color=th["text"])
+    _text(slide, 0.95, 6.55, 11.4, 0.28, str(topic)[:90], size=9, color=th["secondary"], margin=0, italic=True)
+
+
+CLOSING_LAYOUTS = {"arc": _c_modern, "bubbles": _c_neon, "hex": _c_amber,
+                   "shapes": _c_pop, "leaf": _c_nature, "frame": _c_elegant}
 
 
 def _closing_slide(prs, theme, lang, topic, subject, entries, total):
-    """Localized closing slide with a short recap and thank-you message."""
-    labels = UI[lang]
     slide = prs.slides.add_slide(prs.slide_layouts[6])
-    _set_bg(slide, theme["cover"])
-    _shape(slide, 0.0, 0.0, 13.333, 0.10, theme["accent"])
-    _text(slide, 0.86, 0.75, 11.5, 0.35, labels["summary"].upper(), size=12,
-          color=theme["accent"], bold=True, margin=0)
-    _text(slide, 0.82, 1.25, 11.8, 0.85, labels["summary"], size=31,
-          color=(255, 255, 255), bold=True, font="Aptos Display", margin=0)
-    _shape(slide, 0.86, 2.17, 1.0, 0.055, theme["accent"])
-
     recap = []
-    # The final content slide is instructed to summarize the topic; its points
-    # make the closing slide useful instead of merely repeating the agenda.
     if entries and isinstance(entries[-1], dict):
         recap = _safe_text_list(entries[-1].get("content"))[:4]
-    if not recap:
-        recap = [labels["empty_body"]]
-    _shape(slide, 0.84, 2.62, 7.7, 3.05, theme["panel"], line_color=theme["line"])
-    for i, value in enumerate(recap[:4]):
-        y = 2.92 + i * 0.61
-        _shape(slide, 1.08, y + 0.03, 0.34, 0.34, theme["accent"], kind=MSO_SHAPE.OVAL)
-        _text(slide, 1.08, y + 0.08, 0.34, 0.18, "✓", size=10, color=theme["cover"], bold=True,
-              align=PP_ALIGN.CENTER, margin=0)
-        value = value if len(value) <= 100 else value[:97].rstrip() + "…"
-        _text(slide, 1.62, y, 6.55, 0.44, value, size=14, color=theme["text"], margin=0)
-
-    _shape(slide, 8.95, 2.62, 3.55, 3.05, theme["header"])
-    _text(slide, 9.25, 3.10, 2.95, 1.0, labels["thanks"], size=21,
-          color=(255, 255, 255), bold=True, align=PP_ALIGN.CENTER, valign=MSO_ANCHOR.MIDDLE, margin=0.04)
-    _shape(slide, 10.22, 4.38, 1.05, 0.05, theme["accent"])
-    _text(slide, 9.25, 4.69, 2.95, 0.48, str(topic)[:80], size=11,
-          color=(237, 237, 237), align=PP_ALIGN.CENTER, margin=0.02)
-    _footer(slide, theme, total, total, topic, subject, lang, dark=True)
+    recap = [value if len(value) <= 110 else value[:107].rstrip() + "…" for value in recap] or [UI[lang]["empty_body"]]
+    builder = CLOSING_LAYOUTS.get(theme.get("decorate"), _c_modern)
+    builder(slide, theme, lang, str(topic), str(subject), recap, total)
     return slide
+
 
 def _new_presentation():
     """Use the supplied PPTX as a theme/layout source, not as a content source."""
@@ -516,11 +1292,10 @@ def generate_pptx(topic: str, subject: str, lang: str, design_key: str, slide_co
     prs.slide_height = Inches(7.5)
 
     th = dict(THEMES[key])
+    # Only real downloaded photos are used on content slides. When none are
+    # available the layouts draw their labeled "image area" slot instead of a
+    # blank dark plate, and the cover uses a themed abstract backdrop.
     image_sources = [source for source in (images or []) if _valid_image_source(source)]
-    if not image_sources:
-        # This means the deck still contains an actual embedded image even if
-        # Wikipedia/Commons or optional image APIs are unavailable.
-        image_sources = [_fallback_visual_bytes(str(topic), lc, th)]
     entries = list(slides_content or [])
     while len(entries) < body_count:
         n = len(entries) + 1
