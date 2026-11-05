@@ -5,7 +5,8 @@ from aiogram.fsm.context import FSMContext
 import config
 import database as db
 from texts import t, btn_all
-from keyboards import (main_kb, bot_lang_kb, balance_kb, check_review_kb, services_all_kb)
+from keyboards import (main_kb, bot_lang_kb, balance_kb, check_review_kb, services_all_kb,
+                       chat_kb, chat_labels)
 from states import TopUp, Chat, Creation, Admin
 from services import SERVICES, SUBSCRIPTION_PLANS, service_name
 
@@ -115,12 +116,18 @@ async def cmd_start(message: Message, command: CommandObject, state: FSMContext)
         # ===== Firebase-ga saqlash =====
     try:
         from db_firebase import fb_add_user, fb_log_action
+        # sqlite3.Row da .get() yo'q — avval shu xato sababli Firebase'ga
+        # foydalanuvchi umuman yozilmasdi (AttributeError jim yutilardi).
+        _fb_lang = u["lang"] if u and u["lang"] else "uz"
         await fb_add_user(
             telegram_id=message.from_user.id,
             username=message.from_user.username,
             first_name=message.from_user.first_name,
             last_name=message.from_user.last_name,
-            lang=u.get("lang", "uz") if u else "uz",
+            lang=_fb_lang,
+            balance=u["balance"] if u else 0,
+            bonus_balance=u["bonus_balance"] if u else 0,
+            created_at=u["created_at"] if u else None,
         )
         await fb_log_action(
             telegram_id=message.from_user.id,
@@ -278,7 +285,34 @@ async def btn_chat(message: Message, state: FSMContext):
     lang = await _lang(message.from_user.id)
     await state.clear()
     await state.set_state(Chat.active)
-    await message.answer(t("chat_start", lang))
+    labels = chat_labels(lang)
+    await message.answer(labels["start"], reply_markup=chat_kb(lang))
+
+
+@router.callback_query(F.data == "chat:clear")
+async def cb_chat_clear(call: CallbackQuery, state: FSMContext):
+    """Suhbat tarixini tozalash — keyingi xabar yangi mavzu sifatida qabul qilinadi."""
+    lang = await _lang(call.from_user.id)
+    await db.clear_chat_history(call.from_user.id)
+    await state.set_state(Chat.active)
+    labels = chat_labels(lang)
+    message = call.message
+    if message is not None and getattr(message, "text", None):
+        try:
+            await message.edit_reply_markup(reply_markup=None)
+        except Exception:
+            pass
+    await message.answer(labels["cleared"], reply_markup=chat_kb(lang))
+    await call.answer()
+
+
+@router.message(Command("newchat", "reset_chat"))
+async def cmd_new_chat(message: Message, state: FSMContext):
+    lang = await _lang(message.from_user.id)
+    await db.clear_chat_history(message.from_user.id)
+    await state.set_state(Chat.active)
+    await message.answer(chat_labels(lang)["cleared"], reply_markup=chat_kb(lang))
+
 
 @router.message(Chat.active)
 async def chat_handle(message: Message, state: FSMContext):
@@ -300,18 +334,20 @@ async def chat_handle(message: Message, state: FSMContext):
             await btn_chat(message, state); return
         return
     from ai_api import chat_answer
+    user_id = message.from_user.id
+    # Oldingi xabarlar AI kontekstiga beriladi — shu bilan suhbat davom etadi.
+    history = await db.get_chat_history(user_id, limit=12)
     thinking = await message.answer(t("chat_thinking", lang))
-    answer = await chat_answer(message.text, user_lang=lang)
+    answer = await chat_answer(txt, user_lang=lang, history=history)
+    if not answer:
+        answer = t("chat_failed", lang)
+    answer = answer[:4000]
+    await db.add_chat_message(user_id, "user", txt)
+    await db.add_chat_message(user_id, "assistant", answer)
     try:
-        if answer:
-            await thinking.edit_text(answer[:4000])
-        else:
-            await thinking.edit_text(t("chat_failed", lang))
+        await thinking.edit_text(answer, reply_markup=chat_kb(lang))
     except Exception:
-        if answer:
-            await message.answer(answer[:4000])
-        else:
-            await message.answer(t("chat_failed", lang))
+        await message.answer(answer, reply_markup=chat_kb(lang))
 
 @router.message(F.text.contains("Balans") | F.text.contains("Баланс") | F.text.contains("Balance"))
 async def btn_balance(message: Message):
