@@ -1,10 +1,12 @@
 import aiosqlite
 import json
 import time
+import db_firebase
 from config import DB_PATH, FREE_MODE, DEFAULT_PAYMENT_INFO
 from services import DEFAULT_REFERRAL_BONUS
 
 _db = None
+_FB_RESTORED = False
 
 async def get_db():
     global _db
@@ -51,6 +53,14 @@ async def _init():
         status TEXT DEFAULT 'pending', created_at INTEGER, reviewed_by INTEGER
     );
     CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT);
+    CREATE TABLE IF NOT EXISTS chat_messages (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        role TEXT,
+        content TEXT,
+        created_at INTEGER
+    );
+    CREATE INDEX IF NOT EXISTS idx_chat_user ON chat_messages(user_id, id);
     """)
     await db.commit()
     # Migratsiya — eski bazaga yangi ustunlarni qo'shish
@@ -62,9 +72,93 @@ async def _init():
             await db.commit()
         except Exception:
             pass
+    await _restore_from_firebase()
     await set_setting("payment_info", DEFAULT_PAYMENT_INFO, if_not_exists=True)
     await set_setting("free_mode", "1" if FREE_MODE else "0", if_not_exists=True)
     await set_setting("referral_bonus", str(DEFAULT_REFERRAL_BONUS), if_not_exists=True)
+
+
+# ---------- Firebase'dan tiklash (kod yangilanganda ma'lumot yo'qolmasin) ----------
+async def _restore_from_firebase():
+    """Firestore'dagi foydalanuvchi, buyurtma va sozlamalarni SQLite'ga qaytaradi.
+
+    Hostingda fayl tizimi yangilanishda tozalansa ham ma'lumot tiklanadi.
+    Mavjud lokal yozuvlar ustidan yozilmaydi (INSERT OR IGNORE).
+    """
+    global _FB_RESTORED
+    if _FB_RESTORED:
+        return
+    _FB_RESTORED = True
+    if not db_firebase.is_enabled():
+        return
+    db = await get_db()
+    users_restored = 0
+    try:
+        for data in await db_firebase.fb_load_users():
+            try:
+                uid = int(data.get("telegram_id") or 0)
+            except (TypeError, ValueError):
+                continue
+            if not uid:
+                continue
+            cur = await db.execute(
+                "INSERT OR IGNORE INTO users(telegram_id,username,first_name,lang,balance,bonus_balance,"
+                "referred_by,premium,created_at,lang_set) VALUES(?,?,?,?,?,?,?,?,?,1)",
+                (uid, data.get("username"), data.get("first_name"),
+                 data.get("lang") if data.get("lang") in ("uz", "ru", "en", "tr", "de", "fr") else "uz",
+                 int(data.get("balance") or 0), int(data.get("bonus_balance") or 0),
+                 data.get("referred_by"), int(data.get("premium") or 0),
+                 int(data.get("created_at") or time.time())))
+            users_restored += 1 if cur.rowcount > 0 else 0
+        await db.commit()
+    except Exception as exc:
+        print(f"[FB] foydalanuvchilarni tiklashda xato: {exc}", flush=True)
+
+    orders_restored = 0
+    try:
+        if await order_count() == 0:
+            for order in await db_firebase.fb_load_orders():
+                await db.execute(
+                    "INSERT INTO orders(user_id,service,topic,options,price,status,result,created_at) "
+                    "VALUES(?,?,?,?,?,?,?,?)",
+                    (int(order.get("telegram_id") or order.get("user_id") or 0),
+                     order.get("service"), order.get("topic"), order.get("options"),
+                     int(order.get("price") or 0), order.get("status") or "done",
+                     None, int(order.get("created_at") or 0)))
+                orders_restored += 1
+            await db.commit()
+    except Exception as exc:
+        print(f"[FB] buyurtmalarni tiklashda xato: {exc}", flush=True)
+
+    settings_restored = 0
+    try:
+        # Admin o'zgartirgan sozlamalar (narxlar, to'lov, kanal) ustuvor bo'ladi.
+        for key, value in (await db_firebase.fb_load_settings()).items():
+            await db.execute("INSERT OR REPLACE INTO settings(key,value) VALUES(?,?)", (key, str(value)))
+            settings_restored += 1
+        await db.commit()
+    except Exception as exc:
+        print(f"[FB] sozlamalarni tiklashda xato: {exc}", flush=True)
+
+    if users_restored or orders_restored or settings_restored:
+        print(f"[FB] tiklandi: {users_restored} user, {orders_restored} buyurtma, "
+              f"{settings_restored} sozlama", flush=True)
+
+
+async def _mirror_user(telegram_id):
+    """Foydalanuvchining joriy holatini Firestore'ga yozish."""
+    if not db_firebase.is_enabled():
+        return
+    try:
+        u = await get_user(telegram_id)
+        if not u:
+            return
+        await db_firebase.fb_save_user(
+            telegram_id, username=u["username"], first_name=u["first_name"],
+            lang=u["lang"], balance=u["balance"], bonus_balance=u["bonus_balance"],
+            premium=u["premium"], referred_by=u["referred_by"], created_at=u["created_at"])
+    except Exception as exc:
+        print(f"[FB] user mirror xato: {exc}", flush=True)
 
 # ---------- settings ----------
 async def get_setting(key, default=None):
@@ -81,6 +175,8 @@ async def set_setting(key, value, if_not_exists=False):
             return
     await db.execute("INSERT OR REPLACE INTO settings(key,value) VALUES(?,?)", (key, value))
     await db.commit()
+    if db_firebase.is_enabled():
+        await db_firebase.fb_save_setting(key, value)
 
 # ---------- users ----------
 async def get_user(telegram_id):
@@ -107,6 +203,7 @@ async def ensure_user(telegram_id, username=None, first_name=None, referred_by=N
                 await db.commit()
             except Exception:
                 pass
+        await _mirror_user(telegram_id)
         return await get_user(telegram_id)
     return u
 
@@ -115,16 +212,19 @@ async def update_user(telegram_id, **fields):
     for k, v in fields.items():
         await db.execute(f"UPDATE users SET {k}=? WHERE telegram_id=?", (v, telegram_id))
     await db.commit()
+    await _mirror_user(telegram_id)
 
 async def add_balance(telegram_id, amount):
     db = await get_db()
     await db.execute("UPDATE users SET balance=balance+? WHERE telegram_id=?", (amount, telegram_id))
     await db.commit()
+    await _mirror_user(telegram_id)
 
 async def add_bonus_balance(telegram_id, amount):
     db = await get_db()
     await db.execute("UPDATE users SET bonus_balance=bonus_balance+? WHERE telegram_id=?", (amount, telegram_id))
     await db.commit()
+    await _mirror_user(telegram_id)
 
 async def all_users():
     db = await get_db()
@@ -160,10 +260,14 @@ async def add_referral_earned(referrer_id, amount):
 # ---------- orders ----------
 async def add_order(user_id, service, topic, options, price, result):
     db = await get_db()
+    created = int(time.time())
     cur = await db.execute(
         "INSERT INTO orders(user_id,service,topic,options,price,result,created_at) VALUES(?,?,?,?,?,?,?)",
-        (user_id, service, topic, json.dumps(options, ensure_ascii=False), price, result, int(time.time())))
+        (user_id, service, topic, json.dumps(options, ensure_ascii=False), price, result, created))
     await db.commit()
+    if db_firebase.is_enabled():
+        await db_firebase.fb_save_order(user_id, service, topic=topic, options=options,
+                                       price=price, created_at=created)
     return cur.lastrowid
 
 async def order_count(user_id=None):
@@ -238,4 +342,64 @@ async def get_referral_bonus():
 
 async def set_referral_bonus(amount):
     await set_setting("referral_bonus", str(amount))
-    
+
+
+# ---------- AI Chat tarixi ----------
+async def add_chat_message(user_id, role, content, keep=40):
+    """Suhbat xabarini saqlash va eskilarini qisqartirish."""
+    role = "assistant" if str(role).lower() in ("assistant", "ai", "bot") else "user"
+    text = str(content or "").strip()
+    if not text:
+        return
+    db = await get_db()
+    await db.execute(
+        "INSERT INTO chat_messages(user_id,role,content,created_at) VALUES(?,?,?,?)",
+        (user_id, role, text[:8000], int(time.time())))
+    await db.execute(
+        "DELETE FROM chat_messages WHERE user_id=? AND id NOT IN "
+        "(SELECT id FROM chat_messages WHERE user_id=? ORDER BY id DESC LIMIT ?)",
+        (user_id, user_id, keep))
+    await db.commit()
+    if db_firebase.is_enabled():
+        await db_firebase.fb_save_chat(user_id, await get_chat_history(user_id, keep))
+
+
+async def get_chat_history(user_id, limit=12):
+    """Oxirgi xabarlar (eng eskidan yangiga) — AI konteksti uchun."""
+    db = await get_db()
+    cur = await db.execute(
+        "SELECT role, content FROM chat_messages WHERE user_id=? ORDER BY id DESC LIMIT ?",
+        (user_id, limit))
+    rows = await cur.fetchall()
+    if not rows and db_firebase.is_enabled():
+        # Lokal fayl yo'qolgan bo'lsa, suhbatni Firestore'dan tiklaymiz.
+        remote = await db_firebase.fb_load_chat(user_id)
+        for msg in remote[-limit:]:
+            if isinstance(msg, dict) and str(msg.get("content") or "").strip():
+                await db.execute(
+                    "INSERT INTO chat_messages(user_id,role,content,created_at) VALUES(?,?,?,?)",
+                    (user_id, "assistant" if msg.get("role") == "assistant" else "user",
+                     str(msg.get("content"))[:8000], int(time.time())))
+        if remote:
+            await db.commit()
+            cur = await db.execute(
+                "SELECT role, content FROM chat_messages WHERE user_id=? ORDER BY id DESC LIMIT ?",
+                (user_id, limit))
+            rows = await cur.fetchall()
+    return [{"role": r["role"], "content": r["content"]} for r in reversed(list(rows))]
+
+
+async def chat_message_count(user_id):
+    db = await get_db()
+    cur = await db.execute("SELECT COUNT(*) c FROM chat_messages WHERE user_id=?", (user_id,))
+    return (await cur.fetchone())["c"]
+
+
+async def clear_chat_history(user_id):
+    """Suhbatni o'chirib, yangi mavzu boshlash imkonini beradi."""
+    db = await get_db()
+    await db.execute("DELETE FROM chat_messages WHERE user_id=?", (user_id,))
+    await db.commit()
+    if db_firebase.is_enabled():
+        await db_firebase.fb_delete_chat(user_id)
+
