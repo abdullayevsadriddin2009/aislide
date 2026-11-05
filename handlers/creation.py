@@ -565,7 +565,10 @@ async def cb_confirm(call: CallbackQuery, state: FSMContext):
         slides_content, real = await generate_slides_structured(generation_topic, subj_display, language_code, max(2, slide_count - 3))
         
         try:
-            img_paths = await _collect_images(generation_topic, slides_content, total=5, lang=language_code)
+            # Bigger decks need more photos so the five layout variants do not keep
+            # repeating the same picture on every fourth slide.
+            image_total = min(12, max(5, slide_count // 2))
+            img_paths = await _collect_images(generation_topic, slides_content, total=image_total, lang=language_code)
         except Exception as e:
             print(f"[creation] Image download error: {e}", flush=True)
             img_paths = []
