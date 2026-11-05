@@ -95,6 +95,44 @@ class PPTXGeneratorTests(unittest.TestCase):
                           if any(shape.shape_type == MSO_SHAPE_TYPE.PICTURE for shape in slide.shapes)]
         self.assertGreaterEqual(len(picture_slides), 1)
 
+    @staticmethod
+    def _geometry(slide):
+        return tuple(sorted((int(s.left or 0), int(s.top or 0), int(s.width or 0), int(s.height or 0))
+                            for s in slide.shapes))
+
+    def test_each_design_has_its_own_cover_agenda_and_body_layouts(self):
+        """The six templates must differ in structure, not only in colour."""
+        decks = {}
+        for design in THEMES:
+            stream = generate_pptx("Example topic", "Computer Science", "en", design, 15,
+                                   SAMPLE_SLIDES, author="Test Student")
+            decks[design] = Presentation(io.BytesIO(stream.getvalue()))
+        for position in (0, 1, 3, 9, 14):
+            geometries = {design: self._geometry(deck.slides[position])
+                          for design, deck in decks.items()}
+            with self.subTest(position=position):
+                self.assertEqual(len(set(geometries.values())), len(THEMES),
+                                 msg=f"slide {position + 1} is identical across designs")
+
+    def test_body_slides_use_distinct_layouts_inside_one_design(self):
+        for design in THEMES:
+            stream = generate_pptx("Example topic", "Computer Science", "en", design, 20,
+                                   SAMPLE_SLIDES, author="Test Student")
+            deck = Presentation(io.BytesIO(stream.getvalue()))
+            body = {self._geometry(slide) for slide in list(deck.slides)[2:-1]}
+            with self.subTest(design=design):
+                self.assertGreaterEqual(len(body), 5, msg=f"{design} repeats one body layout")
+
+    def test_missing_photo_shows_localized_image_slot(self):
+        for lang in LANGS:
+            stream = generate_pptx("Example topic", "Computer Science", lang, "nature", 10,
+                                   SAMPLE_SLIDES, images=[])
+            deck = Presentation(io.BytesIO(stream.getvalue()))
+            text = " ".join(shape.text for slide in deck.slides for shape in slide.shapes
+                            if hasattr(shape, "text"))
+            with self.subTest(lang=lang):
+                self.assertIn(UI[lang]["image_label"], text)
+
 
 class SlideLanguageTests(unittest.TestCase):
     """The deck must stay in the selected language and keep the exact count."""
@@ -190,6 +228,8 @@ class DOCXGeneratorTests(unittest.TestCase):
                         self.assertNotIn("IT sohasi rivojlanmoqda", all_text)
                         self.assertNotIn("Qaysi javob to'g'ri?", all_text)
 
+    @unittest.skipUnless((ROOT / "templates" / "referat_IT.docx").exists(),
+                         "templates/referat_IT.docx binary asset is not shipped with the source archive")
     def test_supplied_docx_template_page_setup_is_used(self):
         stream = generate_docx("Example topic", "Referat", "referat", "uz", 10,
                                SAMPLE_TEXT["uz"], author="Test Student")
