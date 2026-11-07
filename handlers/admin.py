@@ -1,3 +1,5 @@
+import html
+
 from aiogram import Router, F, types
 from aiogram.filters import Command
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
@@ -51,10 +53,21 @@ async def cmd_admin(message: Message, state: FSMContext):
 async def cmd_testapi(message: Message):
     if not is_admin(message.from_user.id): return
     lang = await _admin_lang()
-    await message.answer(t("api_checking", lang))
+    note = await message.answer(t("api_checking", lang))
     from ai_api import test_api
-    result = await test_api()
-    await message.answer(t("api_result", lang, result=result))
+    try:
+        result = await test_api()
+    except Exception as exc:
+        # The admin must always get a report, even when the check itself fails.
+        print(f"[testapi] {type(exc).__name__}: {exc}", flush=True)
+        result = f"Tekshiruvda xato: {type(exc).__name__}: {exc}"
+    # The bot sends HTML, so model names/errors containing "<" or "&" must be
+    # escaped; otherwise Telegram rejects the message and nothing is shown.
+    text = t("api_result", lang, result=html.escape(str(result)[:3500], quote=False))
+    try:
+        await note.edit_text(text)
+    except Exception:
+        await message.answer(text)
 
 # ===== Statistika =====
 @router.message(F.text.contains("📊") | F.text.contains("Statistika") | F.text.contains("Статистика") | F.text.contains("Statistics"))

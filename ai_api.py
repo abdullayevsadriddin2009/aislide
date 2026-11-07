@@ -1798,16 +1798,73 @@ async def chat_answer(question, user_lang="uz", history=None):
     # FAQAT barcha AI provayderlari ishlamagan holatda failure message.
     return _chat_failure_message(lang)
 
-async def test_api():
+async def test_api(timeout=7, concurrency=6):
+    """Probe every configured provider/model quickly and report each result.
+
+    The old version called the models one after another with the full
+    AI_TIMEOUT (120s by default), so one dead provider could block /testapi for
+    many minutes and the admin never received a report at all. Probes now run
+    concurrently with a short per-request timeout, every model gets its own
+    line, and the shared LAST_ERROR of real generation is restored afterwards.
+    """
+    import asyncio
+
+    global LAST_ERROR
+    saved_error = LAST_ERROR
+
+    no_key, jobs = [], []
+    for api in API_LIST:
+        if not api.get("api_key"):
+            no_key.append(api["name"])
+            continue
+        for model in api.get("models") or []:
+            jobs.append((api, model))
+
+    semaphore = asyncio.Semaphore(max(1, int(concurrency)))
+    payload = {"messages": [{"role": "user", "content": "OK"}],
+               "temperature": 0.1, "max_tokens": 10}
+
+    async def probe(api, model):
+        async with semaphore:
+            try:
+                status, text, err = await asyncio.wait_for(
+                    _try_post(api, model, dict(payload)), timeout=timeout)
+            except asyncio.TimeoutError:
+                return api["name"], model, False, f"{int(timeout)}s ichida javob yo'q"
+            except Exception as exc:
+                return api["name"], model, False, type(exc).__name__
+            if status == 200 and text:
+                return api["name"], model, True, ""
+            return api["name"], model, False, str(err or (f"HTTP {status}" if status else "javob yo'q"))
+
+    results = await asyncio.gather(*(probe(api, model) for api, model in jobs)) if jobs else []
+    LAST_ERROR = saved_error
+
+    by_api = {}
+    for name, model, ok, detail in results:
+        by_api.setdefault(name, []).append((model, ok, detail))
+
+    if not API_LIST:
+        return "AI provayderlar sozlanmagan."
+
     lines = []
     for api in API_LIST:
-        if not api["api_key"]: lines.append(f"❌ {api['name']}: kalit yo'q"); continue
-        for model in api["models"]:
-            status, text, err = await _try_post(api, model, {"messages": [{"role": "user", "content": "OK"}], "temperature": 0.1, "max_tokens": 10})
-            if status == 200 and text:
-                lines.append(f"✅ {api['name']}: ishlaydi → {model}")
-                break
-        else: lines.append(f"❌ {api['name']}: ishlamadi")
+        name = api["name"]
+        if name in no_key:
+            lines.append(f"❌ {name}: API kaliti yo'q")
+            continue
+        rows = by_api.get(name) or []
+        if any(ok for _, ok, _ in rows):
+            lines.append(f"✅ {name}: ishlaydi")
+        elif rows:
+            lines.append(f"❌ {name}: ishlamadi")
+        else:
+            lines.append(f"⚠️ {name}: model ro'yxati bo'sh")
+        for model, ok, detail in rows:
+            if ok:
+                lines.append(f"   ✅ {model}")
+            else:
+                lines.append(f"   ❌ {model} — {detail}" if detail else f"   ❌ {model}")
     return "\n".join(lines)
 
 def _extract_json(text):
