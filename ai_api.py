@@ -1714,7 +1714,34 @@ async def chat_answer(question, user_lang="uz", history=None):
         content = str(item.get("content") or "").strip()
         if role in ("user", "assistant") and content and not content.startswith("⚠️"):
             dialogue.append({"role": role, "content": content[:1500]})
-    dialogue = dialogue[-8:]
+    dialogue = dialogue[-16:]
+
+    def last_turn(role):
+        for item in reversed(dialogue):
+            if item["role"] == role and item["content"].strip():
+                return item["content"].strip()
+        return ""
+
+    last_user_text = last_turn("user")
+    last_bot_text = last_turn("assistant")
+
+    # Short follow-ups ("davomi", "buni tushuntir", "bu so'zni tarjima qil") only
+    # make sense together with the earlier turns. Weak models ignore a bare
+    # message list, so the recent conversation is quoted explicitly as well.
+    context_note = ""
+    if dialogue:
+        recent = "\n".join(
+            f"{'User' if item['role'] == 'user' else 'Assistant'}: {item['content'][:700]}"
+            for item in dialogue[-8:]
+        )
+        context_note = (
+            "\n\nCONVERSATION SO FAR (context only — never repeat it back):\n"
+            f"{recent}\n"
+            "The current message continues this conversation. If it refers to "
+            "something said earlier (\"this\", \"that word\", \"continue\", "
+            "\"explain more\"), use the conversation above and answer as a natural "
+            "continuation instead of starting a new topic."
+        )
 
     # Directly handle common one-word greetings so a model cannot randomly answer in Arabic.
     compact = re.sub(r"\s+", " ", q.casefold().strip(" .,!?:;\"'`()[]{}"))
@@ -1735,17 +1762,42 @@ async def chat_answer(question, user_lang="uz", history=None):
     translation_note = (
         " The user asks for a translation: translate the provided text fully and naturally "
         f"into {language}, keeping names, numbers and formatting intact. Do not summarize or add "
-        "commentary unless the user asked for it."
+        "commentary unless the user asked for it. If no text to translate is present, ask the "
+        "user to send it — never invent text."
         if wants_translation else ""
     )
+
+    # "bu so'zni tarjima qil" (translate this word) has no text of its own: the
+    # word is in the previous turn. Pick that text explicitly so even a small
+    # model translates the right thing instead of inventing an answer.
+    translation_source = ""
+    if wants_translation:
+        low = q.casefold().replace("’", "'")
+        word_ref = any(w in low for w in ("so'z", "soz", "word", "слово", "сўз", "ifoda"))
+        quoted = re.search(r"[\"'«“]([^\"'»”]{2,})[\"'»”]", q)
+        if quoted:
+            translation_source = quoted.group(1).strip()
+        elif len(_chat_tokens(q)) <= 8:
+            source = last_user_text if word_ref else (last_bot_text or last_user_text)
+            if source and len(source) <= 1500:
+                translation_source = source
+
+    if translation_source:
+        question_prompt = (
+            f"TEXT TO TRANSLATE:\n{translation_source}\n\n"
+            f"The user's request: {q}\n"
+            f"Translate the whole text above into {language} and return only the translation."
+        )
+    else:
+        question_prompt = q
 
     best_answer = None  # AI qaytargan birinchi yaroqli (bo'sh emas) javob
 
     # 3 ta urinish: har birida til talabi kuchayadi.
     for attempt in range(3):
         if attempt == 0:
-            system = _chat_language_system(lang) + translation_note
-            prompt = q
+            system = _chat_language_system(lang) + translation_note + context_note
+            prompt = question_prompt
             temp = 0.2
         elif attempt == 1:
             system = (
@@ -1754,10 +1806,10 @@ async def chat_answer(question, user_lang="uz", history=None):
                 f"Now answer exclusively in {language} with its normal script. "
                 "Use simple, short, correct sentences. English words are allowed ONLY for "
                 "proper names, brand names and scientific formulas — never for the text itself."
-                + translation_note
+                + translation_note + context_note
             )
             prompt = (
-                f"User's question (must be answered in {language}): {q}\n\n"
+                f"User's question (must be answered in {language}): {question_prompt}\n\n"
                 f"Answer ONLY in {language}. Do not use English."
             )
             temp = 0.3
@@ -1766,9 +1818,9 @@ async def chat_answer(question, user_lang="uz", history=None):
                 f"FINAL ATTEMPT. Answer the question below ONLY in {language}. "
                 "If you cannot answer in that language, give the shortest possible correct "
                 f"answer in {language} anyway. Never switch to English."
-                + translation_note
+                + translation_note + context_note
             )
-            prompt = q
+            prompt = question_prompt
             temp = 0.4
 
         ans = await _chat_complete(

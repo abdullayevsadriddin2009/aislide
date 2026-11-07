@@ -402,7 +402,7 @@ async def chat_handle(message: Message, state: FSMContext):
     from ai_api import chat_answer
     user_id = message.from_user.id
     # Oldingi xabarlar AI kontekstiga beriladi — shu bilan suhbat davom etadi.
-    history = await db.get_chat_history(user_id, limit=8)
+    history = await db.get_chat_history(user_id, limit=16)
     thinking = await message.answer(t("chat_thinking", lang))
     try:
         answer = await chat_answer(txt, user_lang=lang, history=history)
