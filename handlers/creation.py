@@ -7,10 +7,11 @@ from texts import t
 from states import Creation
 from services import SERVICES, service_name, ALL_LANGS
 from keyboards import (option_kb_for, confirm_kb, main_kb, option_label,
-                       subjects_kb, languages_kb, format_kb, template_kb, slide_count_kb)
+                       languages_kb, format_kb, template_kb, slide_count_kb)
 from designs import (subject_name, detect_subject_key, lang_full_name, SLIDE_COUNTS,
                      design_name, DESIGNS, DESIGN_KEYS)
-from ai_api import generate, generate_slides_structured, get_last_error, search_images, download_image, generate_outline, localize_topic
+from ai_api import (generate, generate_slides_structured, get_last_error, search_images, download_image,
+                    generate_outline, localize_topic, image_keywords_batch)
 from pptx_generator import generate_pptx
 from docx_generator import generate_docx
 
@@ -42,36 +43,54 @@ def _slide_design_prompt(lang):
     return prompts.get(lang, prompts["en"])
 
 async def _collect_images(topic, slides_content, total=5, lang="uz"):
-    """Collect topic-specific images concurrently and always supply visual artwork."""
+    """Download one topic-matched photo per slide and keep the slide order.
+
+    Every slide is searched with its own title, so the deck never shows a random
+    unrelated photo. ``generate_pptx`` maps this list to body slides by position,
+    so the returned list has exactly one entry per body slide.
+    """
     import tempfile, os, textwrap, asyncio
     from PIL import Image, ImageDraw, ImageFont
-    tmpdir = tempfile.mkdtemp(prefix="pptx_imgs_")
-    queries = []
-    for candidate in [str(topic or "").strip()] + [
-        str(item.get("title") or "").strip()
-        for item in (slides_content or []) if isinstance(item, dict)
-    ]:
-        candidate = candidate.strip()
-        if len(candidate) >= 3 and candidate.casefold() not in {q.casefold() for q in queries}:
-            queries.append(candidate)
-        if len(queries) >= 3:
-            break
 
-    async def search_one(q):
+    tmpdir = tempfile.mkdtemp(prefix="pptx_imgs_")
+    topic_text = str(topic or "").strip()
+    titles = [str(item.get("title") or "").strip()
+              for item in (slides_content or []) if isinstance(item, dict)]
+    titles = [title for title in titles if len(title) >= 3]
+    slide_slots = max(1, len(titles))
+
+    # Slot 0 is the cover (the topic itself); every other slot is one slide title.
+    queries = [topic_text] + titles
+    queries = [query for query in queries if len(query) >= 3][:12]
+    if not queries:
+        queries = [topic_text or str(lang)]
+
+    # One AI request produces a precise English search phrase per slot.
+    try:
+        batch_keywords = await image_keywords_batch(
+            topic_text, titles, max_items=max(1, len(queries) - 1))
+    except Exception as exc:
+        print(f"[creation] image keyword batch failed: {exc}", flush=True)
+        batch_keywords = []
+
+    async def urls_for(index, query):
         try:
-            return await search_images(q, count=max(5, total * 2))
+            keyword = (batch_keywords[index]
+                       if index < len(batch_keywords) and batch_keywords[index] else query)
+            # Only the cover asks Wikipedia for the article's own lead image.
+            return await search_images(query, count=3, keywords=keyword, use_wiki=(index == 0))
         except Exception as exc:
-            print(f"[creation] search_images failed for {q!r}: {exc}", flush=True)
+            print(f"[creation] search_images failed for {query!r}: {exc}", flush=True)
             return []
 
-    groups = await asyncio.gather(*(search_one(q) for q in queries)) if queries else []
-    urls, seen = [], set()
+    groups = await asyncio.gather(*(urls_for(i, q) for i, q in enumerate(queries)))
+
+    used, slot_urls = set(), []
     for group in groups:
-        for url in group or []:
-            if url and url not in seen:
-                seen.add(url)
-                urls.append(url)
-    urls = urls[:max(8, total * 2)]
+        chosen = next((url for url in group or [] if url and url not in used), None)
+        if chosen:
+            used.add(chosen)
+        slot_urls.append(chosen)
 
     async def download_one(index, url):
         path = os.path.join(tmpdir, f"img_{index}.jpg")
@@ -82,7 +101,7 @@ async def _collect_images(topic, slides_content, total=5, lang="uz"):
             # HTTP 200 responses can still contain HTML/error pages instead of an
             # image; verify the bytes before passing the file to python-pptx.
             with Image.open(path) as image:
-                if image.width < 120 or image.height < 80:
+                if image.width < 640 or image.height < 360:
                     return None
                 image.verify()
             return path
@@ -90,12 +109,18 @@ async def _collect_images(topic, slides_content, total=5, lang="uz"):
             print(f"[creation] image download failed/invalid: {exc}", flush=True)
             return None
 
-    downloads = await asyncio.gather(*(download_one(i, url) for i, url in enumerate(urls))) if urls else []
-    paths = [p for p in downloads if p][:total]
+    pending = [(index, url) for index, url in enumerate(slot_urls) if url]
+    downloads = await asyncio.gather(*(download_one(i, u) for i, u in pending)) if pending else []
+    downloaded = {index: path for (index, _), path in zip(pending, downloads) if path}
 
-    if not paths:
-        # The supplied PPTX has no embedded photos. This generated visual is a
-        # guaranteed fallback when Commons or optional image APIs cannot be reached.
+    cover_path = downloaded.get(0)
+    fallback_path = None
+
+    def fallback_visual():
+        """Themed abstract artwork: better than an unrelated photo."""
+        nonlocal fallback_path
+        if fallback_path:
+            return fallback_path
         try:
             width, height = 1600, 900
             canvas = Image.new("RGB", (width, height), (20, 32, 50))
@@ -109,7 +134,7 @@ async def _collect_images(topic, slides_content, total=5, lang="uz"):
                 label_font = ImageFont.truetype(font_path, 28)
             except Exception:
                 title_font = label_font = ImageFont.load_default()
-            title = str(topic or "Educational presentation").strip()
+            title = topic_text or "Educational presentation"
             lines = textwrap.wrap(title, width=30)[:4]
             y = 285 if len(lines) <= 2 else 220
             for line in lines:
@@ -122,9 +147,18 @@ async def _collect_images(topic, slides_content, total=5, lang="uz"):
             draw.text((145, 690), labels.get(str(lang).lower(), labels["en"]), font=label_font, fill=(201, 162, 39))
             path = os.path.join(tmpdir, "topic_visual.jpg")
             canvas.save(path, "JPEG", quality=90)
-            paths.append(path)
+            fallback_path = path
         except Exception as exc:
             print(f"[creation] fallback image generation failed: {exc}", flush=True)
+        return fallback_path
+
+    # One entry per body slide, in slide order, so the template picker places
+    # each photo next to the slide it was searched for.
+    paths = []
+    for slot in range(slide_slots):
+        path = downloaded.get(slot + 1) or cover_path or fallback_visual()
+        if path:
+            paths.append(path)
     return paths
 
 async def _lang(uid):
@@ -203,13 +237,12 @@ async def topic_received(message: Message, state: FSMContext):
     await state.update_data(topic=topic)
     
     if service == "slide":
+        # The subject is detected from the topic itself; asking the user for it was
+        # an unnecessary extra step and often got the wrong answer.
         detected_key = detect_subject_key(topic)
         await state.update_data(subject=detected_key)
-        await state.set_state(Creation.subject)
-        subj_name = subject_name(detected_key, lang)
-        await message.answer(
-            t("subject_question", lang, subject=subj_name),
-            reply_markup=subjects_kb(detected_key, lang))
+        await state.set_state(Creation.language)
+        await message.answer(t("choose_language", lang), reply_markup=languages_kb(lang))
         return
         
     s = SERVICES.get(service, {})
@@ -565,9 +598,9 @@ async def cb_confirm(call: CallbackQuery, state: FSMContext):
         slides_content, real = await generate_slides_structured(generation_topic, subj_display, language_code, max(2, slide_count - 3))
         
         try:
-            # Bigger decks need more photos so the five layout variants do not keep
-            # repeating the same picture on every fourth slide.
-            image_total = min(12, max(5, slide_count // 2))
+            # One photo per body slide keeps every layout on-topic; the download
+            # budget is still capped so generation stays fast.
+            image_total = min(12, max(5, len(slides_content)))
             img_paths = await _collect_images(generation_topic, slides_content, total=image_total, lang=language_code)
         except Exception as e:
             print(f"[creation] Image download error: {e}", flush=True)

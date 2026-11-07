@@ -311,8 +311,8 @@ def _crop_stream(source, w_in, h_in, circle=False):
         image = Image.open(io.BytesIO(bytes(source)))
     else:
         image = Image.open(source)
-    px_w = max(320, int(w_in * 150))
-    px_h = max(180, int(h_in * 150))
+    px_w = max(480, int(w_in * 210))
+    px_h = max(270, int(h_in * 210))
     image = image.convert("RGBA" if circle else "RGB")
     image = ImageOps.fit(image, (px_w, px_h), method=Image.Resampling.LANCZOS, centering=(0.5, 0.4))
     out = io.BytesIO()
@@ -1115,6 +1115,15 @@ CONTENT_LAYOUTS = {
 }
 
 
+WATERMARK_TEXT = "@Talaba_AI_SlideBot orqali yaratildi"
+
+
+def _watermark(slide, text=WATERMARK_TEXT):
+    """Small credit line on the very bottom edge of a slide."""
+    _text(slide, 0.0, 7.32, 13.333, 0.15, text, size=7, color=(150, 150, 150),
+          align=PP_ALIGN.CENTER, margin=0)
+
+
 def _content_slide(prs, th, lang, item, index, total, design_key, images, topic, subject):
     slide = prs.slides.add_slide(prs.slide_layouts[6])
     variants = CONTENT_LAYOUTS.get(design_key) or CONTENT_LAYOUTS["modern"]
@@ -1315,6 +1324,8 @@ def generate_pptx(topic: str, subject: str, lang: str, design_key: str, slide_co
         actual_slide_number = i + 3
         _content_slide(prs, th, lc, item, actual_slide_number, total, key, image_sources, str(topic), str(subject))
     _closing_slide(prs, th, lc, str(topic), str(subject), entries, total)
+    for slide in prs.slides:
+        _watermark(slide)
 
     buf = io.BytesIO()
     prs.save(buf)

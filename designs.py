@@ -71,6 +71,11 @@ SUBJECTS = {
     "sport":      {"uz": "Sport", "ru": "Спорт", "en": "Sports", "tr": "Spor", "de": "Sport", "fr": "Sport"},
     "tibbiyot":   {"uz": "Tibbiyot", "ru": "Медицина", "en": "Medicine", "tr": "Tıp", "de": "Medizin", "fr": "Médecine"},
 }
+# Fan aniqlanmagan mavzular uchun umumiy kalit (foydalanuvchidan so'ralmaydi).
+SUBJECTS["umumiy"] = {
+    "uz": "Umumiy mavzu", "ru": "Общая тема", "en": "General topic",
+    "tr": "Genel konu", "de": "Allgemeines Thema", "fr": "Sujet général",
+}
 SUBJECT_KEYS = list(SUBJECTS.keys())
 
 def subject_name(key, lang="uz"):
@@ -117,20 +122,57 @@ def suggest_design(subject_key=None):
     return "modern"
 
 def detect_subject_key(topic):
-    """Mavzudan fan kalitini aniqlash."""
+    """Mavzudan fan kalitini aniqlash — foydalanuvchidan so'ramasdan."""
+    import re
     tp = (topic or "").lower()
     mapping = {
-        "hujayra": "biologiya", "biolog": "biologiya", "gen": "biologiya", "ekolog": "biologiya",
-        "tarix": "tarix", "amir temur": "tarix", "temur": "tarix", "navoiy": "adabiyot",
-        "huquq": "huquq", "iqtisod": "iqtisod", "bot": "it", "kompyuter": "it",
-        "ai": "it", "sun'iy intellekt": "it", "python": "it", "intellekt": "it",
-        "matem": "matematika", "fizik": "fizika", "energetika": "fizika",
-        "kimyo": "kimyo", "tibbiy": "tibbiyot", "dori": "tibbiyot",
-        "adabiy": "adabiyot", "til": "til", "geograf": "geografiya",
-        "falsaf": "falsafa", "pedagog": "pedagogika", "sport": "sport",
-        "san'at": "sanat", "rus": "rus_tili", "din": "din",
+        # Adabiyot va tarix
+        "navoiy": "adabiyot", "adabiy": "adabiyot", "she'r": "adabiyot",
+        "shoir": "adabiyot", "yozuvchi": "adabiyot", "roman": "adabiyot",
+        "doston": "adabiyot", "ertak": "adabiyot",
+        "tarix": "tarix", "temur": "tarix", "bobur": "tarix", "somoni": "tarix",
+        "mustaqillik": "tarix", "urush": "tarix", "imperiya": "tarix",
+        "saltanat": "tarix", "jadid": "tarix",
+        # Tabiiy fanlar
+        "biolog": "biologiya", "hujayra": "biologiya", "fotosintez": "biologiya",
+        "genetik": "biologiya", "ekolog": "biologiya", "o'simlik": "biologiya",
+        "hayvon": "biologiya", "dna": "biologiya", "evolyut": "biologiya",
+        "bakteriy": "biologiya", "virus": "biologiya", "botanika": "biologiya",
+        "zoolog": "biologiya",
+        "fizik": "fizika", "energiya": "fizika", "energetika": "fizika",
+        "atom": "fizika", "gravit": "fizika", "elektr": "fizika",
+        "yorug": "fizika", "kvant": "fizika", "magnit": "fizika",
+        "kimyo": "kimyo", "kimyov": "kimyo", "reaksiya": "kimyo",
+        "kislota": "kimyo", "molekul": "kimyo",
+        "matem": "matematika", "algebra": "matematika", "geometr": "matematika",
+        "integral": "matematika", "tenglama": "matematika", "statistik": "matematika",
+        "tibbiy": "tibbiyot", "dori": "tibbiyot", "kasallik": "tibbiyot",
+        "immun": "tibbiyot", "vaksin": "tibbiyot", "anatomiya": "tibbiyot",
+        "geograf": "geografiya", "iqlim": "geografiya", "materik": "geografiya",
+        "okean": "geografiya", "daryo": "geografiya", "xarita": "geografiya",
+        # Ijtimoiy fanlar
+        "huquq": "huquq", "qonun": "huquq", "konstitutsiya": "huquq", "sud": "huquq",
+        "iqtisod": "iqtisod", "bozor": "iqtisod", "soliq": "iqtisod",
+        "valyuta": "iqtisod", "bank": "iqtisod", "tadbirkor": "iqtisod",
+        "falsaf": "falsafa", "axloq": "falsafa", "mantiq": "falsafa",
+        "pedagog": "pedagogika", "ta'lim": "pedagogika", "o'qitish": "pedagogika",
+        "din": "din", "islom": "din", "diniy": "din", "fiqh": "din",
+        "san'at": "sanat", "madaniyat": "sanat", "musiqa": "sanat",
+        "teatr": "sanat", "haykaltarosh": "sanat", "kino": "sanat",
+        "sport": "sport", "futbol": "sport", "olimpiya": "sport", "boks": "sport",
+        # Til va IT
+        "rus tili": "rus_tili", "rus til": "rus_tili", "ruscha": "rus_tili",
+        "tilshunos": "til", "grammatik": "til", "fonetik": "til", "lug'at": "til",
+        "kompyuter": "it", "sun'iy intellekt": "it", "intellekt": "it",
+        "python": "it", "dastur": "it", "algoritm": "it", "internet": "it",
+        "kiber": "it", "robot": "it", "sun'iy": "it",
     }
-    for k, v in mapping.items():
-        if k in tp:
-            return v
-    return "tarix"
+    for key, value in mapping.items():
+        if len(key) <= 4:
+            # Short keys ("ai", "gen", "bot", "din") must match a whole word,
+            # otherwise "air pollution" or "botanika" pick the wrong subject.
+            if re.search(rf"(?<!\w){re.escape(key)}(?!\w)", tp):
+                return value
+        elif key in tp:
+            return value
+    return "umumiy"

@@ -1,3 +1,6 @@
+import html
+import re
+
 from aiogram import Router, F, types
 from aiogram.filters import Command, CommandStart, CommandObject
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
@@ -8,7 +11,7 @@ from texts import t, btn_all
 from keyboards import (main_kb, bot_lang_kb, balance_kb, check_review_kb, services_all_kb,
                        chat_kb, chat_labels)
 from states import TopUp, Chat, Creation, Admin
-from services import SERVICES, SUBSCRIPTION_PLANS, service_name
+from services import SERVICES, SUBSCRIPTION_PLANS, service_name, ALL_LANGS
 
 router = Router()
 
@@ -170,7 +173,7 @@ async def cmd_start(message: Message, command: CommandObject, state: FSMContext)
         pass
 
 # ===== Tilni o'zgartirish tugmasi =====
-@router.message(F.text.contains("Tilni") | F.text.contains("язык") | F.text.contains("anguage") | F.text.contains("🌐"))
+@router.message(F.text.func(lambda text: _menu_action_for(text) == "lang"))
 async def btn_change_lang(message: Message):
     await message.answer(t("choose_bot_lang", "uz"), reply_markup=bot_lang_kb())
 
@@ -258,14 +261,66 @@ async def cmd_referral(message: Message, state: FSMContext = None):
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text=t("btn_share", lang), url=share_url)]]))
 
-# ===== Asosiy menyu tugmalari — 3 tilda ham ishlaydi =====
-_CREATE_WORDS = ["Yaratish", "Создать", "Создание", "Create", "Start creating", "Начать"]
-_CHAT_WORDS = ["AI Chat", "ИИ Чат", "Чат", "Chat", "chat"]
-_BALANCE_WORDS = ["Balans", "Баланс", "Balance", "balance"]
-_REFERRAL_WORDS = ["Referal", "Реферал", "Referral", "referral"]
-_HELP_WORDS = ["Yordam", "Помощь", "Help", "help"]
+# ===== Asosiy menyu tugmalari — faqat aniq tugma matni bilan ishlaydi =====
+def _normalize_button(text):
+    """Case/space-insensitive form used to recognise real menu button presses."""
+    return re.sub(r"\s+", " ", str(text or "").casefold()).strip(" .!?…") or ""
 
-@router.message(F.text.contains("Yaratish") | F.text.contains("Создать") | F.text.contains("Create") | F.text.contains("Начать"))
+
+def _menu_actions():
+    """Map every localized main-menu label to the action it triggers.
+
+    Exact matching keeps normal chat questions working: a long sentence that
+    merely contains the word "yaratish" must be answered by the AI, not treated
+    as a menu button press.
+    """
+    cached = getattr(_menu_actions, "_cache", None)
+    if cached is not None:
+        return cached
+    actions = {}
+    pairs = (
+        ("balance", "btn_balance"), ("referral", "btn_referral"),
+        ("create", "btn_create"), ("help", "btn_help"),
+        ("chat", "btn_chat"), ("lang", "btn_lang"),
+    )
+    for code in ALL_LANGS:
+        for action, key in pairs:
+            label = _normalize_button(t(key, code))
+            if label:
+                actions.setdefault(label, action)
+    for label in ("Tilni o'zgartirish", "Tilni", "язык", "language", "🌐"):
+        actions.setdefault(_normalize_button(label), "lang")
+    _menu_actions._cache = actions
+    return actions
+
+
+def _menu_action_for(text):
+    return _menu_actions().get(_normalize_button(text))
+
+
+def _split_message(text, limit=3900):
+    """Split a long AI answer on paragraph/sentence boundaries for Telegram."""
+    text = str(text or "")
+    if len(text) <= limit:
+        return [text]
+    parts = []
+    while text:
+        if len(text) <= limit:
+            parts.append(text)
+            break
+        cut = text.rfind("\n\n", 0, limit)
+        if cut < limit // 2:
+            cut = text.rfind(". ", 0, limit)
+        if cut < limit // 2:
+            cut = text.rfind(" ", 0, limit)
+        if cut <= 0:
+            cut = limit
+        parts.append(text[:cut].rstrip())
+        text = text[cut:].lstrip()
+    return [part for part in parts if part]
+
+
+@router.message(F.text.func(lambda text: _menu_action_for(text) == "create"))
 async def btn_create(message: Message, state: FSMContext):
     if not await _is_subscribed(message.bot, message.from_user.id):
         lang = await _lang(message.from_user.id)
@@ -277,7 +332,7 @@ async def btn_create(message: Message, state: FSMContext):
 
 # ===== 💬 AI CHAT =====
 @router.message(Command("chat"))
-@router.message(F.text.contains("AI Chat") | F.text.contains("ИИ Чат") | F.text.contains("Chat") | F.text.contains("Чат"))
+@router.message(F.text.func(lambda text: _menu_action_for(text) == "chat"))
 async def btn_chat(message: Message, state: FSMContext):
     if not await _is_subscribed(message.bot, message.from_user.id):
         lang = await _lang(message.from_user.id)
@@ -316,48 +371,82 @@ async def cmd_new_chat(message: Message, state: FSMContext):
 
 @router.message(Chat.active)
 async def chat_handle(message: Message, state: FSMContext):
-    txt = message.text or ""
+    txt = (message.text or "").strip()
     lang = await _lang(message.from_user.id)
-    # Asosiy menyu tugmasi bosilsa — chat rejimidan chiqish
-    menu_words = _BALANCE_WORDS + _REFERRAL_WORDS + _CREATE_WORDS + _HELP_WORDS + _CHAT_WORDS + ["Tilni", "язык", "anguage"]
-    if any(k.lower() in txt.lower() for k in menu_words):
+
+    # An exact menu button press leaves chat mode; everything else is a question.
+    action = _menu_action_for(txt) if txt else None
+    if action:
         await state.clear()
-        if any(k.lower() in txt.lower() for k in _BALANCE_WORDS):
+        if action == "balance":
             await cmd_balance(message); return
-        if any(k.lower() in txt.lower() for k in _REFERRAL_WORDS):
+        if action == "referral":
             await cmd_referral(message, state); return
-        if any(k.lower() in txt.lower() for k in _CREATE_WORDS):
+        if action == "create":
             await btn_create(message, state); return
-        if any(k.lower() in txt.lower() for k in _HELP_WORDS):
+        if action == "help":
             await cmd_help(message); return
-        if any(k.lower() in txt.lower() for k in _CHAT_WORDS):
+        if action == "chat":
             await btn_chat(message, state); return
+        if action == "lang":
+            await btn_change_lang(message); return
         return
+
+    if not txt:
+        # Stickers, photos and other non-text messages still get an explanation
+        # instead of an unanswered "thinking" bubble.
+        label = chat_labels(lang)
+        await message.answer(label["start"], reply_markup=chat_kb(lang))
+        return
+
     from ai_api import chat_answer
     user_id = message.from_user.id
     # Oldingi xabarlar AI kontekstiga beriladi — shu bilan suhbat davom etadi.
-    history = await db.get_chat_history(user_id, limit=12)
+    history = await db.get_chat_history(user_id, limit=8)
     thinking = await message.answer(t("chat_thinking", lang))
-    answer = await chat_answer(txt, user_lang=lang, history=history)
-    if not answer:
-        answer = t("chat_failed", lang)
-    answer = answer[:4000]
-    await db.add_chat_message(user_id, "user", txt)
-    await db.add_chat_message(user_id, "assistant", answer)
     try:
-        await thinking.edit_text(answer, reply_markup=chat_kb(lang))
-    except Exception:
-        await message.answer(answer, reply_markup=chat_kb(lang))
+        answer = await chat_answer(txt, user_lang=lang, history=history)
+    except Exception as exc:
+        # Never leave the user stuck on "O'ylayapman...": log and answer clearly.
+        print(f"[chat] chat_answer failed: {type(exc).__name__}: {exc}", flush=True)
+        answer = None
+    if not answer or not str(answer).strip():
+        answer = t("chat_failed", lang)
+    answer = str(answer).strip()[:8000]
 
-@router.message(F.text.contains("Balans") | F.text.contains("Баланс") | F.text.contains("Balance"))
+    try:
+        await db.add_chat_message(user_id, "user", txt)
+        await db.add_chat_message(user_id, "assistant", answer)
+    except Exception as exc:
+        print(f"[chat] history save failed: {exc}", flush=True)
+
+    # The bot runs with parse_mode=HTML, so "<" or "&" inside an AI answer would
+    # otherwise make Telegram reject the message and leave the user with no reply.
+    # Long answers are split instead of being cut off at Telegram's 4096 limit.
+    chunks = [html.escape(part, quote=False) for part in _split_message(answer)] or [answer]
+    try:
+        await thinking.edit_text(chunks[0], reply_markup=chat_kb(lang) if len(chunks) == 1 else None)
+    except Exception:
+        try:
+            await message.answer(chunks[0], reply_markup=chat_kb(lang) if len(chunks) == 1 else None)
+        except Exception as exc:
+            print(f"[chat] answer delivery failed: {type(exc).__name__}: {exc}", flush=True)
+    for extra_chunk in chunks[1:]:
+        try:
+            await message.answer(extra_chunk, reply_markup=chat_kb(lang))
+        except Exception as exc:
+            print(f"[chat] extra chunk delivery failed: {type(exc).__name__}: {exc}", flush=True)
+
+
+@router.message(F.text.func(lambda text: _menu_action_for(text) == "balance"))
 async def btn_balance(message: Message):
     await cmd_balance(message)
 
-@router.message(F.text.contains("Referal") | F.text.contains("Реферал") | F.text.contains("Referral"))
+@router.message(F.text.func(lambda text: _menu_action_for(text) == "referral"))
 async def btn_referral(message: Message, state: FSMContext):
     await cmd_referral(message, state)
 
-@router.message(F.text.contains("Yordam") | F.text.contains("Помощь") | F.text.contains("Help"))
+@router.message(F.text.func(lambda text: _menu_action_for(text) == "help"))
 async def btn_help(message: Message):
     await cmd_help(message)
 

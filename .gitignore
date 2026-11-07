@@ -9,4 +9,5 @@ data/
 tmp/
 temp/
 downloads/
-firebase_key.json     
+firebase_key.json
+.venv/

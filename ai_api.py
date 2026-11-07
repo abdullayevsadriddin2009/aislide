@@ -920,9 +920,13 @@ async def generate_slides_structured(topic, subject, lang, count):
               f" You are a professional presentation writer. Write ONLY in {ln}. "
               "Return only a valid JSON array, with no explanation outside the JSON.")
 
-    prompt = f"""Topic: {topic}. Subject: {subject}.
-Create exactly {count} CONTENT slides for a professional presentation. The cover and the agenda slide are added by the PowerPoint template, so do not return a cover slide or a table-of-contents slide.
-
+    def build_prompt(n, skip_titles=()):
+        skip_line = ""
+        if skip_titles:
+            skip_line = ("\nThese slide titles are already written and must NOT be repeated: "
+                         + "; ".join(str(x) for x in list(skip_titles)[:20]) + ".\n")
+        return f"""Topic: {topic}. Subject: {subject}.
+Create exactly {n} CONTENT slides for a professional presentation. The cover and the agenda slide are added by the PowerPoint template, so do not return a cover slide or a table-of-contents slide.{skip_line}
 STRICT LANGUAGE RULES:
 1. Write every title and every content sentence only in the selected language ({ln}).
 2. Translate headings into {ln}; keep proper names, official product names and standard technical terms that should not be translated.
@@ -935,19 +939,23 @@ ACCURACY RULES:
 3. Every slide must carry a different, topic-specific point; no generic filler and no repeated wording.
 
 STRUCTURE RULES:
-1. Return only a valid JSON array with exactly {count} objects.
-2. Each object has "title" and "content"; "content" is an array of 4-6 concise sentences.
-3. Cover background, key concepts, evidence, comparison, practical application and implications across the deck.
-4. The last slide must be a conclusion with practical recommendations, titled with the natural {ln} equivalent of "Conclusion".
+1. Return only a valid JSON array with exactly {n} objects.
+2. Each object has "title" and "content". "title" is a specific heading of 3-9 words. "content" is an array of 5-6 COMPLETE sentences of 14-25 words each, enough real information to fill the whole slide.
+3. Every sentence must add a fact, a date, a name, a figure, an example, a cause or a clear explanation. Never write empty filler such as "this is very important", "many aspects are studied" or "it plays a big role" without saying exactly what.
+4. Never repeat a sentence, a title or a point anywhere in the deck. Do not write one-word bullets or placeholders.
+5. Cover background, key concepts, evidence, comparison, practical application and implications across the deck.
+6. The last slide must be a conclusion with practical recommendations, titled with the natural {ln} equivalent of "Conclusion".
 
 Reference material (facts only; translate its meaning into {ln} and never copy its language):
 {wb}{source_line}
 
 JSON example (translate the sample wording into {ln} in the actual response):
-[{{"title":"Section title","content":["Sentence one.","Sentence two.","Sentence three.","Sentence four."]}}]"""
+[{{"title":"Section title","content":["Sentence one with a concrete fact.","Sentence two with a date or figure.","Sentence three explaining the cause.","Sentence four giving an example.","Sentence five stating the result."}}]"""
 
-    async def request(extra=""):
-        txt = await _chat_complete(prompt + extra, system=system, max_tokens=5000)
+    async def request(extra="", n=None, skip_titles=()):
+        wanted = count if n is None else max(1, min(60, int(n)))
+        txt = await _chat_complete(build_prompt(wanted, skip_titles) + extra, system=system,
+                                   max_tokens=min(7500, 4200 + 160 * wanted))
         return _extract_json(txt)
 
     def clean_entries(parsed):
@@ -986,12 +994,22 @@ JSON example (translate the sample wording into {ln} in the actual response):
                       "taqdimot zaxira mazmun bilan tuzildi.")
         used_fallback = True
 
-    # Keep the requested count exactly, filling gaps with localized content only.
+    # Keep the requested count exactly. Before using filler text, ask once for the
+    # missing slides so a real deck is not padded with generic localized phrases.
     if len(all_slides) < count:
         if all_slides and not LAST_ERROR:
             LAST_ERROR = (f"AI faqat {len(all_slides)} ta yaroqli slayd qaytardi; "
                           "qolgan slaydlar zaxira mazmun bilan to'ldirildi.")
         used_fallback = True
+    if all_slides and len(all_slides) < count:
+        missing = count - len(all_slides)
+        existing_titles = [item["title"] for item in all_slides]
+        extra_slides = clean_entries(await request(
+            f"\nFINAL CHECK: the deck still needs {missing} more slides about other real "
+            f"aspects of the topic. Return exactly {missing} new slides written in {ln} only, "
+            "and do not repeat any title listed above.",
+            n=missing, skip_titles=existing_titles))
+        all_slides.extend(extra_slides[:missing])
     while len(all_slides) < count:
         index = len(all_slides) + 1
         title_fallback, body_fallback = _localized_slide_fallback(topic, lc, index)
@@ -1027,26 +1045,109 @@ SEARCH_MAP = {
 }
 STOP_WORDS = {"portrait", "historical", "hero", "leader", "conqueror", "poet", "writer", "scholar", "astronomer", "city", "architecture", "culture", "landmark", "warrior", "prince", "scientist", "figure", "realistic", "photo", "ancient", "epic", "scene", "heritage", "monument", "legacy", "inspirational", "cinematic", "detailed", "photorealistic", "structure", "laboratory", "educational", "illustration", "microscope", "nucleus", "electrons"}
 
+_GENERIC_IMAGE_WORDS = {
+    "presentation", "slide", "slides", "topic", "concept", "concepts", "overview",
+    "introduction", "education", "educational", "school", "study", "studies",
+    "information", "knowledge", "general", "main", "important", "analysis", "example",
+    "examples", "aspect", "aspects", "role", "significance", "development", "process",
+    "result", "results", "conclusion",
+}
+
+_IMAGE_BLOCKED_TITLE_WORDS = (
+    "logo", "icon", "flag", "coat of arms", "emblem", "seal of", "signature", "userbox",
+    "wikimedia", "commons-logo", "disambig", "stub", "screenshot", "chart", "diagram",
+    "graph", "poster", "book cover", "album cover", "stamp", "banknote", "coin",
+    "plaque", "letterhead", "formula", "equation", "banner", ".svg", ".pdf",
+)
+
+
+def _image_title_usable(title):
+    """Reject file titles that are never a useful presentation photo."""
+    low = str(title or "").casefold()
+    return not any(word in low for word in _IMAGE_BLOCKED_TITLE_WORDS)
+
+
+def _keyword_words(value):
+    return [w for w in re.findall(r"[a-z0-9]{4,}", str(value or "").casefold())
+            if w not in STOP_WORDS and w not in _GENERIC_IMAGE_WORDS]
+
+
 async def topic_to_english_keywords(topic):
-    key = topic.lower().strip()
-    if key in _KEYWORD_CACHE: return _KEYWORD_CACHE[key]
+    key = str(topic or "").lower().strip()
+    if not key:
+        return ""
+    if key in _KEYWORD_CACHE:
+        return _KEYWORD_CACHE[key]
     for uz, en in SEARCH_MAP.items():
-        if uz in key: _KEYWORD_CACHE[key] = en; return en
+        if uz in key:
+            _KEYWORD_CACHE[key] = en
+            return en
+    prompt = (
+        "Write one English stock-photo search phrase of 2-4 CONCRETE nouns that finds a real "
+        "photo illustrating exactly this school presentation topic. Do not use generic words "
+        "such as presentation, education, concept, overview, information, or history/science "
+        "alone. Use the exact English name of the person, place, object, organism, device or "
+        "process.\nTopic: " + str(topic)
+    )
     try:
-        txt = await _chat_complete(f"Rasm uchun inglizcha 3-5 kalit so'z. Faqat so'zlar: {topic}", system="You generate stock-photo keywords in English. Keywords only.", max_tokens=60)
-        if txt and 3 < len(txt) < 150:
-            kw = re.sub(r'[^a-zA-Z\s,]', '', txt).strip()
-            if kw: _KEYWORD_CACHE[key] = kw; return kw
-    except Exception: pass
-    _KEYWORD_CACHE[key] = topic
-    return topic
+        txt = await _chat_complete(
+            prompt, system="You generate precise English image search phrases. Output the phrase only, no quotes, no explanation.",
+            max_tokens=60, temperature=0.2)
+        kw = re.sub(r"[^A-Za-z\s-]", " ", str(txt or "")).strip()
+        kw = re.sub(r"\s+", " ", kw)
+        if 3 < len(kw) <= 80 and _keyword_words(kw):
+            _KEYWORD_CACHE[key] = kw
+            return kw
+    except Exception:
+        pass
+    _KEYWORD_CACHE[key] = str(topic)
+    return str(topic)
+
+
+async def image_keywords_batch(topic, titles, max_items=12):
+    """One precise English image-search phrase per slide, generated in a single request."""
+    items = [str(topic or "").strip()]
+    items += [str(title or "").strip() for title in (titles or [])]
+    items = [item for item in items if item][:max(1, int(max_items))]
+    if not items:
+        return []
+    prompt = (
+        "For each numbered item below write ONE English stock-photo search phrase of 2-4 "
+        "concrete nouns that would find a real photo illustrating exactly that item. Never use "
+        "generic words such as presentation, education, concept, overview, information, history "
+        "alone or science alone. For a person or place use its English name plus what it is. "
+        f"Return ONLY a JSON array of strings with exactly {len(items)} entries in the same "
+        "order, and nothing else.\n" + "\n".join(f"{i + 1}. {item}" for i, item in enumerate(items))
+    )
+    try:
+        txt = await _chat_complete(
+            prompt, system="You generate precise, concrete English image search phrases. Output only a JSON array of strings.",
+            max_tokens=500, temperature=0.2)
+        parsed = _extract_json(txt)
+        if isinstance(parsed, list):
+            cleaned = []
+            for value in parsed:
+                phrase = re.sub(r"[^A-Za-z\s-]", " ", str(value or "")).strip()
+                phrase = re.sub(r"\s+", " ", phrase)
+                cleaned.append(phrase if phrase and _keyword_words(phrase) else "")
+            if any(cleaned):
+                while len(cleaned) < len(items):
+                    cleaned.append("")
+                return cleaned[:len(items)]
+    except Exception as exc:
+        _log(f"image keyword batch failed: {exc}")
+    return []
+
 
 async def _wiki_image(topic):
     try:
         wiki = await wikipedia_fetch(topic, max_chars=200)
-        if wiki.get("image"): return [{"url": wiki["image"], "tags": wiki["title"].lower(), "src": "wikipedia"}]
-    except Exception: pass
+        if wiki.get("image") and _image_title_usable(str(wiki.get("image"))):
+            return [{"url": wiki["image"], "tags": str(wiki.get("title", "")).lower(), "src": "wikipedia"}]
+    except Exception:
+        pass
     return []
+
 
 async def _commons_images(query, count=12):
     """Search Wikimedia Commons without requiring a third-party API key."""
@@ -1056,8 +1157,10 @@ async def _commons_images(query, count=12):
     api_url = "https://commons.wikimedia.org/w/api.php"
     params = {
         "action": "query", "generator": "search",
-        "gsrsearch": query, "gsrnamespace": 6, "gsrlimit": max(5, min(20, int(count))),
-        "prop": "imageinfo", "iiprop": "url|mime|size", "iiurlwidth": 1600,
+        # filetype:bitmap keeps SVG icons, logos and PDF documents out of the pool.
+        "gsrsearch": f"{query} filetype:bitmap", "gsrnamespace": 6,
+        "gsrlimit": max(10, min(20, int(count))),
+        "prop": "imageinfo", "iiprop": "url|mime|size", "iiurlwidth": 2000,
         "format": "json",
     }
     try:
@@ -1071,20 +1174,23 @@ async def _commons_images(query, count=12):
         results = []
         for page in pages.values():
             title = str(page.get("title", ""))
+            if not _image_title_usable(title):
+                continue
             for info in page.get("imageinfo", [])[:1]:
                 mime = str(info.get("mime", ""))
                 url = info.get("thumburl") or info.get("url")
                 width = int(info.get("thumbwidth", info.get("width", 0)) or 0)
                 height = int(info.get("thumbheight", info.get("height", 0)) or 0)
-                if not url or not mime.startswith("image/"):
+                if not url or mime not in ("image/jpeg", "image/png", "image/webp"):
                     continue
-                if width and height and (width < 400 or height < 240):
+                if width and height and (width < 640 or height < 360):
                     continue
                 results.append({"url": url, "tags": title.lower(), "src": "commons"})
         return results
     except Exception as exc:
         _log(f"Wikimedia Commons image search failed: {exc}")
         return []
+
 
 async def _pixabay_images(query):
     if not PIXABAY_KEY: return []
@@ -1097,6 +1203,7 @@ async def _pixabay_images(query):
         return [{"url": h.get("webformatURL"), "tags": (h.get("tags", "") + " " + str(h.get("user", ""))).lower(), "src": "pixabay"} for h in data.get("hits", []) if h.get("webformatURL")]
     except Exception: return []
 
+
 async def _pexels_images(query):
     if not PEXELS_KEY: return []
     url = f"https://api.pexels.com/v1/search?query={aiohttp.helpers.quote(query)}&per_page=40&orientation=landscape"
@@ -1107,6 +1214,7 @@ async def _pexels_images(query):
                 data = await r.json()
         return [{"url": p.get("src", {}).get("large"), "tags": (str(p.get("alt", "")) + " " + str(p.get("photographer", ""))).lower(), "src": "pexels"} for p in data.get("photos", []) if p.get("src", {}).get("large")]
     except Exception: return []
+
 
 async def _unsplash_images(query):
     if not UNSPLASH_KEY: return []
@@ -1119,31 +1227,61 @@ async def _unsplash_images(query):
         return [{"url": p.get("urls", {}).get("regular"), "tags": (str(p.get("alt_description", "")) + " " + str(p.get("description", ""))).lower(), "src": "unsplash"} for p in data.get("results", []) if p.get("urls", {}).get("regular")]
     except Exception: return []
 
-async def search_images(query, count=5):
-    q = re.sub(r'[^\w\s\']', ' ', str(query)).strip()
-    if len(q) < 3: return []
-    keywords = await topic_to_english_keywords(q)
-    kw_list = [w for w in keywords.lower().split() if len(w) > 2 and w not in STOP_WORDS]
-    results = await asyncio.gather(
-        _wiki_image(q), _commons_images(keywords, count=max(8, count * 3)),
-        _pixabay_images(keywords), _pexels_images(keywords), _unsplash_images(keywords),
-        return_exceptions=True,
-    )
+
+async def search_images(query, count=5, keywords=None, use_wiki=True):
+    """Return only images whose own tags really match the requested subject.
+
+    A weak one-word tag hit used to be enough, which is why unrelated photos ended
+    up in the deck. Now the main keyword must appear, Commons titles are checked,
+    and the article's own Wikipedia image is preferred.
+    """
+    q = re.sub(r"[^\w\s']", " ", str(query or "")).strip()
+    if len(q) < 3:
+        return []
+    kw_source = keywords if keywords is not None else await topic_to_english_keywords(q)
+    kw_list = _keyword_words(kw_source)
+    if not kw_list:
+        return []
+    primary = kw_list[0]
+    tasks = [
+        _commons_images(str(kw_source), count=20),
+        _pixabay_images(str(kw_source)),
+        _pexels_images(str(kw_source)),
+        _unsplash_images(str(kw_source)),
+    ]
+    if use_wiki:
+        tasks.insert(0, _wiki_image(q))
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+
     candidates, seen = [], set()
     for group in results:
         if isinstance(group, Exception) or not group:
             continue
-        for c in group:
-            u = c.get("url")
-            if not u or u in seen: continue
-            seen.add(u)
-            mos = sum(1 for kw in kw_list if kw in c["tags"]) if kw_list else 1
-            if c.get("src") == "wikipedia": mos += 10
-            elif c.get("src") == "commons": mos += 6
-            candidates.append((mos, u))
-    candidates.sort(key=lambda x: -x[0])
-    urls = [u for mos, u in candidates if mos > 0][:count]
-    return urls
+        for candidate in group:
+            url = candidate.get("url")
+            tags = str(candidate.get("tags") or "").casefold()
+            if not url or url in seen:
+                continue
+            tag_words = set(re.findall(r"[a-z0-9]+", tags))
+            matches = sum(1 for word in kw_list if word in tag_words or word in tags)
+            src = candidate.get("src")
+            if src == "wikipedia":
+                # The article's own lead image is the most reliable topical match.
+                score = 100 + matches
+            elif src == "commons":
+                # Commons "tags" are the file title, so require the main keyword.
+                if primary not in tags:
+                    continue
+                score = 20 + matches * 4
+            else:
+                if matches < 1:
+                    continue
+                score = 10 + matches * 3
+            seen.add(url)
+            candidates.append((score, url))
+    candidates.sort(key=lambda pair: -pair[0])
+    return [url for _, url in candidates][:max(1, int(count))]
+
 
 async def download_image(url, save_path):
     """Download and validate an image; re-encode it to a safe JPEG for PPTX."""
@@ -1230,17 +1368,28 @@ async def _try_post(api, model, payload):
     except Exception as e: return None, None, str(e)
 
 async def _chat_complete(prompt, system=None, max_tokens=2500, temperature=0.5,
-                         frequency_penalty=0.7, presence_penalty=0.5):
+                         frequency_penalty=0.7, presence_penalty=0.5, history=None):
     """Try every configured model across every provider before returning fallback text.
 
     Previous implementation stopped as soon as the first provider's models ran out,
     so configured backups were never reached. Keep a local ordered attempt list to
     make each request complete its own failover cycle.
+
+    ``history`` carries previous chat turns (``[{"role": ..., "content": ...}]``)
+    so follow-up questions keep their context instead of starting from scratch.
     """
     global CURRENT_API_INDEX, CURRENT_MODEL_INDEX, LAST_ERROR
     messages = []
     if system:
         messages.append({"role": "system", "content": str(system)})
+    for item in history or []:
+        if not isinstance(item, dict):
+            continue
+        role = str(item.get("role") or "").strip().lower()
+        content = str(item.get("content") or "").strip()
+        if role not in ("user", "assistant") or not content:
+            continue
+        messages.append({"role": role, "content": content[:4000]})
     messages.append({"role": "user", "content": str(prompt)})
     payload = {
         "messages": messages,
@@ -1364,6 +1513,29 @@ def _chat_tokens(text):
     return re.findall(r"[^\W\d_]+(?:['’][^\W\d_]+)?", str(text or "").casefold(), flags=re.UNICODE)
 
 
+_TRANSLATION_CUES = (r"tarjima", r"o['’]gir", r"перевед", r"перевод", r"переклад",
+                     r"\btranslate\b", r"\btranslation\b", r"übersetz", r"traduc",
+                     r"traduz", r"переведи")
+
+_TARGET_LANGUAGE_WORDS = (
+    ("uz", ("o'zbek", "o‘zbek", "узбек", "uzbek")),
+    ("ru", ("rus tili", "ruscha", "rus tiliga", "русск", "russian")),
+    ("en", ("ingliz", "английск", "english")),
+    ("tr", ("turk tili", "turkcha", "türkçe", "турецк", "turkish")),
+    ("de", ("nemis", "немецк", "german", "deutsch")),
+    ("fr", ("fransuz", "француз", "french", "français", "francais")),
+    ("ar", ("arab tili", "arabcha", "арабск", "arabic")),
+    ("es", ("ispan", "испанск", "spanish", "español")),
+    ("zh", ("xitoy", "китайск", "chinese", "中文")),
+)
+
+
+def _wants_translation(text):
+    """True when the message asks for a translation rather than a plain answer."""
+    t = str(text or "").casefold().replace("’", "'")
+    return any(re.search(pattern, t) for pattern in _TRANSLATION_CUES)
+
+
 def _requested_chat_language(text):
     """Respect an explicit instruction to answer or translate into another language."""
     t = str(text or "").casefold().replace("’", "'")
@@ -1381,6 +1553,12 @@ def _requested_chat_language(text):
     for lang, regexes in patterns:
         if any(re.search(p, t) for p in regexes):
             return lang
+    # Requests such as "ingliz tiliga tarjima qil" or "переведи на немецкий" name
+    # the target language instead of saying "in English".
+    if _wants_translation(t):
+        for lang, words in _TARGET_LANGUAGE_WORDS:
+            if any(word in t for word in words):
+                return lang
     return None
 
 
@@ -1516,28 +1694,57 @@ def _chat_failure_message(lang):
     return messages.get(lang, messages["uz"])
 
 
-async def chat_answer(question, user_lang="uz"):
-    """Javobni savol tilida qaytaradi. Filtrlardan o'tmasa ham eng yaxshi AI javobini ko'rsatadi."""
+async def chat_answer(question, user_lang="uz", history=None):
+    """Javobni savol tilida qaytaradi va oldingi suhbat kontekstini hisobga oladi.
+
+    Filtrlardan o'tmasa ham eng yaxshi AI javobini ko'rsatadi.
+    """
     q = str(question or "").strip()
     if not q:
         return None
     if len(q) > 12000:
         q = q[:12000]
 
+    # Oldingi xabarlar kontekst sifatida beriladi ("davomi", "yana tushuntir").
+    dialogue = []
+    for item in history or []:
+        if not isinstance(item, dict):
+            continue
+        role = str(item.get("role") or "").strip().lower()
+        content = str(item.get("content") or "").strip()
+        if role in ("user", "assistant") and content and not content.startswith("⚠️"):
+            dialogue.append({"role": role, "content": content[:1500]})
+    dialogue = dialogue[-8:]
+
     # Directly handle common one-word greetings so a model cannot randomly answer in Arabic.
     compact = re.sub(r"\s+", " ", q.casefold().strip(" .,!?:;\"'`()[]{}"))
     if compact in _CHAT_GREETINGS:
         return _CHAT_GREETINGS[compact][1]
 
-    lang = _detect_chat_language(q, fallback=user_lang)
+    explicit_lang = _requested_chat_language(q)
+    wants_translation = _wants_translation(q)
+    if explicit_lang:
+        lang = explicit_lang
+    else:
+        lang = _detect_chat_language(q, fallback=user_lang)
+        if wants_translation and lang != user_lang and user_lang in CHAT_LANGUAGE_NAMES:
+            # "tarjima qil" without a named language: translate into the interface
+            # language instead of echoing the source language back unchanged.
+            lang = user_lang
     language = CHAT_LANGUAGE_NAMES.get(lang, CHAT_LANGUAGE_NAMES.get("uz"))
+    translation_note = (
+        " The user asks for a translation: translate the provided text fully and naturally "
+        f"into {language}, keeping names, numbers and formatting intact. Do not summarize or add "
+        "commentary unless the user asked for it."
+        if wants_translation else ""
+    )
 
     best_answer = None  # AI qaytargan birinchi yaroqli (bo'sh emas) javob
 
     # 3 ta urinish: har birida til talabi kuchayadi.
     for attempt in range(3):
         if attempt == 0:
-            system = _chat_language_system(lang)
+            system = _chat_language_system(lang) + translation_note
             prompt = q
             temp = 0.2
         elif attempt == 1:
@@ -1547,6 +1754,7 @@ async def chat_answer(question, user_lang="uz"):
                 f"Now answer exclusively in {language} with its normal script. "
                 "Use simple, short, correct sentences. English words are allowed ONLY for "
                 "proper names, brand names and scientific formulas — never for the text itself."
+                + translation_note
             )
             prompt = (
                 f"User's question (must be answered in {language}): {q}\n\n"
@@ -1558,15 +1766,20 @@ async def chat_answer(question, user_lang="uz"):
                 f"FINAL ATTEMPT. Answer the question below ONLY in {language}. "
                 "If you cannot answer in that language, give the shortest possible correct "
                 f"answer in {language} anyway. Never switch to English."
+                + translation_note
             )
             prompt = q
             temp = 0.4
 
         ans = await _chat_complete(
-            prompt, system=system, max_tokens=2200, temperature=temp,
-            frequency_penalty=0.35, presence_penalty=0.1
+            prompt, system=system, max_tokens=2600, temperature=temp,
+            frequency_penalty=0.35, presence_penalty=0.1, history=dialogue
         )
         if not ans or ans.startswith("⚠️"):
+            # All providers already failed inside one call; repeating the same
+            # expensive failover only leaves the user waiting on "O'ylayapman...".
+            if best_answer is None:
+                break
             continue
         ans = ans.strip()
         if best_answer is None:
@@ -1607,6 +1820,13 @@ def _extract_json(text):
     if start != -1 and end > start:
         try: return json.loads(text[start:end+1])
         except Exception: pass
+    if start != -1:
+        # A truncated response still contains complete slide objects; keep them
+        # instead of discarding the whole deck and falling back to filler text.
+        close = text.rfind("}")
+        if close > start:
+            try: return json.loads(text[start:close + 1] + "]")
+            except Exception: pass
     return None
 
 # ===== 6 TIL UCHUN ZAXIRA (FALLBACK) =====
