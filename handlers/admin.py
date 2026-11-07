@@ -51,7 +51,12 @@ async def cmd_admin(message: Message, state: FSMContext):
 
 @router.message(Command("testapi"))
 async def cmd_testapi(message: Message):
-    if not is_admin(message.from_user.id): return
+    # Never return silently: a silent exit is exactly what looked like a broken
+    # command, and the log line shows which account asked and which id is admin.
+    print(f"[testapi] so'rov: uid={message.from_user.id} ADMIN_ID={config.ADMIN_ID}", flush=True)
+    if not is_admin(message.from_user.id):
+        lang = await _lang_safe(message.from_user.id)
+        await message.answer(t("not_admin", lang)); return
     lang = await _admin_lang()
     note = await message.answer(t("api_checking", lang))
     from ai_api import test_api

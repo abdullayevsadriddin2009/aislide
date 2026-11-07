@@ -35,14 +35,14 @@ API_LIST = [
         "base_url": "https://api.groq.com/openai/v1",
         "api_key": os.getenv("GROQ_KEY_1", ""),
         "type": "openai",
-        "models": ["qwen/qwen3.8-27b", "openai/gpt-oss-120b", "openai/gpt-oss-20b", "allam-2-7b"]
+        "models": ["qwen/qwen3.8-27b", "allam-2-7b", "openai/gpt-oss-120b", "openai/gpt-oss-20b"]
     },
     {
         "name": "Groq 2",
         "base_url": "https://api.groq.com/openai/v1",
         "api_key": os.getenv("GROQ_KEY_2", ""),
         "type": "openai",
-        "models": ["qwen/qwen3.8-27b", "openai/gpt-oss-120b", "openai/gpt-oss-20b", "allam-2-7b"]
+        "models": ["qwen/qwen3.8-27b", "allam-2-7b", "openai/gpt-oss-120b", "openai/gpt-oss-20b"]
     },
     {
         "name": "Cloudflare AI (zaxira)",
@@ -1362,10 +1362,36 @@ async def _try_post(api, model, payload):
                     body = await resp.text()
                     if resp.status == 200:
                         LAST_ERROR = None
-                        try: return 200, json.loads(body)["choices"][0]["message"]["content"], None
-                        except Exception as e: return resp.status, None, str(e)
+                        try:
+                            message = json.loads(body)["choices"][0]["message"]
+                        except Exception as e:
+                            return resp.status, None, str(e)
+                        content = message.get("content")
+                        if content and str(content).strip():
+                            return 200, content, None
+                        if message.get("reasoning") or message.get("reasoning_content"):
+                            return resp.status, None, "faqat reasoning qaytardi (content bo'sh)"
+                        return resp.status, None, "bo'sh javob (HTTP 200)"
                     return resp.status, None, _error_detail(resp.status, body)
     except Exception as e: return None, None, str(e)
+
+# Provider-side hard limits: `allam-2-7b` rejects max_tokens above 4096 with
+# HTTP 400, which used to burn an attempt on every single generation.
+MODEL_MAX_TOKENS = {"allam-2-7b": 4096}
+
+
+def _model_payload(payload, model):
+    """Adjust a request for the quirks of one concrete model."""
+    p = dict(payload)
+    cap = MODEL_MAX_TOKENS.get(str(model).lower())
+    if cap and int(p.get("max_tokens") or 0) > cap:
+        p["max_tokens"] = cap
+    if "gpt-oss" in str(model).lower():
+        # Without a low reasoning effort these models spend the whole token
+        # budget on hidden reasoning and answer with empty content (HTTP 200).
+        p["reasoning_effort"] = "low"
+    return p
+
 
 async def _chat_complete(prompt, system=None, max_tokens=2500, temperature=0.5,
                          frequency_penalty=0.7, presence_penalty=0.5, history=None):
@@ -1427,7 +1453,7 @@ async def _chat_complete(prompt, system=None, max_tokens=2500, temperature=0.5,
         consecutive_rate_limits = 0
         for model_index, model in enumerate(models):
             attempts += 1
-            status, answer, error = await _try_post(api, model, payload)
+            status, answer, error = await _try_post(api, model, _model_payload(payload, model))
             if status == 200 and answer and answer.strip():
                 CURRENT_API_INDEX = api_index
                 try:
