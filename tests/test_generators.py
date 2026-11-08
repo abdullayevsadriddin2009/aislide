@@ -35,7 +35,7 @@ except ModuleNotFoundError:
 
 ROOT = Path(__file__).resolve().parents[1]
 LANGS = ("uz", "ru", "en", "tr", "de", "fr")
-SERVICES = ("referat", "mustaqil", "kurs", "diplom", "insho", "test", "maqola", "tezis")
+SERVICES = ("referat", "mustaqil", "kurs", "diplom", "insho", "esse", "test", "maqola", "tezis")
 COUNTS = (10, 15, 20)
 SAMPLE_SLIDES = [
     {"title": "Topic background", "content": ["Historical context and key facts.", "Relevant example.", "Practical significance."]},

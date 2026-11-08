@@ -69,34 +69,32 @@ def services_all_kb(lang="uz"):
     rows.append([InlineKeyboardButton(text=t("btn_cancel", lang), callback_data="cancel")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
-# ===== Parametr (pages/questions) =====
-def option_kb_for(service, lang="uz"):
+# ===== Parametr (pages/questions/words) =====
+DEFAULT_OPTIONS = {"pages": (10, 15, 20), "questions": (10, 15, 20), "words": (200, 300, 500)}
+OPTION_ICONS = {"pages": "📄", "questions": "✅", "words": "✍️"}
+OPTION_LABELS = {"pages": "pages_label", "questions": "questions_label", "words": "words_label"}
+
+def service_options(service):
+    """Xizmat uchun ruxsat etilgan qiymatlar (masalan Insho: 3/4/5 bet, Esse: 150/250/350 so'z)."""
     s = SERVICES.get(service, {})
-    ot = s.get("option_type", "pages")
-    rows = []
-    if ot == "pages":
-        # Keep the page-size menu intentionally small and predictable.
-        for v in (10, 15, 20):
-            rows.append([InlineKeyboardButton(text=f"📄 {t('pages_label', lang, n=v)}", callback_data=f"opt:pages:{v}")])
-    elif ot == "questions":
-        for v in (10, 15, 20):
-            rows.append([InlineKeyboardButton(text=f"✅ {t('questions_label', lang, n=v)}", callback_data=f"opt:questions:{v}")])
-    elif ot == "words":
-        for v in (200, 300, 500):
-            rows.append([InlineKeyboardButton(text=f"✍️ {t('words_label', lang, n=v)}", callback_data=f"opt:words:{v}")])
+    otype = s.get("option_type", "pages")
+    values = tuple(s.get("options") or DEFAULT_OPTIONS.get(otype, (10, 15, 20)))
+    return otype, values
+
+def option_kb_for(service, lang="uz"):
+    otype, values = service_options(service)
+    icon = OPTION_ICONS.get(otype, "📄")
+    label_key = OPTION_LABELS.get(otype, "pages_label")
+    rows = [[InlineKeyboardButton(text=f"{icon} {t(label_key, lang, n=v)}", callback_data=f"opt:{otype}:{v}")]
+            for v in values]
     rows.append([InlineKeyboardButton(text=t("btn_cancel", lang), callback_data="cancel")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 def option_label(service, options, lang="uz"):
-    s = SERVICES.get(service, {})
-    ot = s.get("option_type", "pages")
-    if ot == "pages":
-        return t("pages_label", lang, n=options.get("pages", 10))
-    if ot == "questions":
-        return t("questions_label", lang, n=options.get("questions", 10))
-    if ot == "words":
-        return t("words_label", lang, n=options.get("words", 200))
-    return "—"
+    otype, values = service_options(service)
+    default = values[0] if values else 0
+    label_key = OPTION_LABELS.get(otype, "pages_label")
+    return t(label_key, lang, n=options.get(otype, default))
 
 # ===== Tasdiqlash =====
 def confirm_kb(lang="uz"):

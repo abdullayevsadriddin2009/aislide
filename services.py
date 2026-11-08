@@ -1,4 +1,4 @@
-# ===== Xizmatlar (9 ta) — 6 tilda nomlar bilan =====
+# ===== Xizmatlar (10 ta) — 6 tilda nomlar bilan =====
 # name_uz / name_ru / name_en / name_tr / name_de / name_fr
 SERVICES = {
     "slide":    {"emoji": "📊", "option_type": "slides",    "price": 0,
@@ -16,9 +16,14 @@ SERVICES = {
     "diplom":   {"emoji": "🎓", "option_type": "pages",     "price": 0,
                  "name_uz": "Diplom ishi", "name_ru": "Дипломная работа", "name_en": "Thesis / Diploma",
                  "name_tr": "Mezuniyet tezi", "name_de": "Abschlussarbeit", "name_fr": "Mémoire de fin d'études"},
-    "insho":    {"emoji": "✍️", "option_type": "words",     "price": 0,
-                 "name_uz": "Insho / Essey", "name_ru": "Сочинение / Эссе", "name_en": "Composition / Essay",
-                 "name_tr": "Kompozisyon / Deneme", "name_de": "Aufsatz / Essay", "name_fr": "Dissertation / Essai"},
+    # Insho — adabiy ijodiy ish (REJA majburiy, 3-5 bet).
+    "insho":    {"emoji": "✍️", "option_type": "pages", "options": (3, 4, 5), "price": 0,
+                 "name_uz": "Insho", "name_ru": "Сочинение", "name_en": "Composition",
+                 "name_tr": "Kompozisyon", "name_de": "Aufsatz", "name_fr": "Dissertation"},
+    # Esse — argumentli qisqa yozma ish (rejasiz, 150-350 so'z).
+    "esse":     {"emoji": "🖊️", "option_type": "words", "options": (150, 250, 350), "price": 0,
+                 "name_uz": "Esse", "name_ru": "Эссе", "name_en": "Essay",
+                 "name_tr": "Deneme", "name_de": "Essay", "name_fr": "Essai"},
     "test":     {"emoji": "✅", "option_type": "questions", "price": 0,
                  "name_uz": "Quiz / Test", "name_ru": "Тест / Квиз", "name_en": "Quiz / Test",
                  "name_tr": "Test / Quiz", "name_de": "Test / Quiz", "name_fr": "Quiz / Test"},

@@ -664,6 +664,22 @@ def _normalize_three_paragraphs(text):
     return "\n\n".join(parts)
 
 
+def _normalize_two_paragraphs(text):
+    """Esse asosiy qismini ikkita mazmunli abzasga keltiradi."""
+    parts = [p.strip() for p in re.split(r"\n\s*\n|\n", clean_ai_text(text or "")) if p.strip()]
+    if len(parts) == 2:
+        return "\n\n".join(parts)
+    if len(parts) > 2:
+        half = (len(parts) + 1) // 2
+        return "\n\n".join((" ".join(parts[:half]), " ".join(parts[half:])))
+    whole = " ".join(parts)
+    sentences = [x.strip() for x in re.split(r"(?<=[.!?])\s+", whole) if x.strip()]
+    if len(sentences) >= 2:
+        half = (len(sentences) + 1) // 2
+        return "\n\n".join((" ".join(sentences[:half]), " ".join(sentences[half:])))
+    return "\n\n".join(parts)
+
+
 async def generate_outline(service, topic, lang, words=320):
     """Generate exactly five localized outline points: intro, three body points, conclusion."""
     lc = str(lang or "uz").lower()
@@ -695,8 +711,353 @@ Reference notes:
 
 
 # ===== ESSAY GENERATION =====
+# ===== MUSTAQIL ISH: to'liq strukturaviy mazmun (yangi shablon) =====
+# Hujjat tuzilishi: Titul → Mundarija → Kirish (dolzarblik/maqsad/vazifalar) →
+# I bob (1.1, 1.2) → II bob (2.1, 2.2) → Xulosa → Adabiyotlar.
+_MQ_PLAN = {
+    "uz": [
+        ("KIRISH", "Kirish", "Mavzuning dolzarbligi, ishning maqsadi va vazifalari. Uchta alohida xatboshi yozilsin va ular aynan «Mavzuning dolzarbligi:», «Ishning maqsadi:», «Ishning vazifalari:» so‘zlari bilan boshlansin."),
+        ("1.1", "I bob, 1.1-band: mavzuning mohiyati va ilmiy tushunchalari", "Mavzuning mohiyati, asosiy tushunchalar, ta’riflar va ilmiy qarashlar batafsil yoritilsin."),
+        ("1.2", "I bob, 1.2-band: xorijiy tajribalar va adabiyotlar tahlili", "Xorijiy davlatlar tajribasi va ilmiy adabiyotlar tahlili keltirilsin."),
+        ("2.1", "II bob, 2.1-band: bugungi kundagi holat va statistik tahlillar", "Bugungi kundagi holat aniq yillar, raqamlar va statistik ko‘rsatkichlar bilan tahlil qilinsin."),
+        ("2.2", "II bob, 2.2-band: sohani rivojlantirishdagi muammolar va yechimlar", "Mavjud muammolar va ularni bartaraf etish bo‘yicha aniq amaliy takliflar bayon etilsin."),
+        ("XULOSA", "Xulosa", "«Mavzuni o‘rganib chiqib, quyidagi xulosalarga keldim:» jumlasi bilan boshlanib, 5-6 ta raqamlangan xulosa yozilsin."),
+    ],
+    "ru": [
+        ("KIRISH", "Введение", "Актуальность темы, цель и задачи работы. Три отдельных абзаца, начинающихся словами «Актуальность темы:», «Цель работы:», «Задачи исследования:»."),
+        ("1.1", "Глава I, пункт 1.1: сущность темы и основные научные понятия", "Подробно раскрыть сущность темы, основные понятия, определения и научные подходы."),
+        ("1.2", "Глава I, пункт 1.2: зарубежный опыт и анализ литературы", "Привести опыт зарубежных стран и анализ научной литературы."),
+        ("2.1", "Глава II, пункт 2.1: современное состояние и статистический анализ", "Проанализировать текущее состояние с конкретными годами, цифрами и статистическими показателями."),
+        ("2.2", "Глава II, пункт 2.2: проблемы развития сферы и пути их решения", "Изложить существующие проблемы и конкретные практические предложения по их решению."),
+        ("XULOSA", "Заключение", "Начать словами «Изучив тему, я пришёл к следующим выводам:» и привести 5-6 пронумерованных выводов."),
+    ],
+    "en": [
+        ("KIRISH", "Introduction", "Relevance of the topic, the goal of the work and its tasks. Three separate paragraphs beginning exactly with “Relevance of the topic:”, “Goal of the work:”, “Tasks completed:”."),
+        ("1.1", "Chapter I, section 1.1: the essence of the topic and key scientific concepts", "Explain the essence of the topic, core concepts, definitions and scholarly approaches in detail."),
+        ("1.2", "Chapter I, section 1.2: international experience and literature review", "Present the experience of other countries and an analysis of the scientific literature."),
+        ("2.1", "Chapter II, section 2.1: current situation and statistical analysis", "Analyse the current situation with specific years, figures and statistical indicators."),
+        ("2.2", "Chapter II, section 2.2: development problems and their solutions", "State the existing problems and concrete practical recommendations for solving them."),
+        ("XULOSA", "Conclusion", "Begin with “Having studied the topic, I have come to the following conclusions:” and give 5-6 numbered conclusions."),
+    ],
+    "tr": [
+        ("KIRISH", "Giriş", "Konunun güncelliği, çalışmanın amacı ve görevleri. Üç ayrı paragraf «Konu güncelliği:», «Çalışmanın amacı:», «Yapılan görevler:» ifadeleriyle başlasın."),
+        ("1.1", "I. bölüm, 1.1: konunun özü ve temel bilimsel kavramlar", "Konunun özü, temel kavramlar, tanımlar ve bilimsel yaklaşımlar ayrıntılı açıklansın."),
+        ("1.2", "I. bölüm, 1.2: uluslararası deneyim ve literatür incelemesi", "Yabancı ülke deneyimleri ve bilimsel literatür analizi sunulsun."),
+        ("2.1", "II. bölüm, 2.1: güncel durum ve istatistiksel analiz", "Güncel durum belirli yıllar, sayılar ve istatistiksel göstergelerle analiz edilsin."),
+        ("2.2", "II. bölüm, 2.2: alanın gelişme sorunları ve çözüm yolları", "Mevcut sorunlar ve bunların çözümüne yönelik somut pratik öneriler belirtilsin."),
+        ("XULOSA", "Sonuç", "«Konuyu inceledikten sonra aşağıdaki sonuçlara vardım:» ifadesiyle başlayıp 5-6 numaralı sonuç yazılsın."),
+    ],
+    "de": [
+        ("KIRISH", "Einleitung", "Aktualität des Themas, Ziel und Aufgaben der Arbeit. Drei Absätze, die genau mit „Aktualität des Themas:“, „Ziel der Arbeit:“, „Aufgaben:“ beginnen."),
+        ("1.1", "Kapitel I, Abschnitt 1.1: Wesen des Themas und zentrale wissenschaftliche Begriffe", "Wesen des Themas, Grundbegriffe, Definitionen und wissenschaftliche Ansätze ausführlich darlegen."),
+        ("1.2", "Kapitel I, Abschnitt 1.2: internationale Erfahrungen und Literaturanalyse", "Erfahrungen anderer Länder und eine Analyse der wissenschaftlichen Literatur vorstellen."),
+        ("2.1", "Kapitel II, Abschnitt 2.1: aktuelle Lage und statistische Analyse", "Die aktuelle Lage mit konkreten Jahren, Zahlen und statistischen Indikatoren analysieren."),
+        ("2.2", "Kapitel II, Abschnitt 2.2: Entwicklungsprobleme und ihre Lösungen", "Bestehende Probleme und konkrete praktische Empfehlungen zu ihrer Lösung darlegen."),
+        ("XULOSA", "Fazit", "Mit „Nach der Untersuchung des Themas bin ich zu folgenden Schlussfolgerungen gekommen:“ beginnen und 5-6 nummerierte Schlussfolgerungen anführen."),
+    ],
+    "fr": [
+        ("KIRISH", "Introduction", "Pertinence du sujet, objectif et tâches du travail. Trois paragraphes commençant exactement par « Pertinence du sujet : », « Objectif du travail : », « Tâches effectuées : »."),
+        ("1.1", "Chapitre I, section 1.1 : essence du sujet et principaux concepts scientifiques", "Développer l’essence du sujet, les concepts clés, les définitions et les approches scientifiques."),
+        ("1.2", "Chapitre I, section 1.2 : expérience internationale et analyse de la littérature", "Présenter l’expérience des pays étrangers et une analyse de la littérature scientifique."),
+        ("2.1", "Chapitre II, section 2.1 : situation actuelle et analyse statistique", "Analyser la situation actuelle avec des années, des chiffres et des indicateurs statistiques précis."),
+        ("2.2", "Chapitre II, section 2.2 : problèmes de développement et solutions", "Exposer les problèmes existants et des recommandations pratiques concrètes pour les résoudre."),
+        ("XULOSA", "Conclusion", "Commencer par « Après avoir étudié le sujet, je suis parvenu aux conclusions suivantes : » et donner 5-6 conclusions numérotées."),
+    ],
+}
+
+_MQ_SOURCE_LABELS = {
+    "uz": ("Mavzu", "Vazifa", "Quyida 7 ta manbani faqat ro‘yxat ko‘rinishida yozing: 1) O‘zbekiston Respublikasi qonunlari va Prezident farmonlari (2 ta); 2) darslik va ilmiy qo‘llanmalar — Muallif. Kitob nomi. — Shahar: Nashriyot, yil. — bet (3 ta); 3) rasmiy statistika va ishonchli internet manbalari to‘liq havola (URL) bilan (2 ta). Har bir manba yangi qatorda «1.» ko‘rinishida raqamlansin. Sarlavha, izoh yoki boshqa matn yozmang."),
+    "ru": ("Тема", "Задание", "Напишите ровно 7 источников только в виде списка: 1) законы Республики Узбекистан и указы Президента (2); 2) учебники и научные пособия — Автор. Название. — Город: Издательство, год. — страницы (3); 3) официальная статистика и надёжные интернет-источники с полной ссылкой (URL) (2). Каждый источник — с новой строки с номером «1.». Не пишите заголовок, пояснения или другой текст."),
+    "en": ("Topic", "Task", "Write exactly 7 sources as a plain list only: 1) laws of the Republic of Uzbekistan and Presidential decrees (2); 2) textbooks and scholarly manuals — Author. Title. — City: Publisher, year. — pages (3); 3) official statistics and reliable Internet sources with full URLs (2). Put each source on a new line numbered “1.”. Do not write a heading, explanations or any other text."),
+    "tr": ("Konu", "Görev", "Tam olarak 7 kaynağı yalnızca liste hâlinde yazın: 1) Özbekistan Cumhuriyeti kanunları ve Cumhurbaşkanlığı kararnameleri (2); 2) ders kitapları ve bilimsel el kitapları — Yazar. Kitap adı. — Şehir: Yayınevi, yıl. — sayfa (3); 3) resmî istatistikler ve güvenilir internet kaynakları, tam bağlantı (URL) ile (2). Her kaynak yeni satırda «1.» şeklinde numaralansın. Başlık, açıklama veya başka metin yazmayın."),
+    "de": ("Thema", "Aufgabe", "Schreiben Sie genau 7 Quellen ausschließlich als Liste: 1) Gesetze der Republik Usbekistan und Präsidialerlasse (2); 2) Lehrbücher und wissenschaftliche Handbücher — Autor. Titel. — Stadt: Verlag, Jahr. — Seiten (3); 3) amtliche Statistik und verlässliche Internetquellen mit vollständiger URL (2). Jede Quelle in einer neuen Zeile mit „1.“ nummeriert. Keine Überschrift, keine Erklärungen, kein anderer Text."),
+    "fr": ("Sujet", "Tâche", "Rédigez exactement 7 sources sous forme de liste uniquement : 1) lois de la République d’Ouzbékistan et décrets présidentiels (2) ; 2) manuels et ouvrages scientifiques — Auteur. Titre. — Ville : Éditeur, année. — pages (3) ; 3) statistiques officielles et sources Internet fiables avec URL complète (2). Chaque source sur une nouvelle ligne numérotée « 1. ». N’écrivez ni titre, ni explication, ni autre texte."),
+}
+
+_MQ_REAL_SOURCES = {
+    "uz": [
+        "O‘zbekiston Respublikasi qonun hujjatlari milliy bazasi. — https://lex.uz",
+        "O‘zbekiston Respublikasi Prezidentining rasmiy veb-sayti. — https://president.uz",
+        "O‘zbekiston Respublikasi Davlat statistika qo‘mitasi rasmiy portali. — https://stat.uz",
+        "O‘zbekiston Respublikasi Oliy ta’lim, fan va innovatsiyalar vazirligi. — https://gov.uz/oz/edu",
+        "Jahon banki ma’lumotlar bazasi. — https://data.worldbank.org",
+        "Birlashgan Millatlar Tashkiloti rasmiy portali. — https://www.un.org",
+    ],
+    "ru": [
+        "Национальная база законодательства Республики Узбекистан. — https://lex.uz",
+        "Официальный сайт Президента Республики Узбекистан. — https://president.uz",
+        "Государственный комитет Республики Узбекистан по статистике. — https://stat.uz",
+        "Министерство высшего образования, науки и инноваций Республики Узбекистан. — https://gov.uz/oz/edu",
+        "База данных Всемирного банка. — https://data.worldbank.org",
+        "Официальный портал Организации Объединённых Наций. — https://www.un.org",
+    ],
+    "en": [
+        "National database of legislation of the Republic of Uzbekistan. — https://lex.uz",
+        "Official website of the President of the Republic of Uzbekistan. — https://president.uz",
+        "State Committee of the Republic of Uzbekistan on Statistics. — https://stat.uz",
+        "Ministry of Higher Education, Science and Innovations of the Republic of Uzbekistan. — https://gov.uz/oz/edu",
+        "World Bank open data. — https://data.worldbank.org",
+        "United Nations official portal. — https://www.un.org",
+    ],
+    "tr": [
+        "Özbekistan Cumhuriyeti mevzuatının ulusal veri tabanı. — https://lex.uz",
+        "Özbekistan Cumhuriyeti Cumhurbaşkanlığı resmî web sitesi. — https://president.uz",
+        "Özbekistan Cumhuriyeti Devlet İstatistik Komitesi. — https://stat.uz",
+        "Özbekistan Cumhuriyeti Yükseköğretim, Bilim ve İnovasyon Bakanlığı. — https://gov.uz/oz/edu",
+        "Dünya Bankası açık veri portalı. — https://data.worldbank.org",
+        "Birleşmiş Milletler resmî portalı. — https://www.un.org",
+    ],
+    "de": [
+        "Nationale Datenbank der Rechtsvorschriften der Republik Usbekistan. — https://lex.uz",
+        "Offizielle Website des Präsidenten der Republik Usbekistan. — https://president.uz",
+        "Staatliches Statistikamt der Republik Usbekistan. — https://stat.uz",
+        "Ministerium für Hochschulwesen, Wissenschaft und Innovation der Republik Usbekistan. — https://gov.uz/oz/edu",
+        "Open-Data-Portal der Weltbank. — https://data.worldbank.org",
+        "Offizielles Portal der Vereinten Nationen. — https://www.un.org",
+    ],
+    "fr": [
+        "Base nationale de la législation de la République d’Ouzbékistan. — https://lex.uz",
+        "Site officiel du Président de la République d’Ouzbékistan. — https://president.uz",
+        "Comité d’État des statistiques de la République d’Ouzbékistan. — https://stat.uz",
+        "Ministère de l’Enseignement supérieur, des Sciences et de l’Innovation de la République d’Ouzbékistan. — https://gov.uz/oz/edu",
+        "Portail open data de la Banque mondiale. — https://data.worldbank.org",
+        "Portail officiel des Nations Unies. — https://www.un.org",
+    ],
+}
+
+
+def _mustaqil_page_split(pages):
+    """Asosiy qism sahifalarini 4 ta kichik bo'limga taqsimlaydi."""
+    body_pages = max(4, int(pages or 10) - 6)
+    base, extra = divmod(body_pages, 4)
+    return [base + (1 if index < extra else 0) for index in range(4)], body_pages
+
+
+def _reference_entries(text):
+    """AI ro'yxatidan haqiqiy manba qatorlarini ajratib oladi."""
+    entries = []
+    for raw in str(text or "").splitlines():
+        line = re.sub(r"^\s*(?:[•▪●\-–—*]|\(?\d{1,2}[\.\)])\s*", "", raw).strip()
+        line = re.sub(r"\s+", " ", line)
+        if len(line) < 15 or line.startswith("⚠️"):
+            continue
+        low = line.casefold().rstrip(":")
+        if low in ("manbalar", "adabiyotlar", "источники", "литература", "sources", "references",
+                   "kaynaklar", "quellen", "sources utilisées"):
+            continue
+        entries.append(line)
+    return entries
+
+
+async def _generate_mustaqil_sources(topic, lang, wiki):
+    """Adabiyotlar ro'yxati: AI manbalari + tekshirilishi mumkin bo'lgan rasmiy havolalar."""
+    lc = str(lang or "uz").lower()
+    topic_label, task_label, rule = _MQ_SOURCE_LABELS.get(lc, _MQ_SOURCE_LABELS["en"])
+    prompt = (
+        f"{topic_label}: {topic}\n{task_label}: {rule}\n{wiki_block(wiki, lc)}\n"
+        f"Do not output a title, notes or explanations; only the numbered source list."
+    )
+    raw = await _chat_complete(prompt, system=_pure_language_system(lc), max_tokens=900, temperature=0.4)
+    entries, seen = [], set()
+
+    def add(value):
+        item = re.sub(r"\s+", " ", str(value or "")).strip()
+        if len(item) < 12 or item.startswith("⚠️"):
+            return
+        key = re.sub(r"\W+", "", item.casefold())[:60]
+        if not key or key in seen:
+            return
+        seen.add(key)
+        entries.append(item)
+
+    for item in _reference_entries(raw):
+        add(item)
+        if len(entries) >= 7:
+            break
+    if isinstance(wiki, dict) and wiki.get("found") and wiki.get("url"):
+        add(f'Wikipedia. {wiki.get("title", topic)}. — {wiki.get("url")}')
+    for item in _MQ_REAL_SOURCES.get(lc, _MQ_REAL_SOURCES["en"]):
+        if len(entries) >= 8:
+            break
+        add(item)
+    return "\n".join(f"{index}. {item}" for index, item in enumerate(entries[:10], 1))
+
+
+async def _generate_mustaqil(topic, pages, lang):
+    """Mustaqil ish: to'liq tuzilma (kirish, 4 kichik bo'lim, xulosa, adabiyotlar)."""
+    lc = str(lang or "uz").lower()
+    plan = _MQ_PLAN.get(lc, _MQ_PLAN["en"])
+    wiki = await wikipedia_fetch(topic, max_chars=10000, full=True, gen_lang=lc)
+    split, _body_pages = _mustaqil_page_split(pages)
+    section_pages = {"1.1": split[0], "1.2": split[1], "2.1": split[2], "2.2": split[3],
+                     "KIRISH": 2, "XULOSA": 1}
+    parts, previous, solid = [], "", 0
+    for marker, title, desc in plan:
+        text = await _generate_section("mustaqil", topic, title, section_pages.get(marker, 1),
+                                       desc, lc, wiki, previous)
+        text = str(text or "").strip()
+        if len(text) >= 400:
+            solid += 1
+        parts.append(f"[[{marker}]]\n{text}")
+        previous = text[:800]
+    references = await _generate_mustaqil_sources(topic, lc, wiki)
+    parts.append("[[ADABIYOTLAR]]\n" + references)
+    return "\n\n".join(parts), solid >= 4
+
+
+# ===== INSHO: REJA + adabiy matn (alohida xizmat) =====
+_INSHO_PLAN_PROMPT = {
+    "uz": ("Mavzu", "Vazifa", "Aynan besh qator yozing:\n1. Kirish. <mavzuga kirish mazmuni>\n2. Asosiy qism:\n   a) <birinchi band>\n   b) <ikkinchi band>\n3. Xulosa. <yakuniy fikr>\nFaqat shu reja qatorlarini yozing; sarlavha, izoh yoki boshqa matn yozmang."),
+    "ru": ("Тема", "Задание", "Напишите ровно пять строк:\n1. Введение. <содержание введения>\n2. Основная часть:\n   а) <первый пункт>\n   б) <второй пункт>\n3. Заключение. <итоговый вывод>\nПишите только строки плана, без заголовка, пояснений и другого текста."),
+    "en": ("Topic", "Task", "Write exactly five lines:\n1. Introduction. <introduction content>\n2. Main part:\n   a) <first point>\n   b) <second point>\n3. Conclusion. <final idea>\nWrite only these plan lines; no heading, notes or other text."),
+    "tr": ("Konu", "Görev", "Tam olarak beş satır yazın:\n1. Giriş. <giriş içeriği>\n2. Ana bölüm:\n   a) <birinci nokta>\n   b) <ikinci nokta>\n3. Sonuç. <kapanış fikri>\nYalnızca bu plan satırlarını yazın; başlık, açıklama veya başka metin yazmayın."),
+    "de": ("Thema", "Aufgabe", "Schreiben Sie genau fünf Zeilen:\n1. Einleitung. <Inhalt der Einleitung>\n2. Hauptteil:\n   a) <erster Punkt>\n   b) <zweiter Punkt>\n3. Schluss. <abschließender Gedanke>\nSchreiben Sie nur diese Gliederungszeilen, keine Überschrift, keine Erläuterungen, keinen anderen Text."),
+    "fr": ("Sujet", "Tâche", "Rédigez exactement cinq lignes :\n1. Introduction. <contenu de l’introduction>\n2. Partie principale :\n   a) <premier point>\n   b) <deuxième point>\n3. Conclusion. <idée finale>\nN’écrivez que ces lignes du plan, sans titre, sans explication et sans autre texte."),
+}
+
+_INSHO_PLAN_FALLBACK = {
+    "uz": ["Kirish. {t} mavzusining mazmuni va bugungi kundagi ahamiyati.",
+           "Asosiy qism:", "a) {t} bo‘yicha asosiy tushunchalar va ilmiy qarashlar.",
+           "b) Hayotiy misollar, badiiy tahlil va dalillar.", "Xulosa. Asosiy fikrlarning umumlashmasi va ma’naviy xulosasi."],
+    "ru": ["Введение. Содержание темы «{t}» и её значение сегодня.",
+           "Основная часть:", "а) Основные понятия и научные взгляды по теме «{t}».",
+           "б) Жизненные примеры, литературный анализ и аргументы.", "Заключение. Обобщение основных мыслей и духовный вывод."],
+    "en": ["Introduction. The meaning of {t} and its significance today.",
+           "Main part:", "a) Key concepts and scholarly views on {t}.",
+           "b) Real-life examples, literary analysis and evidence.", "Conclusion. A summary of the main ideas and the final moral lesson."],
+    "tr": ["Giriş. {t} konusunun anlamı ve bugünkü önemi.",
+           "Ana bölüm:", "a) {t} ile ilgili temel kavramlar ve bilimsel görüşler.",
+           "b) Hayattan örnekler, edebî tahlil ve kanıtlar.", "Sonuç. Ana fikirlerin özeti ve manevi sonuç."],
+    "de": ["Einleitung. Inhalt des Themas {t} und seine heutige Bedeutung.",
+           "Hauptteil:", "a) Grundbegriffe und wissenschaftliche Ansichten zu {t}.",
+           "b) Beispiele aus dem Leben, literarische Analyse und Belege.", "Schluss. Zusammenfassung der Hauptgedanken und moralisches Fazit."],
+    "fr": ["Introduction. Le sens du sujet {t} et son importance aujourd’hui.",
+           "Partie principale :", "a) Concepts clés et points de vue scientifiques sur {t}.",
+           "b) Exemples de la vie, analyse littéraire et arguments.", "Conclusion. Synthèse des idées principales et portée morale."],
+}
+
+_INSHO_WORDS = {
+    "uz": ("Kirish", "Asosiy qism", "Xulosa",
+           "Adabiy, jonli va ta’sirchan uslubda, birinchi shaxs nomidan yozilsin. She’riy parchalar, iqtiboslar va badiiy tahlildan foydalanilsin; sun’iy statistika o‘ylab topilmasin.",
+           "Mavzuga badiiy kirish: davr, shaxs yoki muammo haqida umumiy tasavvur berilsin, o‘quvchini qiziqtiradigan jonli jumlalar bilan boshlansin.",
+           "Reja bandi to‘liq ochib berilsin: fikr, badiiy tahlil, iqtibos yoki hayotiy misol va shaxsiy munosabat.",
+           "Yozilgan fikrlardan kelib chiqib yakunlansin, mavzuning ma’naviy qiymati va bugungi yoshlar uchun saboqlari ko‘rsatilsin."),
+    "ru": ("Введение", "Основная часть", "Заключение",
+           "Пишите литературным, живым и выразительным языком от первого лица. Используйте цитаты, поэтические фрагменты и литературный анализ; не выдумывайте статистику.",
+           "Художественное вступление: дайте общее представление о теме, эпохе или личности и начните с ярких, вовлекающих фраз.",
+           "Полностью раскройте пункт плана: мысль, литературный анализ, цитата или жизненный пример и личное отношение.",
+           "Подведите итог на основе написанного, покажите духовную ценность темы и урок для современной молодёжи."),
+    "en": ("Introduction", "Main part", "Conclusion",
+           "Write in a literary, vivid and expressive first-person style. Use quotations, poetic fragments and literary analysis; never invent statistics.",
+           "Give an artistic introduction to the topic, period or person and open with vivid sentences that engage the reader.",
+           "Fully develop the plan point: the idea, literary analysis, a quotation or real-life example, and a personal attitude.",
+           "Conclude from what has been written, showing the moral value of the topic and the lesson it holds for young people today."),
+    "tr": ("Giriş", "Ana bölüm", "Sonuç",
+           "Edebî, canlı ve etkileyici bir üslupla birinci şahıs ağzından yazın. Alıntılar, şiirsel parçalar ve edebî tahlil kullanın; istatistik uydurmayın.",
+           "Konuya edebî bir giriş yapın: dönem, kişi veya sorun hakkında genel bir izlenim verin ve okuru çeken canlı cümlelerle başlayın.",
+           "Plan maddesini tam olarak açın: fikir, edebî tahlil, alıntı ya da hayattan bir örnek ve kişisel tutum.",
+           "Yazılanlardan yola çıkarak bitirin; konunun manevi değerini ve bugünkü gençler için dersini gösterin."),
+    "de": ("Einleitung", "Hauptteil", "Schluss",
+           "Schreiben Sie in einem literarischen, lebendigen und ausdrucksstarken Stil in der Ich-Form. Verwenden Sie Zitate, poetische Passagen und literarische Analyse; erfinden Sie keine Statistiken.",
+           "Künstlerischer Einstieg: Geben Sie einen allgemeinen Eindruck von Thema, Epoche oder Person und beginnen Sie mit lebendigen, fesselnden Sätzen.",
+           "Entwickeln Sie den Gliederungspunkt vollständig: Gedanke, literarische Analyse, Zitat oder Beispiel aus dem Leben und persönliche Haltung.",
+           "Fassen Sie das Geschriebene zusammen und zeigen Sie den geistigen Wert des Themas und seine Lehre für junge Menschen heute."),
+    "fr": ("Introduction", "Partie principale", "Conclusion",
+           "Écrivez dans un style littéraire, vivant et expressif, à la première personne. Utilisez citations, passages poétiques et analyse littéraire ; n’inventez pas de statistiques.",
+           "Introduction artistique : donnez une impression générale du sujet, de l’époque ou de la personne et commencez par des phrases vivantes qui captivent le lecteur.",
+           "Développez pleinement le point du plan : idée, analyse littéraire, citation ou exemple de la vie et position personnelle.",
+           "Concluez à partir de ce qui a été écrit en montrant la valeur morale du sujet et la leçon pour les jeunes d’aujourd’hui."),
+}
+
+
+def _insho_plan_lines(plan, topic, lang):
+    """REJA matnini 5 qatorga keltiradi (kirish, «asosiy qism:», a), b), xulosa)."""
+    lc = str(lang or "uz").lower()
+    lines = []
+    for raw in str(plan or "").splitlines():
+        line = raw.strip().rstrip()
+        if not line:
+            continue
+        if line.casefold().rstrip(":") in ("reja", "план", "plan", "outline", "gliederung"):
+            continue
+        lines.append(line)
+    if len(lines) < 5:
+        template = _INSHO_PLAN_FALLBACK.get(lc, _INSHO_PLAN_FALLBACK["en"])
+        lines = []
+        for index, item in enumerate(template):
+            value = item.format(t=str(topic)[:80])
+            prefix = ("1. ", "2. ", "   a) ", "   b) ", "3. ")[index]
+            lines.append(prefix + value)
+    return lines[:5]
+
+
+async def generate_insho_plan(topic, lang, pages=3):
+    """Insho uchun REJA: kirish, asosiy qism (a, b), xulosa."""
+    lc = str(lang or "uz").lower()
+    topic_label, task_label, rule = _INSHO_PLAN_PROMPT.get(lc, _INSHO_PLAN_PROMPT["en"])
+    try:
+        wiki = await wikipedia_fetch(topic, max_chars=1500, gen_lang=lc)
+    except Exception as exc:
+        _log(f"Insho plan reference lookup failed: {exc}")
+        wiki = ""
+    prompt = (
+        f"{topic_label}: {topic}\n{task_label}: {rule}\n{wiki_block(wiki, lc)}\n"
+        f"Do not output any other text."
+    )
+    raw = ""
+    try:
+        raw = await _chat_complete(prompt, system=_pure_language_system(lc), max_tokens=700, temperature=0.4)
+    except Exception as exc:
+        _log(f"Insho plan generation failed: {exc}")
+    lines = _insho_plan_lines(raw, topic, lc)
+    return "\n".join(lines)
+
+
+async def _generate_insho(topic, pages, lang, plan=""):
+    """Insho matni: kirish → asosiy qism (a, b) → xulosa (adabiy uslub, reja asosida)."""
+    lc = str(lang or "uz").lower()
+    intro_word, body_word, concl_word, style_desc, intro_desc, body_desc, concl_desc = _INSHO_WORDS.get(lc, _INSHO_WORDS["en"])
+    try:
+        pages = int(pages or 3)
+    except (TypeError, ValueError):
+        pages = 3
+    pages = min(5, max(3, pages))
+    lines = _insho_plan_lines(plan, topic, lc)
+    plan_intro = re.sub(r"^\s*1[.)]\s*", "", lines[0]).strip()
+    plan_a = re.sub(r"^\s*a[)]\s*", "", lines[2]).strip() if len(lines) > 2 else ""
+    plan_b = re.sub(r"^\s*b[)]\s*", "", lines[3]).strip() if len(lines) > 3 else ""
+    plan_concl = re.sub(r"^\s*3[.)]\s*", "", lines[4]).strip() if len(lines) > 4 else ""
+
+    try:
+        wiki = await wikipedia_fetch(topic, max_chars=6000, full=True, gen_lang=lc)
+    except Exception as exc:
+        _log(f"Insho reference lookup failed: {exc}")
+        wiki = ""
+
+    body_pages = max(2, pages - 2)
+    base, extra = divmod(body_pages, 2)
+    first_pages = base + (1 if extra else 0)
+    second_pages = base
+    parts = []
+    previous = ""
+    solid = 0
+    for marker, title, section_pages, desc in (
+        ("INSHO_INTRO", f"{intro_word}: {plan_intro}", 1, f"{intro_desc} {style_desc}"),
+        ("INSHO_BODY_A", f"{body_word}, a): {plan_a}", first_pages, f"{body_desc} {style_desc}"),
+        ("INSHO_BODY_B", f"{body_word}, b): {plan_b}", second_pages, f"{body_desc} {style_desc}"),
+        ("INSHO_CONCLUSION", f"{concl_word}: {plan_concl}", 1, f"{concl_desc} {style_desc}"),
+    ):
+        text = await _generate_section("insho", topic, title, section_pages, desc, lc, wiki, previous)
+        text = str(text or "").strip()
+        if len(text) >= 400:
+            solid += 1
+        parts.append(f"[[{marker}]]\n{text}")
+        previous = text[:600]
+    return "\n\n".join(parts), solid >= 3
+
+
 async def generate(service, topic, options, lang="uz"):
-    if service == "insho":
+    if service == "esse":
         lc = str(lang or "uz").lower()
         ln = _lang_name(lc)
         try:
@@ -744,12 +1105,11 @@ Output only the paragraph. No heading, numbering, checklist, meta-advice, or sec
 {wb}"""
         intro, intro_ok = await generate_section("opening paragraph", prompt_intro, intro_words, 1000)
 
-        prompt_body = f"""Write the essay's main argument paragraphs about: {topic}.
-Write approximately {body_words} words total in natural {ln}, separated into EXACTLY THREE paragraphs of about {para_words} words each:
-Paragraph 1: first important argument with an explanation and relevant example.
-Paragraph 2: second aspect or a balanced counter-view with relevant evidence.
-Paragraph 3: a third point or a reasoned personal position.
-Keep the content specific to the topic. Do not invent exact statistics. Output only those three paragraphs; no headings, numbering, bullet points, checklist, or writing advice. Use only {ln}. Reference notes:
+        prompt_body = f"""Write the essay's two body paragraphs about: {topic}.
+Write approximately {body_words} words total in natural {ln}, separated into EXACTLY TWO paragraphs of about {para_words} words each:
+Paragraph 1: the first strong reason supporting the thesis, with a clear explanation and one concrete example.
+Paragraph 2: a second strong reason (or a considered counter-view) with an explanation and one concrete example.
+Keep the content specific to the topic. Do not invent exact statistics. Output only those two paragraphs; no headings, numbering, bullet points, checklist, or writing advice. Use only {ln}. Reference notes:
 {wb}"""
         body, body_ok = await generate_section("three main argument paragraphs", prompt_body, body_words, 1800)
 
@@ -767,7 +1127,7 @@ Output only one paragraph, no heading, list, numbering, checklist, or writing ad
             body = "\n\n".join(fallback_parts[1:4])
         if not conclusion_ok:
             conclusion = fallback_parts[4]
-        body = _normalize_three_paragraphs(body)
+        body = _normalize_two_paragraphs(body)
 
         result = (
             "[[ESSAY_INTRO]]\n" + clean_ai_text(intro) +
@@ -784,6 +1144,13 @@ Output only one paragraph, no heading, list, numbering, checklist, or writing ad
     if service == "test":
         # The test service's selected quantity is a question count, not page count.
         return await _generate_test(service, topic, options, lang)
+    if service == "mustaqil":
+        # Mustaqil ish uchun alohida to'liq tuzilma: kirish, 2 bob (4 band),
+        # raqamlangan xulosa va real havolali adabiyotlar ro'yxati.
+        return await _generate_mustaqil(topic, pages, lang)
+    if service == "insho":
+        # Insho — adabiy ish: REJA (reja alohida yoziladi) va 3-5 betlik matn.
+        return await _generate_insho(topic, pages, lang, (options or {}).get("plan", ""))
 
     page_overhead = 2 if service in ("maqola", "tezis") else 5
     content_pages = max(2, pages - page_overhead)

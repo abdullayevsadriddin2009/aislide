@@ -12,7 +12,7 @@ import math
 from pathlib import Path
 from docx import Document
 from docx.shared import Pt, RGBColor, Inches, Cm
-from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_TAB_ALIGNMENT, WD_TAB_LEADER
 from docx.oxml.ns import qn
 from docx.oxml import OxmlElement
 from config import BOT_USERNAME
@@ -484,7 +484,10 @@ def _clean_text(text):
     
     # 3. Ortiqcha belgilarni tozalash
     text = text.replace('\\n', '\n').replace('\\"', '"').replace("\\'", "'")
-    text = re.sub(r'[^\x00-\x7F\u0400-\u04FF\u0600-\u06FF\u0100-\u017F\u1E00-\u1EFF\u2018-\u201F\u2022\u00AB\u00BB\u2013\u2014]', '', text)
+    # Lotin-1 Supplement va Latin Extended (é, à, ç, ß, ğ, ş, ő...) saqlanadi;
+    # ilgari fransuz/nemis harflari o'chib ketardi.
+    text = re.sub(r'[^\x00-\x7F\u00A0-\u024F\u0370-\u03FF\u0400-\u04FF\u0600-\u06FF'
+                  r'\u1E00-\u1EFF\u2010-\u2027\u2030-\u205E]', '', text)
     text = re.sub(r'^"|"$', '', text, flags=re.MULTILINE)
     text = re.sub(r'\n{3,}', '\n\n', text)
     
@@ -984,6 +987,584 @@ def _split_into_page_chunks(content_text, count, topic, lang):
     return chunks
 
 
+# ===== MUSTAQIL ISH: qat'iy texnik standartdagi yangi shablon =====
+# Talab: Times New Roman, sarlavha 16 (bold), matn 14, 1.5 interval,
+# chapdan 3 sm / o'ngdan 1 sm / yuqori-pastdan 2 sm, abzats 1.25 sm,
+# ikki chet bo'yicha tekislash, sahifa raqami pastda o'rtada (titulda yo'q).
+MUSTAQIL_PAGE_OPTIONS = (10, 15, 20)
+
+_MQ = {
+    "uz": {
+        "ch1": "I BOB. MAVZUNING NAZARIY ASOSLARI",
+        "s11": "Mavzuning mohiyati va ilmiy tushunchalari",
+        "s12": "Xorijiy tajribalar va adabiyotlar tahlili",
+        "ch2": "II BOB. MAVZUNING TAHLILIY VA AMALIY QISMI",
+        "s21": "Bugungi kundagi holat va statistik tahlillar",
+        "s22": "Sohani rivojlantirishdagi muammolar va yechimlar",
+        "author": "Bajardi:", "checker": "Tekshirdi:",
+        "refs": "FOYDALANILGAN ADABIYOTLAR RO‘YXATI",
+        "lead": "Mavzuni o‘rganib chiqib, quyidagi xulosalarga keldim:",
+        "task_fb": "mavzu bo‘yicha ilmiy manbalar o‘rganildi, mavjud holat tahlil qilindi va uni yaxshilash bo‘yicha amaliy takliflar ishlab chiqildi.",
+        "sources": [
+            "O‘zbekiston Respublikasi qonun hujjatlari milliy bazasi. — https://lex.uz",
+            "O‘zbekiston Respublikasi Prezidentining rasmiy veb-sayti. — https://president.uz",
+            "O‘zbekiston Respublikasi Davlat statistika qo‘mitasi rasmiy portali. — https://stat.uz",
+            "O‘zbekiston Respublikasi Oliy ta’lim, fan va innovatsiyalar vazirligi. — https://gov.uz/oz/edu",
+            "Jahon banki ma’lumotlar bazasi. — https://data.worldbank.org",
+        ],
+        "credit": "Yaratildi:",
+    },
+    "ru": {
+        "ch1": "ГЛАВА I. ТЕОРЕТИЧЕСКИЕ ОСНОВЫ ТЕМЫ",
+        "s11": "Сущность темы и основные научные понятия",
+        "s12": "Зарубежный опыт и анализ литературы",
+        "ch2": "ГЛАВА II. АНАЛИТИЧЕСКАЯ И ПРАКТИЧЕСКАЯ ЧАСТЬ",
+        "s21": "Современное состояние и статистический анализ",
+        "s22": "Проблемы развития сферы и пути их решения",
+        "author": "Выполнил:", "checker": "Проверил:",
+        "refs": "СПИСОК ИСПОЛЬЗОВАННОЙ ЛИТЕРАТУРЫ",
+        "lead": "Изучив тему, я пришёл к следующим выводам:",
+        "task_fb": "изучены научные источники по теме, проанализировано текущее состояние и разработаны практические предложения по его улучшению.",
+        "sources": [
+            "Национальная база законодательства Республики Узбекистан. — https://lex.uz",
+            "Официальный сайт Президента Республики Узбекистан. — https://president.uz",
+            "Государственный комитет Республики Узбекистан по статистике. — https://stat.uz",
+            "Министерство высшего образования, науки и инноваций Республики Узбекистан. — https://gov.uz/oz/edu",
+            "База данных Всемирного банка. — https://data.worldbank.org",
+        ],
+        "credit": "Создано:",
+    },
+    "en": {
+        "ch1": "CHAPTER I. THEORETICAL FOUNDATIONS OF THE TOPIC",
+        "s11": "The essence of the topic and key scientific concepts",
+        "s12": "International experience and literature review",
+        "ch2": "CHAPTER II. ANALYTICAL AND PRACTICAL PART",
+        "s21": "Current situation and statistical analysis",
+        "s22": "Development problems and their solutions",
+        "author": "Prepared by:", "checker": "Checked by:",
+        "refs": "LIST OF USED LITERATURE",
+        "lead": "Having studied the topic, I have come to the following conclusions:",
+        "task_fb": "the scientific literature on the topic was reviewed, the current situation was analysed, and practical recommendations for improving it were developed.",
+        "sources": [
+            "National database of legislation of the Republic of Uzbekistan. — https://lex.uz",
+            "Official website of the President of the Republic of Uzbekistan. — https://president.uz",
+            "State Committee of the Republic of Uzbekistan on Statistics. — https://stat.uz",
+            "Ministry of Higher Education, Science and Innovations of the Republic of Uzbekistan. — https://gov.uz/oz/edu",
+            "World Bank open data. — https://data.worldbank.org",
+        ],
+        "credit": "Created by:",
+    },
+    "tr": {
+        "ch1": "I. BÖLÜM. KONUNUN KURAMSAL TEMELLERİ",
+        "s11": "Konunun özü ve temel bilimsel kavramlar",
+        "s12": "Uluslararası deneyim ve literatür incelemesi",
+        "ch2": "II. BÖLÜM. ANALİTİK VE PRATİK KISIM",
+        "s21": "Güncel durum ve istatistiksel analiz",
+        "s22": "Alanın gelişme sorunları ve çözüm yolları",
+        "author": "Hazırlayan:", "checker": "Kontrol eden:",
+        "refs": "KULLANILAN KAYNAKLAR LİSTESİ",
+        "lead": "Konuyu inceledikten sonra aşağıdaki sonuçlara vardım:",
+        "task_fb": "konuyla ilgili bilimsel kaynaklar incelendi, mevcut durum analiz edildi ve iyileştirmeye yönelik pratik öneriler geliştirildi.",
+        "sources": [
+            "Özbekistan Cumhuriyeti mevzuatının ulusal veri tabanı. — https://lex.uz",
+            "Özbekistan Cumhuriyeti Cumhurbaşkanlığı resmî web sitesi. — https://president.uz",
+            "Özbekistan Cumhuriyeti Devlet İstatistik Komitesi. — https://stat.uz",
+            "Özbekistan Cumhuriyeti Yükseköğretim, Bilim ve İnovasyon Bakanlığı. — https://gov.uz/oz/edu",
+            "Dünya Bankası açık veri portalı. — https://data.worldbank.org",
+        ],
+        "credit": "Oluşturan:",
+    },
+    "de": {
+        "ch1": "KAPITEL I. THEORETISCHE GRUNDLAGEN DES THEMAS",
+        "s11": "Wesen des Themas und zentrale wissenschaftliche Begriffe",
+        "s12": "Internationale Erfahrungen und Literaturanalyse",
+        "ch2": "KAPITEL II. ANALYTISCHER UND PRAKTISCHER TEIL",
+        "s21": "Aktuelle Lage und statistische Analyse",
+        "s22": "Entwicklungsprobleme und ihre Lösungen",
+        "author": "Verfasser:", "checker": "Geprüft von:",
+        "refs": "LITERATURVERZEICHNIS",
+        "lead": "Nach der Untersuchung des Themas bin ich zu folgenden Schlussfolgerungen gekommen:",
+        "task_fb": "die wissenschaftliche Literatur zum Thema wurde ausgewertet, die aktuelle Lage analysiert und praktische Empfehlungen zu ihrer Verbesserung erarbeitet.",
+        "sources": [
+            "Nationale Datenbank der Rechtsvorschriften der Republik Usbekistan. — https://lex.uz",
+            "Offizielle Website des Präsidenten der Republik Usbekistan. — https://president.uz",
+            "Staatliches Statistikamt der Republik Usbekistan. — https://stat.uz",
+            "Ministerium für Hochschulwesen, Wissenschaft und Innovation der Republik Usbekistan. — https://gov.uz/oz/edu",
+            "Open-Data-Portal der Weltbank. — https://data.worldbank.org",
+        ],
+        "credit": "Erstellt von:",
+    },
+    "fr": {
+        "ch1": "CHAPITRE I. FONDEMENTS THÉORIQUES DU SUJET",
+        "s11": "Essence du sujet et principaux concepts scientifiques",
+        "s12": "Expérience internationale et analyse de la littérature",
+        "ch2": "CHAPITRE II. PARTIE ANALYTIQUE ET PRATIQUE",
+        "s21": "Situation actuelle et analyse statistique",
+        "s22": "Problèmes de développement et solutions",
+        "author": "Réalisé par :", "checker": "Vérifié par :",
+        "refs": "LISTE DE LA LITTÉRATURE UTILISÉE",
+        "lead": "Après avoir étudié le sujet, je suis parvenu aux conclusions suivantes :",
+        "task_fb": "la littérature scientifique sur le sujet a été étudiée, la situation actuelle a été analysée et des recommandations pratiques pour l’améliorer ont été élaborées.",
+        "sources": [
+            "Base nationale de la législation de la République d’Ouzbékistan. — https://lex.uz",
+            "Site officiel du Président de la République d’Ouzbékistan. — https://president.uz",
+            "Comité d’État des statistiques de la République d’Ouzbékistan. — https://stat.uz",
+            "Ministère de l’Enseignement supérieur, des Sciences et de l’Innovation de la République d’Ouzbékistan. — https://gov.uz/oz/edu",
+            "Portail open data de la Banque mondiale. — https://data.worldbank.org",
+        ],
+        "credit": "Créé par :",
+    },
+}
+
+
+def _mq(lang):
+    return _MQ.get(str(lang).lower(), _MQ["en"])
+
+
+def _mq_font(run, size=14, bold=False, italic=False, color=None):
+    """Har bir run uchun Times New Roman (lotin, kirill va sharqiy) o'rnatiladi."""
+    run.font.name = "Times New Roman"
+    run.font.size = Pt(size)
+    run.font.bold = bold
+    run.font.italic = italic
+    if color is not None:
+        run.font.color.rgb = color
+    rpr = run._element.get_or_add_rPr()
+    rfonts = rpr.get_or_add_rFonts()
+    rfonts.set(qn("w:ascii"), "Times New Roman")
+    rfonts.set(qn("w:hAnsi"), "Times New Roman")
+    rfonts.set(qn("w:eastAsia"), "Times New Roman")
+    rfonts.set(qn("w:cs"), "Times New Roman")
+
+
+def _mq_setup_page(doc, mq):
+    """A4, hoshiyalar 3/1/2/2 sm, Normal uslubi: TNR 14, 1.5 interval."""
+    section = doc.sections[0]
+    section.page_width, section.page_height = Cm(21), Cm(29.7)
+    section.left_margin, section.right_margin = Cm(3), Cm(1)
+    section.top_margin, section.bottom_margin = Cm(2), Cm(2)
+    section.footer_distance = Cm(1)
+    normal = doc.styles["Normal"]
+    normal.font.name = "Times New Roman"
+    normal.font.size = Pt(14)
+    rpr = normal.element.get_or_add_rPr()
+    rfonts = rpr.get_or_add_rFonts()
+    rfonts.set(qn("w:ascii"), "Times New Roman")
+    rfonts.set(qn("w:hAnsi"), "Times New Roman")
+    rfonts.set(qn("w:eastAsia"), "Times New Roman")
+    rfonts.set(qn("w:cs"), "Times New Roman")
+    fmt = normal.paragraph_format
+    fmt.line_spacing = 1.5
+    fmt.space_before = Pt(0)
+    fmt.space_after = Pt(0)
+    fmt.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+    return section
+
+
+def _mq_footer(section, mq):
+    """Sahifa raqami pastda o'rtada; titul varag'ida raqam chiqmaydi (lekin 1-bet)."""
+    section.different_first_page_header_footer = True
+    first = section.first_page_footer
+    first.is_linked_to_previous = False
+    for para in list(first.paragraphs):
+        para.clear()
+    footer = section.footer
+    footer.is_linked_to_previous = False
+    for para in list(footer.paragraphs)[1:]:
+        para.clear()
+    page_para = footer.paragraphs[0]
+    page_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    page_para.paragraph_format.first_line_indent = Cm(0)
+    page_para.paragraph_format.line_spacing = 1.0
+    page_para.paragraph_format.space_after = Pt(0)
+    run = page_para.add_run()
+    _mq_font(run, 14)
+    begin = OxmlElement("w:fldChar"); begin.set(qn("w:fldCharType"), "begin")
+    instr = OxmlElement("w:instrText"); instr.set(qn("xml:space"), "preserve"); instr.text = " PAGE "
+    end = OxmlElement("w:fldChar"); end.set(qn("w:fldCharType"), "end")
+    run._r.append(begin); run._r.append(instr); run._r.append(end)
+    credit = footer.add_paragraph()
+    credit.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+    credit.paragraph_format.first_line_indent = Cm(0)
+    credit.paragraph_format.line_spacing = 1.0
+    credit.paragraph_format.space_after = Pt(0)
+    credit_run = credit.add_run(f'{mq["credit"]} {BOT_USERNAME}')
+    _mq_font(credit_run, 8, italic=True, color=RGBColor(0x80, 0x80, 0x80))
+
+
+def _mq_heading(doc, text, size=16, center=True, after=6, uppercase=True):
+    para = doc.add_paragraph()
+    para.alignment = WD_ALIGN_PARAGRAPH.CENTER if center else WD_ALIGN_PARAGRAPH.LEFT
+    fmt = para.paragraph_format
+    fmt.first_line_indent = Cm(0)
+    fmt.line_spacing = 1.5
+    fmt.space_before = Pt(0)
+    fmt.space_after = Pt(after)
+    fmt.keep_with_next = True
+    value = str(text or "").strip()
+    run = para.add_run(value.upper() if uppercase else value)
+    _mq_font(run, size, bold=True)
+    return para
+
+
+def _mq_para(doc, text, size=14, indent=1.25, bold_prefixes=(), align=None, bold=False):
+    """Abzats 1.25 sm, ikki chet bo'yicha tekislangan, 1.5 interval."""
+    para = doc.add_paragraph()
+    para.alignment = align if align is not None else WD_ALIGN_PARAGRAPH.JUSTIFY
+    fmt = para.paragraph_format
+    fmt.first_line_indent = Cm(indent)
+    fmt.line_spacing = 1.5
+    fmt.space_after = Pt(0)
+    value = re.sub(r"[ \t]+", " ", str(text or "")).strip()
+    if not value:
+        return para
+    prefix = ""
+    for label in bold_prefixes:
+        clean = str(label or "").rstrip(":").strip()
+        if clean and value.casefold().startswith(clean.casefold()):
+            cut = value.find(":", len(clean) - 1)
+            if 0 < cut <= len(clean) + 3:
+                prefix, value = value[:cut + 1], value[cut + 1:].lstrip()
+            break
+    if prefix:
+        run = para.add_run(prefix + " ")
+        _mq_font(run, size, bold=True)
+    body = para.add_run(value)
+    _mq_font(body, size, bold=bold)
+    return para
+
+
+def _mq_blank(doc, count=1, size=14):
+    for _ in range(max(0, int(count))):
+        para = doc.add_paragraph()
+        fmt = para.paragraph_format
+        fmt.first_line_indent = Cm(0)
+        fmt.line_spacing = 1.0
+        fmt.space_after = Pt(0)
+        run = para.add_run("")
+        _mq_font(run, size)
+
+
+def _mq_cover(doc, topic, author, lbl, extra_data, mq):
+    data = extra_data or {}
+    institution = str(data.get("ref_institution") or "").strip()
+    faculty = str(data.get("ref_faculty") or "").strip()
+    dept = str(data.get("ref_dept") or "").strip()
+    subject = str(data.get("ref_subject") or "").strip()
+    checker = str(data.get("ref_checker") or "").strip()
+
+    def centered(text, size=14, bold=False, before=0, after=0):
+        value = str(text or "").strip()
+        if not value or value in ("-", "—"):
+            return
+        para = doc.add_paragraph()
+        para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        fmt = para.paragraph_format
+        fmt.first_line_indent = Cm(0)
+        fmt.line_spacing = 1.15
+        fmt.space_before = Pt(before)
+        fmt.space_after = Pt(after)
+        run = para.add_run(value)
+        _mq_font(run, size, bold=bold)
+
+    centered(lbl.get("ministry", ""), 14, True)
+    centered(institution.upper() or lbl.get("inst_placeholder", ""), 14, True, before=10)
+    if faculty:
+        centered(f'{lbl.get("faculty_label", "")} {faculty}', 14)
+    if dept:
+        centered(f'{lbl.get("dept_label", "")} {dept}', 14)
+    _mq_blank(doc, 3)
+    centered(lbl.get("mustaqil", ""), 16, True, before=12, after=10)
+    if subject:
+        centered(f'{lbl.get("subject_label", "")} {subject}', 14)
+    centered(f'{lbl.get("topic_label", "")} {topic}', 16, True, before=6)
+    _mq_blank(doc, 5)
+    for label, value in ((mq["author"], author), (mq["checker"], checker)):
+        value = str(value or "").strip()
+        if not value or value in ("-", "—"):
+            continue
+        para = doc.add_paragraph()
+        para.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+        fmt = para.paragraph_format
+        fmt.first_line_indent = Cm(0)
+        fmt.line_spacing = 1.5
+        fmt.space_after = Pt(0)
+        run = para.add_run(f"{label} {value}")
+        _mq_font(run, 14)
+    _mq_blank(doc, 9)
+    centered(lbl.get("city_year", ""), 14, True)
+    doc.add_page_break()
+
+
+def _mq_toc(doc, items, title):
+    _mq_heading(doc, title, size=16, center=True, after=12)
+    for text, page, bold in items:
+        para = doc.add_paragraph()
+        para.alignment = WD_ALIGN_PARAGRAPH.LEFT
+        fmt = para.paragraph_format
+        fmt.first_line_indent = Cm(0)
+        fmt.left_indent = Cm(0 if bold else 1.0)
+        fmt.line_spacing = 1.5
+        fmt.space_after = Pt(0)
+        fmt.tab_stops.add_tab_stop(Cm(15.9), WD_TAB_ALIGNMENT.RIGHT, WD_TAB_LEADER.DOTS)
+        run = para.add_run(str(text))
+        _mq_font(run, 14, bold=bold)
+        number = para.add_run("\t" + str(page))
+        _mq_font(number, 14, bold=bold)
+
+
+_MQ_MARKER_RE = re.compile(
+    r"\[\[\s*(KIRISH|1\.1|1\.2|2\.1|2\.2|XULOSA|ADABIYOTLAR)\s*\]\]", re.I)
+
+
+def _mq_parse_content(content_text):
+    """AI matnini belgilangan bo'limlarga ajratadi; belgilar bo'lmasa qolgan matn qaytadi."""
+    parts = _MQ_MARKER_RE.split(str(content_text or ""))
+    found = {}
+    for index in range(1, len(parts), 2):
+        key = parts[index].strip().upper()
+        body = parts[index + 1] if index + 1 < len(parts) else ""
+        found[key] = (found.get(key, "") + "\n\n" + body).strip()
+    leftover = parts[0].strip() if parts else ""
+    return found, leftover
+
+
+_MQ_HEADING_LEAK_RE = re.compile(
+    r"^(?:\d{1,2}\.\d{1,2}\.?|[IVX]{1,4}\s*BOB|KIRISH|XULOSA|ВВЕДЕНИЕ|ЗАКЛЮЧЕНИЕ|"
+    r"INTRODUCTION|CONCLUSION|GİRİŞ|SONUÇ|EINLEITUNG|FAZIT|CHAPITRE|KAPITEL|BÖLÜM)\b",
+    re.I)
+
+
+def _mq_paragraphs(chunk):
+    items = []
+    for raw in re.split(r"\n\s*\n|\n", str(chunk or "")):
+        line = re.sub(r"\s+", " ", raw).strip()
+        if len(line) < 3:
+            continue
+        if _MQ_HEADING_LEAK_RE.match(line) and len(line) < 120:
+            continue
+        items.append(line)
+    return items
+
+
+def _mq_split_blocks(text):
+    """Kirish matnini abzaslar bo'yicha ajratadi; juda uzun abzasni jumlalarga bo'ladi."""
+    blocks = []
+    for raw in re.split(r"\n\s*\n", str(text or "")):
+        block = re.sub(r"\s+", " ", raw).strip()
+        if len(block) < 3:
+            continue
+        if _MQ_HEADING_LEAK_RE.match(block) and len(block) < 120:
+            continue
+        if len(block) <= 1500:
+            blocks.append(block)
+            continue
+        current = ""
+        for sentence in re.split(r"(?<=[.!?])\s+", block):
+            if current and len(current) + len(sentence) + 1 > 1500:
+                blocks.append(current)
+                current = sentence
+            else:
+                current = (current + " " + sentence).strip()
+        if current:
+            blocks.append(current)
+    return blocks
+
+
+def _mq_paginate(blocks, count, fallback=()):
+    """Abzaslarni buzmasdan `count` ta sahifaga teng taqsimlaydi (mundarija raqamlari aniq bo'lishi uchun)."""
+    count = max(1, int(count))
+    capacity = 1620
+    items = [str(block).strip() for block in (blocks or []) if str(block).strip()]
+    pages = [[] for _ in range(count)]
+    if items:
+        total = sum(len(block) + 2 for block in items)
+        per_page = max(250, min(capacity, math.ceil(total / count)))
+        page, used = 0, 0
+        for block in items:
+            if used and used + len(block) + 2 > per_page and page < count - 1:
+                page += 1
+                used = 0
+            if used + len(block) + 2 > capacity and pages[page]:
+                if page < count - 1:
+                    page += 1
+                    used = 0
+                else:
+                    break
+            pages[page].append(block)
+            used += len(block) + 2
+    flat = {block for page_blocks in pages for block in page_blocks}
+    spare = [item for item in fallback if item and item not in flat]
+    for index, page_blocks in enumerate(pages):
+        if page_blocks:
+            continue
+        if spare:
+            pages[index] = [spare.pop(0)]
+        elif fallback:
+            pages[index] = [list(fallback)[index % len(fallback)]]
+    return pages
+
+
+def _mq_conclusion_items(text, lang, mq):
+    """Xulosani raqamlangan bandlar ko'rinishiga keltiradi."""
+    lines = []
+    for raw in re.split(r"\n+", str(text or "")):
+        line = re.sub(r"^\s*(?:[•▪●\-–—*]|\(?\d{1,2}[\.\)])\s*", "", raw).strip()
+        if len(line) > 3:
+            lines.append(line)
+    if len(lines) < 3:
+        plain = re.sub(r"\s+", " ", str(text or "")).strip()
+        lead = mq["lead"]
+        if plain.casefold().startswith(lead.casefold()):
+            plain = plain[len(lead):].strip()
+        sentences = [s.strip() for s in re.split(r"(?<=[.!?])\s+", plain) if len(s.strip()) > 10]
+        lines = []
+        for index in range(0, len(sentences), 2):
+            lines.append(" ".join(sentences[index:index + 2]).strip())
+    return [line for line in lines if len(line) > 10]
+
+
+def _mq_reference_lines(text, mq):
+    """Adabiyotlar ro'yxatini tozalaydi, raqamlaydi va real manbalar bilan to'ldiradi."""
+    entries, seen = [], set()
+
+    def add(value):
+        item = re.sub(r"\s+", " ", str(value or "")).strip()
+        if len(item) < 12:
+            return
+        key = re.sub(r"\W+", "", item.casefold())[:60]
+        if not key or key in seen:
+            return
+        seen.add(key)
+        entries.append(item)
+
+    for raw in str(text or "").splitlines():
+        line = re.sub(r"^\s*(?:[•▪●\-–—*]|\(?\d{1,2}[\.\)])\s*", "", raw).strip()
+        if not line or len(line) < 12 or line.startswith("⚠️"):
+            continue
+        if len(line) < 40 and line.endswith(":") and not line.lower().startswith("http"):
+            continue
+        add(line)
+    for item in mq["sources"]:
+        if len(entries) >= 6:
+            break
+        add(item)
+    return entries[:10]
+
+
+def _generate_mustaqil_docx(doc, topic, pages, content_text, author, lbl, extra_data=None):
+    """Mustaqil ish uchun qat'iy akademik standartdagi hujjat (yangi shablon)."""
+    lang = str(lbl.get("_lang", "uz")).lower()
+    mq = _mq(lang)
+    try:
+        pages = int(pages or 10)
+    except (TypeError, ValueError):
+        pages = 10
+    if pages not in MUSTAQIL_PAGE_OPTIONS:
+        pages = min(MUSTAQIL_PAGE_OPTIONS, key=lambda n: abs(n - pages))
+
+    body_pages = max(4, pages - 6)
+    base, extra = divmod(body_pages, 4)
+    body_split = [base + (1 if index < extra else 0) for index in range(4)]
+
+    found, leftover = _mq_parse_content(content_text)
+    pool = leftover or " ".join(found.values())
+
+    intro_fallback = (
+        f'{lbl.get("relevance", "")} {_loc("relevance", lang, topic)}',
+        f'{lbl.get("goal", "")} {_loc("goal", lang, topic)}',
+        f'{lbl.get("tasks", "")} {mq["task_fb"]}',
+    )
+    intro_text = found.get("KIRISH") or ""
+    intro_blocks = _mq_split_blocks(intro_text)
+    if sum(len(block) for block in intro_blocks) < 200:
+        intro_blocks = list(intro_fallback)
+        if pool and len(pool) > 400:
+            intro_blocks.append(pool[:1200])
+    # Abzas chegaralari saqlanadi: «Mavzuning dolzarbligi:», «Ishning maqsadi:»
+    # kabi yorliqlar o'z xatboshisidan boshlanib, qalin ko'rsatiladi.
+    intro_chunks = _mq_paginate(intro_blocks, 2, fallback=intro_fallback)
+
+    body_specs = (
+        ("1.1", mq["s11"], body_split[0]),
+        ("1.2", mq["s12"], body_split[1]),
+        ("2.1", mq["s21"], body_split[2]),
+        ("2.2", mq["s22"], body_split[3]),
+    )
+    body_chunks = []
+    for key, _title, count in body_specs:
+        section_text = found.get(key) or pool
+        body_chunks.append(_split_into_page_chunks(section_text, count, topic, lang))
+
+    concl_text = found.get("XULOSA") or ""
+    if len(concl_text) < 120:
+        concl_text = "\n".join(_loc(key, lang, topic) for key in ("concl1", "concl2", "concl3", "concl4"))
+    conclusion_items = _mq_conclusion_items(concl_text, lang, mq)
+    references = _mq_reference_lines(found.get("ADABIYOTLAR") or "", mq)
+
+    section = _mq_setup_page(doc, mq)
+    _mq_footer(section, mq)
+
+    _mq_cover(doc, topic, author, lbl, extra_data, mq)
+
+    # Mundarija: har bir blok yangi sahifadan boshlangani uchun raqamlar aniq hisoblanadi.
+    chapter_two_page = 5 + body_split[0] + body_split[1]
+    toc_items = [
+        (lbl.get("intro", ""), 3, True),
+        (mq["ch1"], 5, True),
+        (f'1.1. {mq["s11"]}', 5, False),
+        (f'1.2. {mq["s12"]}', 5 + body_split[0], False),
+        (mq["ch2"], chapter_two_page, True),
+        (f'2.1. {mq["s21"]}', chapter_two_page, False),
+        (f'2.2. {mq["s22"]}', chapter_two_page + body_split[2], False),
+        (lbl.get("conclusion", ""), 5 + body_pages, True),
+        (mq["refs"], 6 + body_pages, True),
+    ]
+    _mq_toc(doc, toc_items, lbl.get("toc", ""))
+    doc.add_page_break()
+
+    # KIRISH (1.5-2 bet): dolzarblik, maqsad, vazifalar
+    _mq_heading(doc, lbl.get("intro", ""))
+    labels = (lbl.get("relevance", ""), lbl.get("goal", ""), lbl.get("tasks", ""))
+    for index, page_blocks in enumerate(intro_chunks):
+        if index:
+            doc.add_page_break()
+        for part in page_blocks:
+            _mq_para(doc, part, bold_prefixes=labels)
+
+    # ASOSIY QISM: I bob (1.1, 1.2), II bob (2.1, 2.2)
+    for index, (key, title, _count) in enumerate(body_specs):
+        doc.add_page_break()
+        if key == "1.1":
+            _mq_heading(doc, mq["ch1"], after=10)
+        elif key == "2.1":
+            _mq_heading(doc, mq["ch2"], after=10)
+        _mq_heading(doc, f"{key}. {title}", center=False, uppercase=False, after=8)
+        for chunk_index, chunk in enumerate(body_chunks[index]):
+            if chunk_index:
+                doc.add_page_break()
+            for part in _mq_paragraphs(chunk):
+                _mq_para(doc, part)
+
+    # XULOSA
+    doc.add_page_break()
+    _mq_heading(doc, lbl.get("conclusion", ""))
+    _mq_para(doc, mq["lead"])
+    for number, item in enumerate(conclusion_items, 1):
+        _mq_para(doc, f"{number}. {item}")
+
+    # FOYDALANILGAN ADABIYOTLAR RO'YXATI
+    doc.add_page_break()
+    _mq_heading(doc, mq["refs"])
+    for number, item in enumerate(references, 1):
+        _mq_para(doc, f"{number}. {item}", indent=0)
+
+    buf = io.BytesIO()
+    doc.save(buf)
+    buf.seek(0)
+    return buf
+
+
 def _generate_paginated_academic(doc, topic, service_code, pages, content_text, author, lbl, extra_data=None):
     """Create exact 10/15/20-page academic structures using the supplied templates."""
     try:
@@ -1087,6 +1668,12 @@ def _generate_paginated_academic(doc, topic, service_code, pages, content_text, 
 
 # ===== Asosiy funksiya =====
 def generate_docx(topic, service_name, service_code, lang, pages, content_text, author="", extra_data=None):
+    if service_code == "mustaqil":
+        # Mustaqil ish eski namuna shablonidan butunlay mustaqil: qat'iy akademik
+        # standart (TNR 14/16, 1.5 interval, 3/1/2/2 sm hoshiya, sahifa raqami).
+        lbl = _lbl(lang)
+        return _generate_mustaqil_docx(Document(), topic, pages, content_text, author,
+                                       lbl, extra_data=extra_data)
     doc = _load_template_document(service_code)
     style = doc.styles["Normal"]
     style.font.name = "Times New Roman"
@@ -1115,7 +1702,11 @@ def generate_docx(topic, service_name, service_code, lang, pages, content_text, 
     if service_code == "test":
         return _generate_test(doc, topic, lang, pages, content_text, author, lbl, extra_data=extra_data)
     if service_code == "insho":
-        return _generate_essay(doc, topic, lang, content_text, author, lbl, extra_data=extra_data)
+        # Insho: mavzu + majburiy REJA + adabiy matn (3-5 bet).
+        return _generate_insho_docx(doc, topic, lang, content_text, author, lbl, extra_data=extra_data)
+    if service_code == "esse":
+        # Esse: rejasiz, 4 abzazli argumentli matn (150-350 so'z).
+        return _generate_esse_docx(doc, topic, lang, content_text, author, lbl, extra_data=extra_data)
 
     # Mustaqil, kurs va diplom ishlari uchun to'liq titul varaq.
     include_dept = service_code in ("mustaqil", "kurs", "diplom")
@@ -1353,6 +1944,216 @@ def _remove_essay_section_headings(text):
             continue
         kept.append(line)
     return re.sub(r"\n\s*\n\s*\n+", "\n\n", "\n".join(kept)).strip()
+
+
+# ===== INSHO: sarlavha + majburiy REJA + adabiy matn =====
+INSHO_TOPIC_LABEL = {
+    "uz": "Mavzu:", "ru": "Тема:", "en": "Topic:",
+    "tr": "Konu:", "de": "Thema:", "fr": "Sujet :",
+}
+
+
+def _insho_paragraphs(text):
+    """Matnni abzaslarga ajratadi va model qo'shgan sarlavhalarni olib tashlaydi."""
+    items = []
+    for raw in re.split(r"\n\s*\n|\n", str(text or "")):
+        line = re.sub(r"\s+", " ", raw).strip()
+        if len(line) < 3:
+            continue
+        if re.match(r"^\s*[a-zA-Zа-яА-Я]\)\s", line) and len(line) < 130:
+            continue
+        if _MQ_HEADING_LEAK_RE.match(line) and len(line) < 130:
+            continue
+        items.append(line)
+    return items
+
+
+def _parse_insho_sections(content_text):
+    text = str(content_text or "")
+    markers = {
+        "intro": r"\[\[INSHO_INTRO\]\](.*?)(?=\[\[INSHO_BODY_A\]\])",
+        "body_a": r"\[\[INSHO_BODY_A\]\](.*?)(?=\[\[INSHO_BODY_B\]\])",
+        "body_b": r"\[\[INSHO_BODY_B\]\](.*?)(?=\[\[INSHO_CONCLUSION\]\])",
+        "conclusion": r"\[\[INSHO_CONCLUSION\]\](.*)$",
+    }
+    found = {}
+    for key, pattern in markers.items():
+        match = re.search(pattern, text, flags=re.DOTALL | re.IGNORECASE)
+        if match:
+            found[key] = match.group(1)
+    if len(found) == 4:
+        return found
+    parts = _split_content(text, 4)
+    return {"intro": parts[0], "body_a": parts[1], "body_b": parts[2], "conclusion": parts[3]}
+
+
+def _insho_plan_for_doc(plan, topic, lang):
+    """REJA qatorlarini hujjat uchun tayyorlaydi: 1., 2. + a), b) + 3."""
+    lc = str(lang or "uz").lower()
+    lines = [re.sub(r"[ \t]+", " ", line).strip() for line in str(plan or "").splitlines() if line.strip()]
+    lines = [line for line in lines if line.casefold().rstrip(":") not in
+             ("reja", "план", "plan", "outline", "gliederung", "taslak")]
+    if len(lines) < 5:
+        lines = [f"1. {_loc('relevance', lc, topic)}",
+                 "2. " + {"uz": "Asosiy qism:", "ru": "Основная часть:", "en": "Main part:",
+                          "tr": "Ana bölüm:", "de": "Hauptteil:", "fr": "Partie principale :"}.get(lc, "Main part:"),
+                 "   a) " + _loc("goal", lc, topic),
+                 "   b) " + _loc("method", lc, topic),
+                 f"3. {_loc('concl1', lc, topic)}"]
+    return lines[:5]
+
+
+def _generate_insho_docx(doc, topic, lang, content_text, author, lbl, extra_data=None):
+    """Insho: markazda mavzu va REJA, so'ng adabiy matn (TNR 14, 1.5, abzats 1.25)."""
+    extra_data = extra_data or {}
+    lc = str(lang or "uz").lower()
+    mq = _mq(lc)
+    section = _mq_setup_page(doc, mq)
+    _add_footer(section, lc)
+
+    plan_lines = _insho_plan_for_doc(extra_data.get("insho_plan", ""), topic, lc)
+    plan_a = re.sub(r"^\s*a[)]\s*", "", plan_lines[2]).strip() if len(plan_lines) > 2 else ""
+    plan_b = re.sub(r"^\s*b[)]\s*", "", plan_lines[3]).strip() if len(plan_lines) > 3 else ""
+
+    # 1. Mavzu (markazlashtirilgan)
+    title = doc.add_paragraph()
+    title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    fmt = title.paragraph_format
+    fmt.first_line_indent = Cm(0); fmt.line_spacing = 1.5; fmt.space_after = Pt(6)
+    run = title.add_run(f'{INSHO_TOPIC_LABEL.get(lc, "Topic:")} {topic}')
+    _mq_font(run, 16, bold=True)
+    if str(author or "").strip() and author not in ("-", "—"):
+        byline = doc.add_paragraph()
+        byline.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+        fmt = byline.paragraph_format
+        fmt.first_line_indent = Cm(0); fmt.line_spacing = 1.5; fmt.space_after = Pt(10)
+        run = byline.add_run(str(author).strip())
+        _mq_font(run, 14)
+
+    # 2. REJA (majburiy, matndan oldin)
+    _mq_heading(doc, ESSAY_PLAN_TITLES.get(lc, "OUTLINE"), size=16, center=True, after=8)
+    for line in plan_lines:
+        para = doc.add_paragraph()
+        para.alignment = WD_ALIGN_PARAGRAPH.LEFT
+        fmt = para.paragraph_format
+        fmt.line_spacing = 1.5; fmt.space_after = Pt(0)
+        fmt.first_line_indent = Cm(0)
+        fmt.left_indent = Cm(1.0 if line.strip().startswith(("a)", "b)", "а)", "б)")) else 0)
+        run = para.add_run(line)
+        _mq_font(run, 14)
+    _mq_blank(doc, 1)
+
+    sections = _parse_insho_sections(content_text)
+    words = _INSHO_WORDS_TEXT.get(lc, _INSHO_WORDS_TEXT["en"])
+
+    _mq_heading(doc, words[0], size=16, center=True, after=8)
+    for part in _insho_paragraphs(sections.get("intro", "")) or [_loc("essay_intro", lc, topic)]:
+        _mq_para(doc, part)
+
+    _mq_heading(doc, words[1], size=16, center=True, after=8)
+    for label, key in (("a)", "body_a"), ("b)", "body_b")):
+        sub_title = plan_a if label == "a)" else plan_b
+        if sub_title:
+            sub = doc.add_paragraph()
+            sub.alignment = WD_ALIGN_PARAGRAPH.LEFT
+            fmt = sub.paragraph_format
+            fmt.first_line_indent = Cm(0); fmt.line_spacing = 1.5; fmt.space_after = Pt(4)
+            fmt.keep_with_next = True
+            run = sub.add_run(f"{label} {sub_title}")
+            _mq_font(run, 14, bold=True)
+        for part in _insho_paragraphs(sections.get(key, "")) or [_loc("essay_main_fb", lc, topic)]:
+            _mq_para(doc, part)
+
+    _mq_heading(doc, words[2], size=16, center=True, after=8)
+    for part in _insho_paragraphs(sections.get("conclusion", "")) or [_loc("essay_concl_fb", lc, topic)]:
+        _mq_para(doc, part)
+
+    buf = io.BytesIO()
+    doc.save(buf)
+    buf.seek(0)
+    return buf
+
+
+# ===== ESSE: rejasiz, 4 abzasli qisqa argumentli ish =====
+_INSHO_WORDS_TEXT = {
+    "uz": ("KIRISH", "ASOSIY QISM", "XULOSA"),
+    "ru": ("ВВЕДЕНИЕ", "ОСНОВНАЯ ЧАСТЬ", "ЗАКЛЮЧЕНИЕ"),
+    "en": ("INTRODUCTION", "MAIN BODY", "CONCLUSION"),
+    "tr": ("GİRİŞ", "ANA BÖLÜM", "SONUÇ"),
+    "de": ("EINLEITUNG", "HAUPTTEIL", "SCHLUSS"),
+    "fr": ("INTRODUCTION", "PARTIE PRINCIPALE", "CONCLUSION"),
+}
+
+
+def _esse_setup(doc, lang):
+    """Esse: TNR 14, 1.15 qator oralig'i, ikki chet bo'yicha tekislash."""
+    section = doc.sections[0]
+    section.page_width, section.page_height = Cm(21), Cm(29.7)
+    section.left_margin, section.right_margin = Cm(3), Cm(1)
+    section.top_margin, section.bottom_margin = Cm(2), Cm(2)
+    normal = doc.styles["Normal"]
+    normal.font.name = "Times New Roman"
+    normal.font.size = Pt(14)
+    rpr = normal.element.get_or_add_rPr()
+    rfonts = rpr.get_or_add_rFonts()
+    for attr in ("w:ascii", "w:hAnsi", "w:eastAsia", "w:cs"):
+        rfonts.set(qn(attr), "Times New Roman")
+    fmt = normal.paragraph_format
+    fmt.line_spacing = 1.15
+    fmt.space_before = Pt(0)
+    fmt.space_after = Pt(6)
+    fmt.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+    for para in list(section.header.paragraphs) + list(section.footer.paragraphs):
+        para.clear()
+    return section
+
+
+def _generate_esse_docx(doc, topic, lang, content_text, author, lbl, extra_data=None):
+    """Esse: sarlavha va 4 abzas (kirish, 2 asosiy, xulosa). REJA yozilmaydi."""
+    lc = str(lang or "uz").lower()
+    section = _esse_setup(doc, lc)
+    _add_footer(section, lc)
+
+    title = doc.add_paragraph()
+    title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    fmt = title.paragraph_format
+    fmt.first_line_indent = Cm(0); fmt.line_spacing = 1.15; fmt.space_after = Pt(4)
+    run = title.add_run(str(topic).strip())
+    _mq_font(run, 14, bold=True)
+    if str(author or "").strip() and author not in ("-", "—"):
+        byline = doc.add_paragraph()
+        byline.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+        fmt = byline.paragraph_format
+        fmt.first_line_indent = Cm(0); fmt.line_spacing = 1.15; fmt.space_after = Pt(10)
+        _mq_font(byline.add_run(str(author).strip()), 12, italic=True)
+
+    intro, body, conclusion = _parse_essay_sections(content_text)
+    intro = _remove_essay_section_headings(intro)
+    conclusion = _remove_essay_section_headings(conclusion)
+    body_parts = [re.sub(r"\s+", " ", part).strip()
+                  for part in re.split(r"\n\s*\n|\n", _remove_essay_section_headings(body)) if part.strip()]
+
+    def paragraph(text_value):
+        para = doc.add_paragraph()
+        para.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+        fmt = para.paragraph_format
+        fmt.first_line_indent = Cm(1.25)
+        fmt.line_spacing = 1.15
+        fmt.space_after = Pt(8)
+        _mq_font(para.add_run(str(text_value).strip()), 14)
+
+    paragraph(intro or _loc("essay_intro", lc, topic))
+    if body_parts:
+        for part in body_parts[:3]:
+            paragraph(part)
+    else:
+        paragraph(_loc("essay_main_fb", lc, topic))
+    paragraph(conclusion or _loc("essay_concl_fb", lc, topic))
+
+    buf = io.BytesIO()
+    doc.save(buf)
+    buf.seek(0)
+    return buf
 
 
 def _generate_essay(doc, topic, lang, content_text, author, lbl, extra_data=None):

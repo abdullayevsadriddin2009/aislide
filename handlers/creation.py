@@ -11,7 +11,7 @@ from keyboards import (option_kb_for, confirm_kb, main_kb, option_label,
 from designs import (subject_name, detect_subject_key, lang_full_name, SLIDE_COUNTS,
                      design_name, DESIGNS, DESIGN_KEYS)
 from ai_api import (generate, generate_slides_structured, get_last_error, search_images, download_image,
-                    generate_outline, localize_topic, image_keywords_batch)
+                    generate_insho_plan, localize_topic, image_keywords_batch)
 from pptx_generator import generate_pptx
 from docx_generator import generate_docx
 
@@ -337,20 +337,22 @@ async def cb_template(call: CallbackQuery, state: FSMContext):
 @router.callback_query(Creation.option, F.data.startswith("opt:"))
 async def cb_option(call: CallbackQuery, state: FSMContext):
     _, otype, oval = call.data.split(":", 2)
-    allowed_values = {"pages": {10, 15, 20}, "questions": {10, 15, 20}, "words": {200, 300, 500}}
     try:
         selected_value = int(oval)
     except (TypeError, ValueError):
         await call.answer("Invalid option", show_alert=True)
         return
-    if otype not in allowed_values or selected_value not in allowed_values[otype]:
+    data = await state.get_data()
+    service = data.get("service")
+    allowed_values = {"pages": {10, 15, 20}, "questions": {10, 15, 20}, "words": {200, 300, 500}}
+    s = SERVICES.get(service, {})
+    allowed = set(s.get("options") or allowed_values.get(s.get("option_type", "pages"), set()))
+    if selected_value not in allowed:
         await call.answer("Invalid option", show_alert=True)
         return
-    data = await state.get_data()
     options = data.get("options", {})
     options[otype] = selected_value
     await state.update_data(options=options)
-    service = data.get("service")
     if service != "slide":
         lang = await _lang(call.from_user.id)
         await state.set_state(Creation.language)
@@ -496,11 +498,12 @@ async def _show_confirm(event, state):
     else:
         u = await db.get_user(user_id)
         if u and "pages" not in options and s.get("option_type") == "pages":
+            allowed_pages = tuple(s.get("options") or (10, 15, 20))
             try:
-                default_pages = int(u.get("default_pages", 10))
+                default_pages = int(u.get("default_pages", allowed_pages[0]))
             except (TypeError, ValueError):
-                default_pages = 10
-            options["pages"] = default_pages if default_pages in (10, 15, 20) else 10
+                default_pages = allowed_pages[0]
+            options["pages"] = default_pages if default_pages in allowed_pages else allowed_pages[0]
         await state.update_data(options=options)
         lang_name = data.get("language_name", lang_full_name("uz", lang))
         fmt = data.get("file_format", "docx")
@@ -558,32 +561,24 @@ async def cb_confirm(call: CallbackQuery, state: FSMContext):
     await state.update_data(generation_topic=generation_topic)
     data["generation_topic"] = generation_topic
     
-    # ===== INSHO UCHUN MAXSUS =====
+    # ===== INSHO UCHUN MAXSUS: REJA =====
+    # Inshoda reja majburiy va u hujjat boshida (mavzudan keyin) yoziladi.
     if service == "insho":
         language_code = data.get("language", lang)
-        words = int(options.get("words", 200) or 200)
-        words = words if words in (200, 300, 500) else min((200, 300, 500), key=lambda n: abs(n - words))
-        options["words"] = words
+        try:
+            pages = int(options.get("pages", 3) or 3)
+        except (TypeError, ValueError):
+            pages = 3
+        pages = pages if pages in (3, 4, 5) else min((3, 4, 5), key=lambda n: abs(n - pages))
+        options["pages"] = pages
         await state.update_data(options=options)
-        outline = await generate_outline(service, generation_topic, language_code, words)
+        plan = await generate_insho_plan(generation_topic, language_code, pages)
+        await state.update_data(essay_outline=plan)
         kb = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text=t("btn_write_essay", lang), callback_data="essay:go")],
             [InlineKeyboardButton(text=t("btn_cancel", lang), callback_data="cancel")],
         ])
-        if outline:
-            await state.update_data(essay_outline=outline)
-            await msg.edit_text(t("essay_outline", lang, outline=outline[:3000]), reply_markup=kb)
-        else:
-            fallback_outline = {
-                "uz": f"1. Kirish: {generation_topic} mavzusining mazmuni va ahamiyati\n2. Asosiy fikr: asosiy tarixiy yoki nazariy xususiyatlar\n3. Asosiy fikr: mavzuning jamiyatga ta’siri\n4. Shaxsiy munosabat: dalillarni baholash\n5. Xulosa: fikrlarni umumlashtirish",
-                "ru": f"1. Введение: значение темы «{generation_topic}»\n2. Основная мысль: ключевые особенности\n3. Основная мысль: влияние темы на общество\n4. Личная позиция: оценка аргументов\n5. Заключение: обобщение выводов",
-                "en": f"1. Introduction: meaning and importance of {generation_topic}\n2. Main point: key features\n3. Main point: impact on society\n4. Personal view: evaluate the arguments\n5. Conclusion: summarize the findings",
-                "tr": f"1. Giriş: {generation_topic} konusunun önemi\n2. Ana fikir: temel özellikler\n3. Ana fikir: toplum üzerindeki etkisi\n4. Kişisel görüş: savları değerlendirme\n5. Sonuç: bulguları özetleme",
-                "de": f"1. Einleitung: Bedeutung von {generation_topic}\n2. Hauptgedanke: zentrale Merkmale\n3. Hauptgedanke: gesellschaftliche Wirkung\n4. Eigene Position: Argumente bewerten\n5. Schluss: Ergebnisse zusammenfassen",
-                "fr": f"1. Introduction : importance de {generation_topic}\n2. Idée principale : caractéristiques essentielles\n3. Idée principale : effets sur la société\n4. Point de vue personnel : évaluer les arguments\n5. Conclusion : résumer les résultats",
-            }.get(language_code, f"1. Introduction: {generation_topic}\n2. Main point\n3. Main point\n4. Personal view\n5. Conclusion")
-            await state.update_data(essay_outline=fallback_outline)
-            await msg.edit_text(t("essay_outline", lang, outline=fallback_outline), reply_markup=kb)
+        await msg.edit_text(t("essay_outline", lang, outline=plan[:3000]), reply_markup=kb)
         await state.set_state(Creation.essay_outline)
         return
         
@@ -641,11 +636,17 @@ async def cb_confirm(call: CallbackQuery, state: FSMContext):
         language_code = data.get("language", lang)
         text_content, real = await generate(service, generation_topic, options, language_code)
         
-        if service == "insho" and options.get("words"):
-            words = int(options["words"])
-            pages = max(2, math.ceil(words / 220))
-            options["pages"] = pages
+        if service == "esse":
+            try:
+                words = int(options.get("words", 250) or 250)
+            except (TypeError, ValueError):
+                words = 250
+            words = words if words in (150, 250, 350) else min((150, 250, 350), key=lambda n: abs(n - words))
+            options["words"] = words
             options["target_words"] = words
+            pages = max(2, math.ceil(words / 300))
+        elif service == "insho":
+            pages = int(options.get("pages", 3) or 3)
         elif service == "test":
             pages = int(options.get("questions", 20) or 20)
         else:
@@ -705,22 +706,19 @@ async def cb_essay_go(call: CallbackQuery, state: FSMContext):
     topic = data.get("topic", "")
     generation_topic = data.get("generation_topic", topic)
     options = data.get("options", {})
-    author = data.get("author", "")
+    author = data.get("ref_author") or data.get("author", "")
     price = await db.get_price(service)
     free_mode = (await db.get_setting("free_mode", "1")) == "1" or price == 0
     await msg.edit_text(t("generating", lang))
     await call.answer()
     safe_topic = "".join(c for c in topic[:25] if c.isalnum() or c in " _-").strip() or "document"
     language_code = data.get("language", lang)
+    plan = data.get("essay_outline", "")
+    options["plan"] = plan
     text_content, real = await generate(service, generation_topic, options, language_code)
-    words = int(options.get("words", 200) or 200)
-    words = words if words in (200, 300, 500) else min((200, 300, 500), key=lambda n: abs(n - words))
-    pages = max(2, math.ceil(words / 220))
-    options["pages"] = pages
-    options["target_words"] = words
+    pages = int(options.get("pages", 3) or 3)
     document_data = dict(data)
-    document_data["essay_target_words"] = words
-    document_data["essay_outline"] = data.get("essay_outline", "")
+    document_data["insho_plan"] = plan
     for field in ("ref_subject", "ref_faculty", "ref_dept"):
         if document_data.get(field):
             document_data[field] = await localize_topic(document_data[field], language_code)
