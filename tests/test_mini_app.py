@@ -16,12 +16,14 @@ import mini_app
 from admin_web import app
 
 
-def make_init_data(user, token, auth_date=None):
+def make_init_data(user, token, auth_date=None, extra=None):
     fields = {
         "auth_date": str(int(auth_date if auth_date is not None else time.time())),
         "query_id": "AAH-test",
         "user": json.dumps(user, separators=(",", ":")),
     }
+    for key, value in (extra or {}).items():
+        fields[key] = value
     check_string = "\n".join(f"{key}={fields[key]}" for key in sorted(fields))
     secret = hmac.new(b"WebAppData", token.encode(), hashlib.sha256).digest()
     fields["hash"] = hmac.new(secret, check_string.encode(), hashlib.sha256).hexdigest()
@@ -63,6 +65,28 @@ class MiniAppTests(unittest.TestCase):
         user = mini_app.verify_init_data(data)
         self.assertIsNotNone(user)
         self.assertEqual(user["id"], 777)
+
+    def test_signature_field_included_in_hash_is_accepted(self):
+        # Rasmiy HMAC: hash barcha maydonlar (hashdan tashqari) bo'yicha hisoblanadi.
+        data = make_init_data({"id": 778}, config.BOT_TOKEN, extra={"signature": "ed25519-a"})
+        user = mini_app.verify_init_data(data)
+        self.assertIsNotNone(user)
+        self.assertEqual(user["id"], 778)
+
+    def test_signature_field_excluded_from_hash_is_accepted(self):
+        # Ba'zi mijozlar signature'ni hash hisobiga qo'shmaydi.
+        fields = {
+            "auth_date": str(int(time.time())),
+            "query_id": "AAH-test",
+            "user": json.dumps({"id": 779}, separators=(",", ":")),
+        }
+        check = "\n".join(f"{key}={fields[key]}" for key in sorted(fields))
+        secret = hmac.new(b"WebAppData", config.BOT_TOKEN.encode(), hashlib.sha256).digest()
+        fields["hash"] = hmac.new(secret, check.encode(), hashlib.sha256).hexdigest()
+        fields["signature"] = "ed25519-b"
+        user = mini_app.verify_init_data(urlencode(fields))
+        self.assertIsNotNone(user)
+        self.assertEqual(user["id"], 779)
 
     def test_tampered_signature_is_rejected(self):
         data = make_init_data({"id": 777}, config.BOT_TOKEN).replace("777", "888")

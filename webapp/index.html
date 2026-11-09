@@ -148,7 +148,7 @@ const T = {
     emptyOrders:"Hozircha buyurtma yo‘q", bal:"Balans", bonus:"Bonus", premium:"Premium",
     ordersCount:"Buyurtmalar", openBot:"Botni ochish", freeMode:"Bepul rejim yoqilgan",
     needTopic:"Mavzuni kamida 3 belgi bilan yozing", copied:"Nusxa olindi",
-    size:"Hajm", serv:"Xizmat", noAuth:"Mini App faqat Telegram ichida ishlaydi.",
+    size:"Hajm", serv:"Xizmat", noAuth:"Mini App faqat Telegram ichida ishlaydi.", noInitData:"Telegram ma'lumot yubormadi. Botga qaytib, «Ilova» tugmasini qayta bosing.", badToken:"Serverdagi bot tokeni boshqacha. Administratorga xabar bering.",
     pagesUnit:"bet", wordsUnit:"so‘z", slidesUnit:"slayd", questionsUnit:"savol",
     close:"Yopish", planReady:"Reja tayyor", retry:"Qayta urinish"},
   ru:{ create:"Создать", orders:"Заказы", profile:"Профиль", newdoc:"Новый документ",
@@ -171,7 +171,7 @@ const T = {
     emptyOrders:"Заказов пока нет", bal:"Баланс", bonus:"Бонус", premium:"Премиум",
     ordersCount:"Заказов", openBot:"Открыть бота", freeMode:"Включён бесплатный режим",
     needTopic:"Введите тему минимум из 3 символов", copied:"Скопировано",
-    size:"Объём", serv:"Услуга", noAuth:"Mini App работает только внутри Telegram.",
+    size:"Объём", serv:"Услуга", noAuth:"Mini App работает только внутри Telegram.", noInitData:"Telegram не передал данные. Вернитесь в бота и нажмите «Приложение» ещё раз.", badToken:"Токен бота на сервере другой. Сообщите администратору.",
     pagesUnit:"стр.", wordsUnit:"слов", slidesUnit:"слайдов", questionsUnit:"вопросов",
     close:"Закрыть", planReady:"План готов", retry:"Повторить"},
   en:{ create:"Create", orders:"Orders", profile:"Profile", newdoc:"New document",
@@ -194,7 +194,7 @@ const T = {
     emptyOrders:"No orders yet", bal:"Balance", bonus:"Bonus", premium:"Premium",
     ordersCount:"Orders", openBot:"Open the bot", freeMode:"Free mode is on",
     needTopic:"Enter a topic of at least 3 characters", copied:"Copied",
-    size:"Size", serv:"Service", noAuth:"Mini App works only inside Telegram.",
+    size:"Size", serv:"Service", noAuth:"Mini App works only inside Telegram.", noInitData:"Telegram did not send your data. Go back to the bot and tap the App button again.", badToken:"The bot token on the server is different. Please contact the administrator.",
     pagesUnit:"pages", wordsUnit:"words", slidesUnit:"slides", questionsUnit:"questions",
     close:"Close", planReady:"Outline ready", retry:"Retry"},
   tr:{ create:"Oluştur", orders:"Siparişler", profile:"Profil", newdoc:"Yeni belge",
@@ -217,7 +217,7 @@ const T = {
     emptyOrders:"Henüz sipariş yok", bal:"Bakiye", bonus:"Bonus", premium:"Premium",
     ordersCount:"Sipariş", openBot:"Botu aç", freeMode:"Ücretsiz mod açık",
     needTopic:"En az 3 karakterlik konu girin", copied:"Kopyalandı",
-    size:"Hacim", serv:"Hizmet", noAuth:"Mini App yalnızca Telegram içinde çalışır.",
+    size:"Hacim", serv:"Hizmet", noAuth:"Mini App yalnızca Telegram içinde çalışır.", noInitData:"Telegram verileri göndermedi. Bota dönüp Uygulama düğmesine tekrar basın.", badToken:"Sunucudaki bot jetonu farklı. Lütfen yöneticiye bildirin.",
     pagesUnit:"sayfa", wordsUnit:"kelime", slidesUnit:"slayt", questionsUnit:"soru",
     close:"Kapat", planReady:"Plan hazır", retry:"Tekrar"},
   de:{ create:"Erstellen", orders:"Bestellungen", profile:"Profil", newdoc:"Neues Dokument",
@@ -240,7 +240,7 @@ const T = {
     emptyOrders:"Noch keine Bestellungen", bal:"Guthaben", bonus:"Bonus", premium:"Premium",
     ordersCount:"Bestellungen", openBot:"Bot öffnen", freeMode:"Kostenloser Modus aktiv",
     needTopic:"Geben Sie ein Thema mit mindestens 3 Zeichen ein", copied:"Kopiert",
-    size:"Umfang", serv:"Dienst", noAuth:"Mini App funktioniert nur in Telegram.",
+    size:"Umfang", serv:"Dienst", noAuth:"Mini App funktioniert nur in Telegram.", noInitData:"Telegram hat deine Daten nicht gesendet. Geh zum Bot zurück und tippe erneut auf App.", badToken:"Der Bot-Token auf dem Server ist ein anderer. Bitte den Administrator informieren.",
     pagesUnit:"Seiten", wordsUnit:"Wörter", slidesUnit:"Folien", questionsUnit:"Fragen",
     close:"Schließen", planReady:"Gliederung fertig", retry:"Erneut"},
   fr:{ create:"Créer", orders:"Commandes", profile:"Profil", newdoc:"Nouveau document",
@@ -263,7 +263,7 @@ const T = {
     emptyOrders:"Aucune commande pour l’instant", bal:"Solde", bonus:"Bonus", premium:"Premium",
     ordersCount:"Commandes", openBot:"Ouvrir le bot", freeMode:"Mode gratuit activé",
     needTopic:"Saisissez un sujet d’au moins 3 caractères", copied:"Copié",
-    size:"Volume", serv:"Service", noAuth:"La Mini App fonctionne uniquement dans Telegram.",
+    size:"Volume", serv:"Service", noAuth:"La Mini App fonctionne uniquement dans Telegram.", noInitData:"Telegram n'a pas envoyé vos données. Revenez au bot et appuyez à nouveau sur Application.", badToken:"Le jeton du bot sur le serveur est différent. Contactez l'administrateur.",
     pagesUnit:"pages", wordsUnit:"mots", slidesUnit:"diapositives", questionsUnit:"questions",
     close:"Fermer", planReady:"Plan prêt", retry:"Réessayer"}
 };
@@ -325,17 +325,38 @@ function boot(initPayload){
   render();
 }
 
+function initDataNow(){
+  if (!tg) return "";
+  try { if (tg.initData) return tg.initData; } catch (e) {}
+  return "";
+}
+
+async function waitInitData(tries){
+  // Ba'zi mijozlar initData'ni kechroq beradi — biroz kutamiz.
+  for (let i = 0; i < (tries || 10); i++){
+    const value = initDataNow();
+    if (value) return value;
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+  return "";
+}
+
 async function bootFromTelegram(){
   const dev = new URLSearchParams(location.search).get("dev");
-  const payload = { initData: tg ? tg.initData : "", lang: (tg && tg.initDataUnsafe && tg.initDataUnsafe.user && tg.initDataUnsafe.user.language_code) || "uz" };
+  let initData = await waitInitData();
+  const payload = { initData, lang: (tg && tg.initDataUnsafe && tg.initDataUnsafe.user && tg.initDataUnsafe.user.language_code) || "uz" };
   if (dev) payload.dev_user = dev;
   else if (!payload.initData && window.__MINI_DEV__) payload.dev_user = "123";
   try {
     boot(await api("/api/mini/init", {method:"POST", body: JSON.stringify(payload)}));
   } catch (error) {
+    const code = (error.data && error.data.code) || "";
+    const hint = !tg ? t("noAuth")
+      : (!initData ? t("noInitData")
+      : (code === "bad_hash" ? t("badToken") : t("noAuth")));
     app.innerHTML = `<div class="wrap"><div class="card center" style="margin-top:40px">
-      <div style="font-size:42px">📱</div><h3>${esc(t("noAuth"))}</h3>
-      <p class="muted">${esc(error.message || "")}</p>
+      <div style="font-size:42px">📱</div><h3>${esc(hint)}</h3>
+      <p class="muted">${esc(error.message || "")}${code ? ` (${esc(code)})` : ""}</p>
       ${tg ? `<button class="btn" onclick="tg.close()">${esc(t("close"))}</button>` : ""}
     </div></div>`;
   }

@@ -128,27 +128,46 @@ def _profile(uid):
 
 
 # =====================  Autentifikatsiya  =====================
+_LAST_INIT_ERROR = ""
+
+
 def verify_init_data(init_data):
     """Telegram WebApp initData imzosini tekshiradi va user dict qaytaradi."""
-    if not init_data or not config.BOT_TOKEN:
+    global _LAST_INIT_ERROR
+    _LAST_INIT_ERROR = ""
+    if not init_data:
+        _LAST_INIT_ERROR = "no_init_data"
+        return None
+    if not config.BOT_TOKEN:
+        _LAST_INIT_ERROR = "no_bot_token"
         return None
     try:
         parsed = dict(parse_qsl(str(init_data), keep_blank_values=True))
     except Exception:
+        _LAST_INIT_ERROR = "bad_init_data"
         return None
     received = str(parsed.pop("hash", "") or "").strip()
     if not received:
+        _LAST_INIT_ERROR = "no_hash"
         return None
-    data_check = "\n".join(f"{key}={parsed[key]}" for key in sorted(parsed))
+    # Bot API 7.2+ `signature` maydonini ham yuboradi. Ba'zi mijozlar uni hash
+    # hisobiga qo'shadi, ba'zilari qo'shmaydi — ikkala variantni ham tekshiramiz.
+    variants = ["\n".join(f"{key}={parsed[key]}" for key in sorted(parsed))]
+    if "signature" in parsed:
+        without_signature = {key: value for key, value in parsed.items() if key != "signature"}
+        variants.append("\n".join(f"{key}={without_signature[key]}" for key in sorted(without_signature)))
     secret = hmac.new(b"WebAppData", config.BOT_TOKEN.encode(), hashlib.sha256).digest()
-    calculated = hmac.new(secret, data_check.encode(), hashlib.sha256).hexdigest()
-    if not hmac.compare_digest(calculated, received):
+    if not any(hmac.compare_digest(hmac.new(secret, variant.encode(), hashlib.sha256).hexdigest(), received)
+               for variant in variants):
+        _LAST_INIT_ERROR = "bad_hash"
+        print("[mini] initData imzosi mos kelmadi (BOT_TOKEN yoki maydonlar)", flush=True)
         return None
     try:
         auth_date = int(parsed.get("auth_date") or 0)
     except (TypeError, ValueError):
         auth_date = 0
     if auth_date and time.time() - auth_date > 86400:
+        _LAST_INIT_ERROR = "stale"
         return None
     user = {}
     if parsed.get("user"):
@@ -157,6 +176,7 @@ def verify_init_data(init_data):
         except Exception:
             user = {}
     if not isinstance(user, dict) or not user.get("id"):
+        _LAST_INIT_ERROR = "no_user"
         return None
     return user
 
@@ -241,7 +261,7 @@ def api_init():
         if dev_id:
             tg_user = {"id": dev_id, "first_name": "Local test", "username": "dev"}
     if not tg_user or not tg_user.get("id"):
-        return jsonify({"ok": False, "error": "auth",
+        return jsonify({"ok": False, "error": "auth", "code": _LAST_INIT_ERROR or "auth",
                         "message": "Mini App faqat Telegram ichidan ochiladi."}), 401
     uid = int(tg_user["id"])
     row = _ensure_user(uid, tg_user.get("username"), tg_user.get("first_name"))
