@@ -278,6 +278,57 @@ def api_orders():
     return jsonify({"ok": True, "orders": history})
 
 
+@mini.route("/api/mini/order", methods=["GET"])
+def api_order():
+    """Bitta buyurtma tafsiloti (buyurtmalar ro'yxatidan bosilganda)."""
+    uid = _token_user()
+    if not uid:
+        return _unauthorized()
+    try:
+        order_id = int(request.args.get("id") or 0)
+    except (TypeError, ValueError):
+        order_id = 0
+    if not order_id:
+        return jsonify({"ok": False, "error": "id", "message": "Buyurtma topilmadi."}), 404
+    try:
+        with _db() as con:
+            row = con.execute(
+                "SELECT id,service,topic,options,price,status,created_at FROM orders "
+                "WHERE id=? AND user_id=?", (order_id, int(uid))
+            ).fetchone()
+    except Exception:
+        row = None
+    if not row:
+        return jsonify({"ok": False, "error": "id", "message": "Buyurtma topilmadi."}), 404
+    try:
+        options = json.loads(row["options"] or "{}")
+    except Exception:
+        options = {}
+    lang_row = _profile(uid)[0]
+    job_id = None
+    job = None
+    for key, item in JOBS.items():
+        if item.get("user_id") == uid and item.get("order_id") == order_id:
+            job = item
+            job_id = key
+            break
+    return jsonify({
+        "ok": True,
+        "order": {
+            "id": row["id"],
+            "service": row["service"],
+            "service_name": service_name(row["service"], lang_row.get("lang", "uz")),
+            "topic": row["topic"],
+            "options": options,
+            "price": int(row["price"] or 0),
+            "status": row["status"],
+            "created_at": int(row["created_at"] or 0),
+        },
+        "job": job_id if job and job.get("status") == "done" else None,
+        "file": bool(job and job.get("file") and os.path.isfile(job["file"])),
+    })
+
+
 # =====================  Insho REJA  =====================
 @mini.route("/api/mini/plan", methods=["POST"])
 def api_plan():
@@ -336,10 +387,11 @@ def _payload_options(service, data):
         options[option_type] = value
     if option_type == "slides":
         try:
-            count = int(raw.get("count") or data.get("slide_count") or 10)
+            count = int(raw.get("count") or data.get("slide_count") or allowed[0])
         except (TypeError, ValueError):
-            count = 10
-        options["count"] = max(3, min(30, count))
+            count = allowed[0]
+        # Botdagi kabi faqat tayyor variantlar: 10 / 15 / 20.
+        options["count"] = min(allowed, key=lambda item: abs(item - count))
     if service == "insho":
         options["plan"] = str(data.get("plan") or "")[:4000]
     return options
@@ -473,7 +525,7 @@ async def _generate(job_id):
             handle.write(content)
         job.update(status="done", stage="done", file=path, filename=filename,
                    size=len(content), real=bool(real))
-        _save_order(job["user_id"], service, topic, options)
+        job["order_id"] = _save_order(job["user_id"], service, topic, options)
     except Exception as exc:
         job["status"] = "error"
         job["stage"] = "error"
@@ -483,15 +535,16 @@ async def _generate(job_id):
 def _save_order(user_id, service, topic, options):
     try:
         with _db() as con:
-            con.execute(
+            cur = con.execute(
                 "INSERT INTO orders(user_id,service,topic,options,price,status,created_at) "
                 "VALUES(?,?,?,?,?,?,?)",
                 (int(user_id), service, topic, json.dumps(options, ensure_ascii=False),
                  _price(service), "done", int(time.time())),
             )
             con.commit()
+            return cur.lastrowid
     except Exception:
-        pass
+        return None
 
 
 @mini.route("/api/mini/generate", methods=["POST"])
@@ -518,6 +571,14 @@ def api_generate():
         fmt = "pptx"
     options = _payload_options(service, data)
     extra = _extra_data(service, data, options)
+    subject_key = ""
+    if service == "slide":
+        # Botdagi kabi fan yo'nalishi mavzudan aniqlanadi, foydalanuvchidan so'ralmaydi.
+        try:
+            from designs import detect_subject_key
+            subject_key = detect_subject_key(topic)
+        except Exception:
+            subject_key = ""
     payload = {
         "service": service,
         "topic": topic,
@@ -525,7 +586,7 @@ def api_generate():
         "options": options,
         "format": fmt,
         "author": str(data.get("author") or "").strip()[:120],
-        "subject_key": str(data.get("subject_key") or "").strip()[:40],
+        "subject_key": subject_key,
         "design_key": str(data.get("design_key") or "").strip()[:40],
         "extra": extra,
     }

@@ -97,6 +97,54 @@ class MiniAppTests(unittest.TestCase):
                                     json={"token": token, "service": "referat", "topic": "ab"})
         self.assertEqual(response.status_code, 400)
 
+    def _token_for(self, user_id):
+        data = make_init_data({"id": user_id}, config.BOT_TOKEN)
+        return self.client.post("/api/mini/init", json={"initData": data}).get_json()["token"]
+
+    def test_slide_count_is_limited_to_bot_options(self):
+        self.assertEqual(mini_app._payload_options("slide", {"options": {"count": 16}}), {"count": 15})
+        self.assertEqual(mini_app._payload_options("slide", {"options": {"count": 4}}), {"count": 10})
+        self.assertEqual(mini_app._payload_options("slide", {"options": {"count": 20}}), {"count": 20})
+
+    def test_slide_subject_is_detected_from_topic(self):
+        from designs import detect_subject_key
+
+        token = self._token_for(560)
+        captured = {}
+        original = mini_app._start_job
+        def fake_start(uid, payload):
+            captured.update(payload)
+            return "job-test"
+
+        mini_app._start_job = fake_start
+        try:
+            response = self.client.post("/api/mini/generate", json={
+                "token": token, "service": "slide", "topic": "Biologiya hujayra tuzilishi",
+                "options": {"count": 10}, "subject_key": "tarix",
+            })
+        finally:
+            mini_app._start_job = original
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(captured["subject_key"], detect_subject_key("Biologiya hujayra tuzilishi"))
+
+    def test_order_detail_is_private(self):
+        con = sqlite3.connect(config.DB_PATH)
+        con.execute("INSERT INTO orders(user_id,service,topic,options,price,status,created_at) "
+                    "VALUES(555,'referat','Test mavzu',?,0,'done',?)",
+                    ('{"pages": 7}', int(time.time())))
+        con.commit()
+        order_id = con.execute("SELECT id FROM orders").fetchone()[0]
+        con.close()
+        token = self._token_for(555)
+        response = self.client.get(f"/api/mini/order?id={order_id}&token={token}")
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertEqual(payload["order"]["topic"], "Test mavzu")
+        self.assertEqual(payload["order"]["options"], {"pages": 7})
+        self.assertIsNone(payload["job"])
+        other_token = self._token_for(556)
+        self.assertEqual(self.client.get(f"/api/mini/order?id={order_id}&token={other_token}").status_code, 404)
+
     def test_page_is_served(self):
         response = self.client.get("/app")
         self.assertEqual(response.status_code, 200)

@@ -97,6 +97,9 @@
     background:rgba(79,124,255,.12);color:var(--btn)}
   .field-note{font-size:11.5px;color:var(--hint);margin:4px 2px 0}
   .kv{display:flex;justify-content:space-between;padding:9px 0;border-bottom:1px solid var(--line);font-size:14px}
+  .order.tap{cursor:pointer}
+  .order.tap:active{background:rgba(127,127,127,.12)}
+  .chev{margin-left:auto;color:var(--hint);font-size:22px;line-height:1}
   .kv:last-child{border-bottom:none}
   .kv span{color:var(--hint)}
   .loading{display:flex;flex-direction:column;align-items:center;padding:60px 0;color:var(--hint)}
@@ -130,6 +133,8 @@ const T = {
     wait:"Bu 1–4 daqiqa vaqt olishi mumkin. Sahifani yopsangiz ham ish davom etadi.",
     ready:"Fayl tayyor!", download:"Yuklab olish", send:"Telegramga yuborish",
     sent:"Yuborildi!", again:"Yana yaratish", error:"Xatolik",
+    date:"Sana",
+    fileGone:"Yuklab olish fayli 3 soatdan keyin o‘chiriladi — hujjatni qaytadan yaratishingiz mumkin.",
     emptyOrders:"Hozircha buyurtma yo‘q", bal:"Balans", bonus:"Bonus", premium:"Premium",
     ordersCount:"Buyurtmalar", openBot:"Botni ochish", freeMode:"Bepul rejim yoqilgan",
     needTopic:"Mavzuni kamida 3 belgi bilan yozing", copied:"Nusxa olindi",
@@ -149,6 +154,8 @@ const T = {
     wait:"Это может занять 1–4 минуты. Работа продолжится, даже если закрыть страницу.",
     ready:"Файл готов!", download:"Скачать", send:"Отправить в Telegram",
     sent:"Отправлено!", again:"Создать ещё", error:"Ошибка",
+    date:"Дата",
+    fileGone:"Файл хранится 3 часа — документ можно создать заново.",
     emptyOrders:"Заказов пока нет", bal:"Баланс", bonus:"Бонус", premium:"Премиум",
     ordersCount:"Заказов", openBot:"Открыть бота", freeMode:"Включён бесплатный режим",
     needTopic:"Введите тему минимум из 3 символов", copied:"Скопировано",
@@ -168,6 +175,8 @@ const T = {
     wait:"This can take 1–4 minutes. The job continues even if you close the page.",
     ready:"Your file is ready!", download:"Download", send:"Send to Telegram",
     sent:"Sent!", again:"Create another", error:"Error",
+    date:"Date",
+    fileGone:"The file is kept for 3 hours — you can create the document again.",
     emptyOrders:"No orders yet", bal:"Balance", bonus:"Bonus", premium:"Premium",
     ordersCount:"Orders", openBot:"Open the bot", freeMode:"Free mode is on",
     needTopic:"Enter a topic of at least 3 characters", copied:"Copied",
@@ -187,6 +196,8 @@ const T = {
     wait:"Bu 1–4 dakika sürebilir. Sayfayı kapatsanız da iş devam eder.",
     ready:"Dosya hazır!", download:"İndir", send:"Telegram’a gönder",
     sent:"Gönderildi!", again:"Yeniden oluştur", error:"Hata",
+    date:"Tarih",
+    fileGone:"Dosya 3 saat saklanır — belgeyi yeniden oluşturabilirsiniz.",
     emptyOrders:"Henüz sipariş yok", bal:"Bakiye", bonus:"Bonus", premium:"Premium",
     ordersCount:"Sipariş", openBot:"Botu aç", freeMode:"Ücretsiz mod açık",
     needTopic:"En az 3 karakterlik konu girin", copied:"Kopyalandı",
@@ -206,6 +217,8 @@ const T = {
     wait:"Das kann 1–4 Minuten dauern. Der Auftrag läuft auch nach dem Schließen weiter.",
     ready:"Datei ist fertig!", download:"Herunterladen", send:"An Telegram senden",
     sent:"Gesendet!", again:"Weiteres erstellen", error:"Fehler",
+    date:"Datum",
+    fileGone:"Die Datei bleibt 3 Stunden verfügbar — das Dokument lässt sich neu erstellen.",
     emptyOrders:"Noch keine Bestellungen", bal:"Guthaben", bonus:"Bonus", premium:"Premium",
     ordersCount:"Bestellungen", openBot:"Bot öffnen", freeMode:"Kostenloser Modus aktiv",
     needTopic:"Geben Sie ein Thema mit mindestens 3 Zeichen ein", copied:"Kopiert",
@@ -225,6 +238,8 @@ const T = {
     wait:"Cela peut prendre 1 à 4 minutes. Le travail continue même si vous fermez la page.",
     ready:"Le fichier est prêt !", download:"Télécharger", send:"Envoyer sur Telegram",
     sent:"Envoyé !", again:"Créer un autre", error:"Erreur",
+    date:"Date",
+    fileGone:"Le fichier est conservé 3 heures — vous pouvez recréer le document.",
     emptyOrders:"Aucune commande pour l’instant", bal:"Solde", bonus:"Bonus", premium:"Premium",
     ordersCount:"Commandes", openBot:"Ouvrir le bot", freeMode:"Mode gratuit activé",
     needTopic:"Saisissez un sujet d’au moins 3 caractères", copied:"Copié",
@@ -238,9 +253,10 @@ const FILES = {slide:"📊",referat:"📄",mustaqil:"📝",kurs:"📘",diplom:"�
 const state = {
   lang:"uz", token:"", user:null, services:[], designs:[], subjects:[], history:[],
   freeMode:true, tab:"home", service:null, job:null, plan:"", busy:false,
-  form:{ topic:"", pages:"", words:"", questions:"", count:12, lang:"uz", format:"docx",
+  form:{ topic:"", pages:"", words:"", questions:"", count:10, lang:"uz", format:"docx",
          author:"", institution:"", faculty:"", dept:"", subject:"", checker:"", email:"",
-         design_key:"modern", subject_key:"umumiy" }
+         design_key:"modern" },
+  orderDetail:null
 };
 const app = document.getElementById("app");
 const tabs = document.getElementById("tabs");
@@ -261,6 +277,10 @@ async function api(path, options){
   try { data = await response.json(); } catch(e){ data = {}; }
   if(!response.ok || data.ok === false){ throw new Error((data && data.message) || ("HTTP " + response.status)); }
   return data;
+}
+
+function switchTab(tab){
+  state.tab = tab; state.service = null; state.orderDetail = null; render();
 }
 
 function setTabsLabels(){
@@ -304,6 +324,7 @@ async function bootFromTelegram(){
 function render(){
   if (!state.user) return;
   setTabsLabels();
+  if (state.orderDetail) return renderOrderDetail();
   if (state.tab === "orders") return renderOrders();
   if (state.tab === "profile") return renderProfile();
   if (state.service) return renderForm();
@@ -334,6 +355,7 @@ function renderHome(){
     <p class="muted center" style="margin:18px 0 8px">Talaba AI · Mini App</p>
   </div>`;
   app.querySelectorAll("[data-svc]").forEach(node => node.onclick = () => openService(node.dataset.svc));
+  bindOrderRows();
 }
 
 function optionSummary(item){
@@ -351,7 +373,7 @@ function openService(code){
   state.form.pages = String(item.options[0]);
   state.form.words = String(item.options[0]);
   state.form.questions = String(item.options[0]);
-  state.form.count = 12;
+  state.form.count = item.options && item.options.length ? item.options[0] : 10;
   state.form.format = code === "slide" ? "pptx" : "docx";
   state.form.lang = state.lang;
   render();
@@ -364,8 +386,10 @@ function renderForm(){
   const optionKey = item.option_type;
   const unit = optionKey === "words" ? t("wordsUnit") : optionKey === "questions" ? t("questionsUnit")
     : optionKey === "slides" ? t("slidesUnit") : t("pagesUnit");
+  const selKey = optionKey === "words" ? "words" : optionKey === "questions" ? "questions"
+    : optionKey === "slides" ? "count" : "pages";
   const chips = (item.options || []).map(value =>
-    `<div class="chip ${String(state.form[optionKey === "words" ? "words" : optionKey === "questions" ? "questions" : "pages"]) === String(value) ? "sel" : ""}"
+    `<div class="chip ${String(state.form[selKey]) === String(value) ? "sel" : ""}"
       data-opt="${value}">${value} ${esc(unit)}</div>`).join("");
   const langChips = LANGS.map(([code, name]) =>
     `<div class="chip ${state.form.lang === code ? "sel" : ""}" data-lang="${code}">${esc(name)}</div>`).join("");
@@ -375,17 +399,14 @@ function renderForm(){
     <div class="card">
       <label>${esc(t("topic"))}</label>
       <textarea id="topic" placeholder="${esc(t("topicPh"))}"></textarea>
-      ${isSlide ? `<div class="field-note">${esc(t("slides"))}: ${esc(t("design"))} / ${esc(t("subj"))}</div>` : ""}
+      ${isSlide ? `<div class="field-note">${esc(t("slides"))}: ${esc(t("design"))}</div>` : ""}
     </div>
     <div class="card">
       <label>${esc(t("pages"))}${isSlide ? " (" + esc(t("slidesUnit")) + ")" : ""}</label>
-      <div class="chips" id="opts">${isSlide ? "" : chips}</div>
-      ${isSlide ? `<input id="slideCount" type="number" min="3" max="30" value="${state.form.count}">` : ""}
+      <div class="chips" id="opts">${chips}</div>
       <label>${esc(t("lang"))}</label>
       <div class="chips" id="langs">${langChips}</div>
-      ${isSlide ? `<label>${esc(t("subj"))}</label><select id="subjectKey">${state.subjects.map(s =>
-          `<option value="${esc(s.key)}" ${state.form.subject_key===s.key?"selected":""}>${esc(s.name)}</option>`).join("")}</select>
-        <label>${esc(t("design"))}</label><select id="designKey">${state.designs.map(d =>
+      ${isSlide ? `<label>${esc(t("design"))}</label><select id="designKey">${state.designs.map(d =>
           `<option value="${esc(d.key)}" ${state.form.design_key===d.key?"selected":""}>${esc(d.name)}</option>`).join("")}</select>`
         : `<label>${esc(t("format"))}</label><div class="chips" id="formats">
             <div class="chip ${state.form.format==="docx"?"sel":""}" data-fmt="docx">DOCX</div>
@@ -421,14 +442,10 @@ function renderForm(){
   topicEl.oninput = () => { state.form.topic = topicEl.value; };
   const bind = (id, key) => { const el = document.getElementById(id); if (el){ el.value = state.form[key] || ""; el.oninput = () => { state.form[key] = el.value; }; } };
   ["author","institution","faculty","dept","subject","checker","email"].forEach(key => bind(key, key));
-  const slideCount = document.getElementById("slideCount");
-  if (slideCount) slideCount.oninput = () => { state.form.count = parseInt(slideCount.value || "12", 10); };
-  const subjectKey = document.getElementById("subjectKey"); if (subjectKey) subjectKey.onchange = () => state.form.subject_key = subjectKey.value;
   const designKey = document.getElementById("designKey"); if (designKey) designKey.onchange = () => state.form.design_key = designKey.value;
 
   document.getElementById("opts")?.querySelectorAll("[data-opt]").forEach(node => node.onclick = () => {
-    const key = optionKey === "words" ? "words" : optionKey === "questions" ? "questions" : "pages";
-    state.form[key] = node.dataset.opt;
+    state.form[selKey] = node.dataset.opt;
     renderForm();
   });
   document.getElementById("langs").querySelectorAll("[data-lang]").forEach(node => node.onclick = () => {
@@ -495,7 +512,7 @@ async function startGeneration(){
       institution: state.form.institution, faculty: state.form.faculty,
       dept: state.form.dept, subject: state.form.subject, checker: state.form.checker,
       email: state.form.email, design_key: state.form.design_key,
-      subject_key: state.form.subject_key, plan: state.plan
+      plan: state.plan
     };
     const data = await api("/api/mini/generate", {method:"POST", body: JSON.stringify(payload)});
     state.job = data.job;
@@ -591,9 +608,10 @@ function orderRow(order){
   else if (options.words) detail = options.words + " " + t("wordsUnit");
   else if (options.questions) detail = options.questions + " " + t("questionsUnit");
   else if (options.count) detail = options.count + " " + t("slidesUnit");
-  return `<div class="order"><div class="ico">${icon}</div>
+  return `<div class="order tap" data-order="${esc(order.id)}"><div class="ico">${icon}</div>
     <div class="body"><b>${esc(order.topic)}</b>
-      <span>${esc(order.service_name || order.service)} · ${esc(detail)} · ${fmtDate(order.created_at)}</span></div></div>`;
+      <span>${esc(order.service_name || order.service)} · ${esc(detail)} · ${fmtDate(order.created_at)}</span></div>
+    <div class="chev">›</div></div>`;
 }
 
 function renderOrders(){
@@ -601,6 +619,71 @@ function renderOrders(){
     ? `<div class="card">${state.history.map(orderRow).join("")}</div>`
     : `<div class="empty">🗂<br>${esc(t("emptyOrders"))}</div>`;
   app.innerHTML = `<div class="wrap">${header()}<h2>${esc(t("orders"))}</h2>${list}</div>`;
+  bindOrderRows();
+}
+
+function bindOrderRows(){
+  app.querySelectorAll("[data-order]").forEach(node => node.onclick = () => openOrder(node.dataset.order));
+}
+
+async function openOrder(id){
+  try {
+    const data = await api(`/api/mini/order?id=${encodeURIComponent(id)}&token=${encodeURIComponent(state.token)}`);
+    state.orderDetail = data;
+    render();
+  } catch (error) { toast(error.message || t("error")); }
+}
+
+function renderOrderDetail(){
+  const order = state.orderDetail.order;
+  const options = order.options || {};
+  let detail = "";
+  if (options.pages) detail = options.pages + " " + t("pagesUnit");
+  else if (options.words) detail = options.words + " " + t("wordsUnit");
+  else if (options.questions) detail = options.questions + " " + t("questionsUnit");
+  else if (options.count) detail = options.count + " " + t("slidesUnit");
+  const job = state.orderDetail.job;
+  const hasFile = !!job && !!state.orderDetail.file;
+  const href = hasFile ? `/api/mini/download?id=${encodeURIComponent(job)}&token=${encodeURIComponent(state.token)}` : "";
+  app.innerHTML = `<div class="wrap">
+    <div class="head"><button class="back" id="back">‹</button><h1>${FILES[order.service] || "📄"} ${esc(order.service_name || order.service)}</h1></div>
+    <div class="card">
+      <b style="display:block;margin-bottom:6px">${esc(order.topic)}</b>
+      <div class="kv"><span>${esc(t("pages"))}</span><b>${esc(detail || "—")}</b></div>
+      <div class="kv"><span>ID</span><b>#${esc(order.id)}</b></div>
+      <div class="kv"><span>${esc(t("date"))}</span><b>${fmtDate(order.created_at)}</b></div>
+    </div>
+    ${hasFile ? `<div class="stack">
+        <a class="btn" href="${href}" target="_blank" rel="noopener">⬇️ ${esc(t("download"))}</a>
+        <button class="btn ghost" id="sendTg">📤 ${esc(t("send"))}</button>
+      </div>` : `<div class="card"><p class="muted" style="margin:0">${esc(t("fileGone"))}</p></div>`}
+    <div class="stack"><button class="btn ghost" id="remake">✨ ${esc(t("again"))}</button></div>
+  </div>`;
+  document.getElementById("back").onclick = () => { state.orderDetail = null; render(); };
+  const sendBtn = document.getElementById("sendTg");
+  if (sendBtn) sendBtn.onclick = async (event) => {
+    const button = event.currentTarget; button.disabled = true; button.textContent = "⏳";
+    try {
+      await api("/api/mini/send", {method:"POST", body: JSON.stringify({token: state.token, job})});
+      button.textContent = "✅ " + t("sent");
+      toast(t("sent"));
+    } catch (error) { button.disabled = false; button.textContent = "📤 " + t("send"); toast(error.message); }
+  };
+  document.getElementById("remake").onclick = () => remakeOrder(order);
+}
+
+function remakeOrder(order){
+  const item = state.services.find(s => s.code === order.service);
+  state.orderDetail = null;
+  if (!item) { state.tab = "home"; state.service = null; render(); return; }
+  state.service = item; state.tab = "home"; state.job = null; state.plan = "";
+  state.form.topic = order.topic || "";
+  const options = order.options || {};
+  if (options.pages) state.form.pages = String(options.pages);
+  if (options.words) state.form.words = String(options.words);
+  if (options.questions) state.form.questions = String(options.questions);
+  if (options.count) state.form.count = options.count;
+  render();
 }
 
 function renderProfile(){
@@ -631,7 +714,7 @@ document.getElementById("tabs").addEventListener("click", (event) => {
   const button = event.target.closest("button[data-tab]");
   if (!button) return;
   document.querySelectorAll("#tabs button").forEach(b => b.classList.toggle("on", b === button));
-  state.tab = button.dataset.tab; state.service = null; render();
+  state.tab = button.dataset.tab; state.service = null; state.orderDetail = null; render();
 });
 
 const stored = (() => { try { return localStorage.getItem("mini_lang"); } catch(e){ return null; } })();
