@@ -242,11 +242,16 @@ class DOCXGeneratorTests(unittest.TestCase):
 
 class OptionsAndLanguageTests(unittest.TestCase):
     @unittest.skipUnless(HAS_BOT_RUNTIME, "Install requirements.txt to test Telegram keyboard/handler imports")
-    def test_only_10_15_20_choices_are_shown(self):
+    def test_page_choices_follow_each_service_standard(self):
         pages = [button.callback_data for row in option_kb_for("referat", "uz").inline_keyboard for button in row]
+        mustaqil = [button.callback_data for row in option_kb_for("mustaqil", "uz").inline_keyboard for button in row]
         questions = [button.callback_data for row in option_kb_for("test", "uz").inline_keyboard for button in row]
         slides = [button.callback_data for row in slide_count_kb("uz").inline_keyboard for button in row]
-        self.assertEqual([x for x in pages if x.startswith("opt:pages:")], ["opt:pages:10", "opt:pages:15", "opt:pages:20"])
+        # Referat 7-10 bet, mustaqil ish 10/15/20 bet.
+        self.assertEqual([x for x in pages if x.startswith("opt:pages:")],
+                         ["opt:pages:7", "opt:pages:8", "opt:pages:9", "opt:pages:10"])
+        self.assertEqual([x for x in mustaqil if x.startswith("opt:pages:")],
+                         ["opt:pages:10", "opt:pages:15", "opt:pages:20"])
         self.assertEqual([x for x in questions if x.startswith("opt:questions:")], ["opt:questions:10", "opt:questions:15", "opt:questions:20"])
         self.assertEqual([x for x in slides if x.startswith("scnt:")], ["scnt:10", "scnt:15", "scnt:20"])
 

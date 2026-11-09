@@ -11,6 +11,8 @@ import asyncio
 import json
 import re
 import math
+
+import academic
 import os
 import io
 from collections import Counter
@@ -25,7 +27,7 @@ UNSPLASH_KEY = os.getenv("UNSPLASH_KEY", "")
 USER_AGENT = "TalabaAISlideBot/1.0 (educational presentation image retrieval)"
 
 _KEYWORD_CACHE = {}
-CHARS_PER_PAGE = 1400
+CHARS_PER_PAGE = 1650
 MAX_CHUNK_PAGES = 3
 LONG_SERVICES = ("diplom", "kurs", "referat", "maqola")
 
@@ -418,8 +420,10 @@ def _document_text_is_repetitive(text):
     return False
 
 
-async def _generate_section(service, topic, sec_title, sec_pages, sec_desc, lang, wiki, prev_summary):
+async def _generate_section(service, topic, sec_title, sec_pages, sec_desc, lang, wiki, prev_summary, chars_per_page=None):
     """Generate a section in the chosen language and reject language leaks/LLM loops."""
+    capacity = int(chars_per_page or CHARS_PER_PAGE)
+    sec_pages = max(1, int(math.ceil(float(sec_pages or 1))))
     chunks_needed = (sec_pages + MAX_CHUNK_PAGES - 1) // MAX_CHUNK_PAGES
     parts, local_prev = [], prev_summary
     lc = str(lang or "uz").lower()
@@ -434,7 +438,7 @@ async def _generate_section(service, topic, sec_title, sec_pages, sec_desc, lang
     service_label, topic_label, section_label, part_label, prev_label, instruction = prompt_labels.get(lc, prompt_labels["en"])
     for ch in range(chunks_needed):
         chunk_pages = min(MAX_CHUNK_PAGES, sec_pages - ch * MAX_CHUNK_PAGES)
-        chunk_target = chunk_pages * CHARS_PER_PAGE
+        chunk_target = int(chunk_pages * capacity * 0.96)
         part_instructions = {
             "uz": f"{part_label} {ch+1}. Taxminan {chunk_target} belgi hajmida yozing; keraksiz takror va umumiy gaplarni ko‘paytirmang.",
             "ru": f"{part_label} {ch+1}. Напишите примерно {chunk_target} символов; не заполняйте объём повторами и общими фразами.",
@@ -448,6 +452,9 @@ async def _generate_section(service, topic, sec_title, sec_pages, sec_desc, lang
             f"{part_instructions.get(lc, part_instructions['en'])}\n"
             f"{prev_label} (avoid repeating): {local_prev[:600]}\n"
             f"{wiki_block(wiki, lc)}\n\n{instruction}\n"
+            "Fill the requested volume completely with specific, topic-related content and do not stop early "
+            "or leave the text unfinished. Every paragraph must add new information; never pad with repetition, "
+            "generic filler or questions.\n"
             f"Do not output a title page, table of contents, source notes, instructions, or explanations about the task."
         )
         txt = await _chat_complete(prompt, system=_pure_language_system(lc), max_tokens=4096)
@@ -1056,6 +1063,309 @@ async def _generate_insho(topic, pages, lang, plan=""):
     return "\n\n".join(parts), solid >= 3
 
 
+
+# ===== STANDART AKADEMIK XIZMATLAR (referat, kurs, diplom, maqola, tezis) =====
+# Har bir bo'lim tanlangan sahifa hajmiga to'liq to'ldiriladi: matn yetarli
+# bo'lmasa, o'sha bo'lim uchun yangi mazmun bilan davom ettiriladi.
+def _dedupe_blocks(text):
+    seen, out = set(), []
+    for raw in re.split(r"\n\s*\n", str(text or "")):
+        block = re.sub(r"\s+", " ", raw).strip()
+        if len(block) < 2:
+            continue
+        key = re.sub(r"\W+", "", block.casefold())[:80]
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(block)
+    return out
+
+
+async def _fill_section(service, topic, sec_title, sec_pages, sec_desc, lang, wiki, previous,
+                        chars_per_page, budget_scale=1.0):
+    """Bo'limni ajratilgan sahifalarga to'liq to'ldiradi (kerak bo'lsa davomi yoziladi)."""
+    pages_float = float(sec_pages or 1)
+    budget_scale = max(0.5, min(1.0, float(budget_scale or 1.0)))
+    target = max(300, int(round(pages_float * int(chars_per_page) * 0.95 * budget_scale)))
+    if pages_float < 1:
+        # Kasr sahifa (maqola/tezis): bitta chaqiriq, lekin hajm shu ulushga mos.
+        gen_pages = 1
+        section_capacity = max(250, int(round(pages_float * int(chars_per_page) * budget_scale)))
+    else:
+        gen_pages = int(math.ceil(pages_float))
+        section_capacity = max(300, int(round(int(chars_per_page) * budget_scale)))
+    text = await _generate_section(service, topic, sec_title, gen_pages, sec_desc, lang,
+                                   wiki, previous, chars_per_page=section_capacity)
+    text = str(text or "").strip()
+    if len(text) >= target * 0.92:
+        return text
+    missing = target - len(text)
+    extra_pages = max(1, min(3, math.ceil(missing / max(1, int(chars_per_page)))))
+    continuation = (
+        "Continue the same section with NEW material only. Do not repeat or paraphrase "
+        "anything already written. Add concrete details, examples, mechanisms, comparisons "
+        "and analysis that develop the section further, and finish with a complete paragraph."
+    )
+    extra = await _generate_section(
+        service, topic, sec_title, extra_pages,
+        f"{sec_desc} {continuation}", lang, wiki, text[-800:],
+        chars_per_page=section_capacity,
+    )
+    extra = str(extra or "").strip()
+    if extra and len(extra) >= 250:
+        blocks = _dedupe_blocks(text) + _dedupe_blocks(extra)
+        text = "\n\n".join(blocks)
+    return text
+
+
+def _plan_lines(service, lang, plan, found=None):
+    """Referat uchun REJA: bo'lim nomi va uning mazmunini qisqa izohi bilan."""
+    found = found or {}
+    lines = []
+    for number, (marker, title_text, _desc, pages) in enumerate(plan, 1):
+        hint = ""
+        body = str(found.get(marker, "") or "").strip()
+        if body:
+            first = re.split(r"(?<=[.!?])\s+", body)[0]
+            first = re.sub(r"\s+", " ", first).strip()
+            if len(first) > 120:
+                first = first[:117].rsplit(" ", 1)[0] + "…"
+            hint = f" — {first}"
+        lines.append(f"{number}. {title_text}{hint}")
+    return "\n".join(lines)
+
+
+_ANNOT_TEMPLATE = {
+    "uz": "Ushbu bitiruv malakaviy ishi «{t}» mavzusiga bag‘ishlangan. Ishda mavzuning nazariy asoslari, amaliy holati, mavjud muammolar va ularni bartaraf etish bo‘yicha takliflar tahlil qilingan.",
+    "ru": "Данная выпускная квалификационная работа посвящена теме «{t}». В работе проанализированы теоретические основы темы, её практическое состояние, существующие проблемы и предложения по их устранению.",
+    "en": "This graduation thesis is devoted to the topic “{t}”. It analyses the theoretical foundations of the topic, its practical state, the existing problems and the proposals for solving them.",
+}
+
+
+async def _generate_annotation(topic, lang, doc_lang):
+    """Diplom uchun qisqa annotatsiya: o'zbek, rus va ingliz tillarida."""
+    texts = {}
+    for code in ("uz", "ru", "en"):
+        ln = _lang_name(code)
+        prompt = (
+            f"Write one annotation paragraph (60-80 words) for a graduation thesis about: {topic}. "
+            f"Language: {ln}. Mention the aim, the methods, the main results and the practical value. "
+            "Output only the paragraph, no heading, no lists, no other languages."
+        )
+        try:
+            raw = await _chat_complete(prompt, system=_pure_language_system(code), max_tokens=500, temperature=0.4)
+        except Exception as exc:
+            _log(f"Annotation generation failed ({code}): {exc}")
+            raw = ""
+        raw = str(raw or "").strip()
+        if len(raw) < 80 or _is_lang_mixed(raw, code) or _document_text_is_repetitive(raw):
+            raw = _ANNOT_TEMPLATE[code].format(t=str(topic)[:120])
+        texts[code] = raw
+    return "\n\n".join(f"[[{code.upper()}]]\n{value}" for code, value in texts.items())
+
+
+async def _generate_sources(topic, lang, wiki, count):
+    """Adabiyotlar ro'yxati: kerakli songacha AI manbalari + tekshiriladigan rasmiy havolalar."""
+    lc = str(lang or "uz").lower()
+    count = max(3, int(count or 5))
+    topic_label, task_label, _rule = _MQ_SOURCE_LABELS.get(lc, _MQ_SOURCE_LABELS["en"])
+    entries, seen = [], set()
+
+    def add(value):
+        item = re.sub(r"\s+", " ", str(value or "")).strip()
+        if len(item) < 15 or item.startswith("⚠️"):
+            return
+        key = re.sub(r"\W+", "", item.casefold())[:60]
+        if not key or key in seen:
+            return
+        seen.add(key)
+        entries.append(item)
+
+    per_batch = 12
+    for _ in range(3):
+        if len(entries) >= count:
+            break
+        need = min(per_batch, count - len(entries) + 4)
+        rule = (
+            f"Write exactly {need} sources as a plain numbered list, one per line, in the given language. "
+            "Include laws and presidential decrees first, then textbooks and scholarly manuals "
+            "in the form Author. Title. — City: Publisher, year. — pages, then official statistics "
+            "and reliable Internet sources with full URLs. No heading, no notes, no other text."
+        )
+        prompt = f"{topic_label}: {topic}\n{task_label}: {rule}\n{wiki_block(wiki, lc)}\n"
+        try:
+            raw = await _chat_complete(prompt, system=_pure_language_system(lc), max_tokens=1400, temperature=0.5)
+        except Exception as exc:
+            _log(f"Source generation failed: {exc}")
+            break
+        before = len(entries)
+        for item in _reference_entries(raw):
+            add(item)
+            if len(entries) >= count + 2:
+                break
+        if len(entries) == before:
+            break
+
+    if isinstance(wiki, dict) and wiki.get("found") and wiki.get("url"):
+        add(f'Wikipedia. {wiki.get("title", topic)}. — {wiki.get("url")}')
+    for item in _MQ_REAL_SOURCES.get(lc, _MQ_REAL_SOURCES["en"]):
+        if len(entries) >= count:
+            break
+        add(item)
+    return "\n".join(f"{index}. {item}" for index, item in enumerate(entries[:count], 1))
+
+
+_TABLE_FALLBACK = {
+    "uz": [
+        ("Tashkiliy shakl", "An’anaviy usullar", "Raqamli vositalar", "Samaradorlik oshadi"),
+        ("Ma’lumot manbasi", "Qog‘oz hisobotlar", "Elektron tizimlar", "Tezkorlik va aniqlik"),
+        ("Nazorat tizimi", "Davriy tekshiruv", "Doimiy monitoring", "Nazorat kuchayadi"),
+        ("Kutilayotgan natija", "Barqarorlik", "Rivojlanish", "Uzoq muddatli samara"),
+    ],
+    "ru": [
+        ("Организационная форма", "Традиционные методы", "Цифровые инструменты", "Рост эффективности"),
+        ("Источник данных", "Бумажные отчёты", "Электронные системы", "Оперативность и точность"),
+        ("Система контроля", "Периодические проверки", "Постоянный мониторинг", "Усиление контроля"),
+        ("Ожидаемый результат", "Стабильность", "Развитие", "Долгосрочный эффект"),
+    ],
+    "en": [
+        ("Organisational form", "Traditional methods", "Digital tools", "Higher efficiency"),
+        ("Data source", "Paper reports", "Electronic systems", "Speed and accuracy"),
+        ("Control system", "Periodic inspection", "Continuous monitoring", "Stronger control"),
+        ("Expected result", "Stability", "Development", "Long-term effect"),
+    ],
+    "tr": [
+        ("Örgütsel biçim", "Geleneksel yöntemler", "Dijital araçlar", "Verimlilik artar"),
+        ("Veri kaynağı", "Kâğıt raporlar", "Elektronik sistemler", "Hız ve doğruluk"),
+        ("Kontrol sistemi", "Dönemsel denetim", "Sürekli izleme", "Denetim güçlenir"),
+        ("Beklenen sonuç", "İstikrar", "Gelişme", "Uzun vadeli etki"),
+    ],
+    "de": [
+        ("Organisationsform", "Traditionelle Methoden", "Digitale Werkzeuge", "Höhere Effizienz"),
+        ("Datenquelle", "Papierberichte", "Elektronische Systeme", "Schnelligkeit und Genauigkeit"),
+        ("Kontrollsystem", "Periodische Prüfung", "Kontinuierliches Monitoring", "Stärkere Kontrolle"),
+        ("Erwartetes Ergebnis", "Stabilität", "Entwicklung", "Langfristige Wirkung"),
+    ],
+    "fr": [
+        ("Forme organisationnelle", "Méthodes traditionnelles", "Outils numériques", "Efficacité accrue"),
+        ("Source des données", "Rapports papier", "Systèmes électroniques", "Rapidité et précision"),
+        ("Système de contrôle", "Contrôle périodique", "Suivi continu", "Contrôle renforcé"),
+        ("Résultat attendu", "Stabilité", "Développement", "Effet à long terme"),
+    ],
+}
+
+
+async def _generate_table_rows(topic, lang, kind):
+    """Jadval qatorlari: 4 qator, har biri 3 ta katak (AI ishlamasa lokalizatsiya qilingan zaxira)."""
+    lc = str(lang or "uz").lower()
+    headers = {
+        "compare": academic.title("col_criteria", lc) + " | " + academic.title("col_old", lc) + " | "
+                   + academic.title("col_new", lc) + " | " + academic.title("row_result", lc),
+        "problems": academic.title("col_problem", lc) + " | " + academic.title("col_cause", lc) + " | "
+                    + academic.title("col_solution", lc) + " | " + academic.title("row_result", lc),
+    }
+    columns = 4 if kind == "compare" else 4
+    prompt = (
+        f"Topic: {topic}\nWrite exactly 6 rows for an analytical table ({kind}) in {_lang_name(lc)}. "
+        f"Each row must have {columns} short cells separated by ' | '. "
+        "Keep every cell under 8 words, specific to the topic, no numbers invented, "
+        "no header row, no numbering, no other text."
+    )
+    try:
+        raw = await _chat_complete(prompt, system=_pure_language_system(lc), max_tokens=700, temperature=0.35)
+    except Exception as exc:
+        _log(f"Table generation failed: {exc}")
+        raw = ""
+    rows = []
+    for line in str(raw or "").splitlines():
+        line = re.sub(r"^\s*(?:\d+[.)]|[-•*])\s*", "", line).strip()
+        if "|" not in line:
+            continue
+        cells = [re.sub(r"\s+", " ", cell).strip() for cell in line.split("|")][:columns]
+        if len(cells) < columns or any(len(cell) < 2 for cell in cells):
+            continue
+        rows.append(tuple(cells))
+        if len(rows) == 6:
+            break
+    if len(rows) < 6:
+        rows = _TABLE_FALLBACK.get(lc, _TABLE_FALLBACK["en"])
+    return headers[kind], rows
+
+
+async def _generate_standard(service, topic, pages, lang):
+    """Referat, kurs, diplom, maqola va tezis: to'liq, sahifalab to'ldirilgan mazmun."""
+    lc = str(lang or "uz").lower()
+    plan = academic.plan(service, pages, lc)
+    cpp = academic.chars_per_page(service)
+    wiki = await wikipedia_fetch(topic, max_chars=10000 if service in LONG_SERVICES else 5000,
+                                 full=True, gen_lang=lc)
+    parts, previous, solid = [], "", 0
+    found_parts = {}
+    for marker, title_text, desc, sec_pages in plan:
+        # Kurs ishida 2.1 va 2.3 bo'limlaridan keyin jadval tushadi: o'sha
+        # sahifada jadvalga joy qoldirish uchun matn 18% kam yoziladi.
+        scale = 0.82 if (service == "kurs" and marker in ("2.1", "2.3")) else 1.0
+        text = await _fill_section(service, topic, title_text, sec_pages, desc, lc, wiki,
+                                   previous, cpp, budget_scale=scale)
+        text = str(text or "").strip()
+        found_parts[marker] = text
+        if len(text) >= 400:
+            solid += 1
+        parts.append(f"[[{marker}]]\n{text}")
+        previous = text[:700]
+
+    if service in academic.ACADEMIC_SERVICES:
+        refs_min, _refs_max = academic.STRUCTURES[service]["refs_range"]
+        count = refs_min
+        if service == "diplom":
+            count = max(refs_min, 36)
+        references = await _generate_sources(topic, lc, wiki, count)
+        parts.append("[[ADABIYOTLAR]]\n" + references)
+        if service == "referat":
+            parts.append("[[REJA]]\n" + _plan_lines(service, lc, plan, found=dict(found_parts)))
+        if service == "diplom":
+            parts.append("[[ANNOTATSIYA]]\n" + await _generate_annotation(topic, lc, lc))
+        if service in ("kurs", "diplom"):
+            head1, rows1 = await _generate_table_rows(topic, lc, "compare")
+            head2, rows2 = await _generate_table_rows(topic, lc, "problems")
+            parts.append("[[JADVAL1]]\n" + head1 + "\n" + "\n".join(" | ".join(row) for row in rows1))
+            parts.append("[[JADVAL2]]\n" + head2 + "\n" + "\n".join(" | ".join(row) for row in rows2))
+
+    if service == "maqola":
+        abstract_prompt = (
+            f"Write the abstract of a scientific article about: {topic}. "
+            f"Language: {_lang_name(lc)}. 100-150 words, one paragraph: purpose, methods, main results, conclusion. "
+            "Output only the paragraph."
+        )
+        try:
+            abstract = await _chat_complete(abstract_prompt, system=_pure_language_system(lc),
+                                            max_tokens=600, temperature=0.4)
+        except Exception as exc:
+            _log(f"Abstract generation failed: {exc}")
+            abstract = ""
+        abstract = str(abstract or "").strip()
+        if len(abstract) < 120 or _is_lang_mixed(abstract, lc):
+            abstract = " ".join(_dedupe_blocks(" ".join(parts))[0:2])[:900]
+        parts.append("[[ABSTRACT]]\n" + abstract)
+        keywords_prompt = (
+            f"Write 6 keywords for a scientific article about: {topic}. Language: {_lang_name(lc)}. "
+            "Separate them with commas, lowercase, no numbering, no other text."
+        )
+        try:
+            keywords = await _chat_complete(keywords_prompt, system=_pure_language_system(lc),
+                                            max_tokens=120, temperature=0.3)
+        except Exception as exc:
+            _log(f"Keywords generation failed: {exc}")
+            keywords = ""
+        keywords = re.sub(r"\s+", " ", str(keywords or "")).strip(" .;")
+        if "," not in keywords or _is_lang_mixed(keywords, lc):
+            keywords = ", ".join(re.sub(r"\W+", " ", str(topic)).lower().split()[:6])
+        parts.append("[[KEYWORDS]]\n" + keywords)
+
+    real = solid >= max(2, len(plan) // 2)
+    return "\n\n".join(parts), real
+
+
 async def generate(service, topic, options, lang="uz"):
     if service == "esse":
         lc = str(lang or "uz").lower()
@@ -1140,7 +1450,12 @@ Output only one paragraph, no heading, list, numbering, checklist, or writing ad
         requested_pages = int(options.get("pages", 10) or 10)
     except (TypeError, ValueError):
         requested_pages = 10
-    pages = requested_pages if requested_pages in (10, 15, 20) else min((10, 15, 20), key=lambda n: abs(n - requested_pages))
+    from services import SERVICES as _SERVICES
+    _opts = _SERVICES.get(service, {}).get("options")
+    if _opts:
+        pages = requested_pages if requested_pages in tuple(_opts) else min(tuple(_opts), key=lambda n: abs(n - requested_pages))
+    else:
+        pages = requested_pages if requested_pages in (10, 15, 20) else min((10, 15, 20), key=lambda n: abs(n - requested_pages))
     if service == "test":
         # The test service's selected quantity is a question count, not page count.
         return await _generate_test(service, topic, options, lang)
@@ -1151,6 +1466,10 @@ Output only one paragraph, no heading, list, numbering, checklist, or writing ad
     if service == "insho":
         # Insho — adabiy ish: REJA (reja alohida yoziladi) va 3-5 betlik matn.
         return await _generate_insho(topic, pages, lang, (options or {}).get("plan", ""))
+
+    if service in academic.ACADEMIC_SERVICES or service in academic.COMPACT_SERVICES:
+        # Referat, kurs, diplom, maqola va tezis: bo'limma-bo'lim to'liq mazmun.
+        return await _generate_standard(service, topic, pages, lang)
 
     page_overhead = 2 if service in ("maqola", "tezis") else 5
     content_pages = max(2, pages - page_overhead)

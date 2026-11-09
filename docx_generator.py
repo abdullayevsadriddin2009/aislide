@@ -13,6 +13,9 @@ from pathlib import Path
 from docx import Document
 from docx.shared import Pt, RGBColor, Inches, Cm
 from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_TAB_ALIGNMENT, WD_TAB_LEADER
+from docx.enum.table import WD_TABLE_ALIGNMENT
+
+import academic
 from docx.oxml.ns import qn
 from docx.oxml import OxmlElement
 from config import BOT_USERNAME
@@ -1163,6 +1166,11 @@ def _mq_setup_page(doc, mq):
 
 def _mq_footer(section, mq):
     """Sahifa raqami pastda o'rtada; titul varag'ida raqam chiqmaydi (lekin 1-bet)."""
+    # Namuna shablonlardan qolgan sarlavha/pastki matn butunlay tozalanadi.
+    for header in (section.header, section.first_page_header):
+        header.is_linked_to_previous = False
+        for para in list(header.paragraphs):
+            para.clear()
     section.different_first_page_header_footer = True
     first = section.first_page_footer
     first.is_linked_to_previous = False
@@ -1245,7 +1253,7 @@ def _mq_blank(doc, count=1, size=14):
         _mq_font(run, size)
 
 
-def _mq_cover(doc, topic, author, lbl, extra_data, mq):
+def _mq_cover(doc, topic, author, lbl, extra_data, mq, work_title=None, checker_label=None):
     data = extra_data or {}
     institution = str(data.get("ref_institution") or "").strip()
     faculty = str(data.get("ref_faculty") or "").strip()
@@ -1274,7 +1282,7 @@ def _mq_cover(doc, topic, author, lbl, extra_data, mq):
     if dept:
         centered(f'{lbl.get("dept_label", "")} {dept}', 14)
     _mq_blank(doc, 3)
-    centered(lbl.get("mustaqil", ""), 16, True, before=12, after=10)
+    centered(work_title or lbl.get("mustaqil", ""), 16, True, before=12, after=10)
     if subject:
         centered(f'{lbl.get("subject_label", "")} {subject}', 14)
     centered(f'{lbl.get("topic_label", "")} {topic}', 16, True, before=6)
@@ -1371,10 +1379,10 @@ def _mq_split_blocks(text):
     return blocks
 
 
-def _mq_paginate(blocks, count, fallback=()):
+def _mq_paginate(blocks, count, fallback=(), capacity=1620):
     """Abzaslarni buzmasdan `count` ta sahifaga teng taqsimlaydi (mundarija raqamlari aniq bo'lishi uchun)."""
     count = max(1, int(count))
-    capacity = 1620
+    capacity = max(300, int(capacity))
     items = [str(block).strip() for block in (blocks or []) if str(block).strip()]
     pages = [[] for _ in range(count)]
     if items:
@@ -1565,6 +1573,393 @@ def _generate_mustaqil_docx(doc, topic, pages, content_text, author, lbl, extra_
     return buf
 
 
+
+# ===== STANDART AKADEMIK HUJJATLAR: referat / kurs / diplom / maqola / tezis =====
+# Har bir bo'lim o'z sahifalaridan boshlanadi va ajratilgan sahifalarni to'liq
+# to'ldiradi; mundarija raqamlari shu hisobdan olinadi.
+ACAD_PAGE_OPTIONS = {
+    "referat": (7, 8, 9, 10),
+    "kurs": (25, 28, 30),
+    "diplom": (50, 60, 70),
+    "maqola": (5, 6, 8),
+    "tezis": (1, 2, 3),
+}
+
+_ACAD_MARKER_RE = re.compile(
+    r"\[\[\s*(REJA|KIRISH|XULOSA|ADABIYOTLAR|ANNOTATSIYA|JADVAL1|JADVAL2|ABSTRACT|KEYWORDS|"
+    r"INTRO|METHOD|RESULTS|PROBLEM|CONCL|\d{1,2}\.\d{1,2}|\d{1,2})\s*\]\]",
+    re.I,
+)
+
+
+def _acad_parse(content_text):
+    parts = _ACAD_MARKER_RE.split(str(content_text or ""))
+    found, head = {}, (parts[0].strip() if parts else "")
+    for index in range(1, len(parts) - 1, 2):
+        key = parts[index].strip().upper()
+        body = parts[index + 1] if index + 1 < len(parts) else ""
+        found[key] = (found.get(key, "") + "\n\n" + body).strip()
+    return found, head
+
+
+def _acad_cell(cell, text, bold=False, size=12):
+    cell.text = ""
+    para = cell.paragraphs[0]
+    para.alignment = WD_ALIGN_PARAGRAPH.LEFT
+    fmt = para.paragraph_format
+    fmt.first_line_indent = Cm(0)
+    fmt.line_spacing = 1.0
+    fmt.space_after = Pt(0)
+    run = para.add_run(str(text))
+    _mq_font(run, size, bold=bold)
+
+
+def _acad_table(doc, title, header, rows, size=12):
+    """Jadval: sarlavha, qalin ustun nomlari va to'rli ramka."""
+    if title:
+        cap = doc.add_paragraph()
+        cap.alignment = WD_ALIGN_PARAGRAPH.LEFT
+        fmt = cap.paragraph_format
+        fmt.first_line_indent = Cm(0)
+        fmt.line_spacing = 1.15
+        fmt.space_before = Pt(8)
+        fmt.space_after = Pt(4)
+        fmt.keep_with_next = True
+        run = cap.add_run(str(title))
+        _mq_font(run, size, bold=True)
+    header = [str(item) for item in (header or [])]
+    rows = [[str(cell) for cell in row] for row in (rows or [])]
+    columns = max(1, len(header) or (len(rows[0]) if rows else 1))
+    table = doc.add_table(rows=1, cols=columns)
+    try:
+        table.style = "Table Grid"
+    except Exception:
+        pass
+    table.alignment = WD_TABLE_ALIGNMENT.CENTER
+    for index in range(columns):
+        value = header[index] if index < len(header) else ""
+        _acad_cell(table.rows[0].cells[index], value, bold=True, size=size)
+    for row in rows:
+        cells = table.add_row().cells
+        for index in range(columns):
+            value = row[index] if index < len(row) else ""
+            _acad_cell(cells[index], value, size=size)
+    doc.add_paragraph().paragraph_format.space_after = Pt(2)
+    return table
+
+
+def _acad_table_data(text):
+    lines = [line.strip() for line in str(text or "").splitlines() if line.strip()]
+    if not lines:
+        return [], []
+    header = [cell.strip() for cell in lines[0].split("|")]
+    rows = []
+    for line in lines[1:]:
+        cells = [cell.strip() for cell in line.split("|")]
+        if len(cells) >= 2:
+            rows.append(cells[:max(2, len(header))])
+    return header, rows
+
+
+def _acad_references(text):
+    entries, seen = [], set()
+    for raw in str(text or "").splitlines():
+        line = re.sub(r"^\s*(?:[•▪●\-–—*]|\d{1,2}[\.\)])\s*", "", raw).strip()
+        line = re.sub(r"\s+", " ", line)
+        if len(line) < 12:
+            continue
+        key = re.sub(r"\W+", "", line.casefold())[:70]
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        entries.append(line)
+    return entries
+
+
+def _acad_write_section(doc, text, count, lang, topic, title_text, size=14, capacity=1620):
+    """Bo'lim matnini `count` ta sahifaga teng taqsimlaydi (bo'sh sahifa qolmaydi).
+
+    count=0 bo'lsa matn yaxlit oqimda yoziladi (maqola va tezis uchun).
+    """
+    blocks = _mq_split_blocks(text)
+    if not blocks:
+        blocks = [
+            f"{title_text}. {_loc('relevance', lang, topic)}",
+            _loc("goal", lang, topic),
+            _loc("method", lang, topic),
+            _loc("results_fb", lang, topic),
+        ]
+    if int(count or 0) <= 0:
+        for part in blocks:
+            _mq_para(doc, part, size=size)
+        return
+    chunks = _mq_paginate(blocks, int(count), fallback=blocks[:2], capacity=capacity)
+    for index, page_blocks in enumerate(chunks):
+        if index:
+            doc.add_page_break()
+        for part in page_blocks:
+            _mq_para(doc, part, size=size)
+
+
+def _acad_layout(service, pages, plan, fixed):
+    """Har bir bo'lim boshlanadigan sahifa raqamini hisoblaydi."""
+    page_no = 1
+    for key in ("cover", "task", "annot", "plan", "toc"):
+        page_no += int(fixed.get(key, 0))
+    positions = {}
+    for marker, _title, _desc, sec_pages in plan:
+        positions[marker] = int(round(page_no))
+        page_no += float(sec_pages)
+    if fixed.get("refs"):
+        positions["REFS"] = int(round(page_no))
+        page_no += int(fixed["refs"])
+    if fixed.get("appendix"):
+        positions["APPENDIX"] = int(round(page_no))
+        page_no += int(fixed["appendix"])
+    return positions
+
+
+def _generate_standard_docx(doc, topic, service, service_name, pages, content_text, author, lbl, extra_data=None):
+    """Referat, kurs ishi, diplom, maqola va tezis uchun to'liq standart hujjat."""
+    lang = str(lbl.get("_lang", "uz")).lower()
+    mq = _mq(lang)
+    extra_data = extra_data or {}
+    try:
+        pages = int(pages or 7)
+    except (TypeError, ValueError):
+        pages = 7
+    options = ACAD_PAGE_OPTIONS.get(service) or (7,)
+    if pages not in options:
+        pages = min(options, key=lambda n: abs(n - pages))
+
+    plan = academic.plan(service, pages, lang)
+    fixed = academic.fixed_pages(service, pages)
+    found, _head = _acad_parse(content_text)
+    compact = service in academic.COMPACT_SERVICES
+    size = 12 if compact else 14
+    capacity = academic.chars_per_page(service)
+    structure = academic.STRUCTURES.get(service, {})
+    chapters_map = structure.get("chapters", {})
+    positions = _acad_layout(service, pages, plan, fixed)
+
+    section = _mq_setup_page(doc, mq)
+    if compact:
+        section.left_margin = Cm(2)
+        section.right_margin = Cm(2)
+        section.top_margin = Cm(2)
+        section.bottom_margin = Cm(2)
+        normal = doc.styles["Normal"]
+        normal.font.size = Pt(12)
+        normal.paragraph_format.line_spacing = 1.15
+    _mq_footer(section, mq)
+
+    title_upper = str(service_name or "").upper()
+    if not compact:
+        _mq_cover(doc, topic, author, lbl, extra_data, mq, work_title=title_upper)
+
+    # --- Diplom: topshiriq varag'i ---
+    if fixed.get("task"):
+        _mq_heading(doc, academic.title("task", lang), after=12)
+        checker = str(extra_data.get("ref_checker") or "").strip()
+        for label, value in (
+            (lbl.get("topic_label", ""), topic),
+            (academic.title("task_student", lang), str(author or "")),
+            (academic.title("task_supervisor", lang), checker),
+        ):
+            value = str(value or "").strip()
+            if value and value not in ("-", "—"):
+                _mq_para(doc, f"{label} {value}", indent=0)
+        brief = str(extra_data.get("ref_brief") or "").strip()
+        if not brief:
+            brief = _loc("goal", lang, topic)
+        _mq_blank(doc, 1)
+        _mq_para(doc, brief, indent=1.25)
+        _mq_blank(doc, 1)
+        _mq_para(doc, f'{academic.title("task_content", lang)}:', indent=0, bold=True)
+        for number, (marker, section_title, _desc, sec_pages) in enumerate(plan, 1):
+            _mq_para(doc, f"{number}. {section_title} — {int(round(sec_pages))} b.", indent=0)
+        _mq_blank(doc, 1)
+        _mq_para(doc, f'{academic.title("task_deadline", lang)}: «___» ____________ 20___ y.', indent=0)
+        _mq_blank(doc, 3)
+        for line in (f'{academic.title("task_student", lang)}: ____________________', 
+                     f'{academic.title("task_supervisor", lang)}: ____________________'):
+            _mq_para(doc, line, indent=0)
+        doc.add_page_break()
+
+    # --- Diplom: annotatsiya (uz/ru/en) ---
+    if fixed.get("annot"):
+        _mq_heading(doc, academic.title("annot", lang), after=10)
+        annot = found.get("ANNOTATSIYA", "")
+        blocks = {}
+        for code in ("UZ", "RU", "EN"):
+            match = re.search(r"\[\[\s*" + code + r"\s*\]\](.*?)(?=\[\[\s*(?:UZ|RU|EN)\s*\]\]|$)",
+                              annot, re.S | re.I)
+            if match:
+                blocks[code] = re.sub(r"\s+", " ", match.group(1)).strip()
+        if not blocks:
+            blocks = {"UZ": str(annot).strip()}
+        names = {"UZ": "O‘zbek tilida", "RU": "Русский язык", "EN": "English"}
+        for code in ("UZ", "RU", "EN"):
+            value = blocks.get(code)
+            if not value:
+                continue
+            _mq_para(doc, f"{names[code]}:", indent=0, bold=True)
+            for part in _mq_split_blocks(value):
+                _mq_para(doc, part)
+            _mq_blank(doc, 1)
+        doc.add_page_break()
+
+    # --- Referat: REJA sahifasi ---
+    if fixed.get("plan"):
+        _mq_heading(doc, academic.title("plan", lang), after=12)
+        plan_text = found.get("REJA", "")
+        lines = [line.strip() for line in str(plan_text).splitlines() if line.strip()]
+        if len(lines) < 3:
+            lines = [f"{index}. {item[1]}" for index, item in enumerate(plan, 1)]
+        for line in lines:
+            _mq_para(doc, line, indent=0)
+
+    # --- Kurs / diplom: mundarija ---
+    if fixed.get("toc"):
+        toc_items = [(lbl.get("intro", ""), positions.get("KIRISH", 3), True)]
+        previous_chapter = None
+        for marker, section_title, _desc, _sec_pages in plan:
+            if marker == "KIRISH":
+                continue
+            chapter = str(marker).split(".")[0]
+            if chapters_map and chapter != previous_chapter and chapter in chapters_map:
+                chapter_title = academic.title(chapters_map[chapter], lang)
+                toc_items.append((f'{lbl.get("chapter", "").capitalize()} {chapter}. {chapter_title}',
+                                  positions.get(marker, 1), True))
+                previous_chapter = chapter
+            toc_items.append((f"{marker}. {section_title}", positions.get(marker, 1), False))
+        toc_items.append((lbl.get("conclusion_diplom" if service == "diplom" else "conclusion", ""),
+                          positions.get("XULOSA", pages - 1), True))
+        if fixed.get("refs"):
+            toc_items.append((academic.title("refs", lang), positions.get("REFS", pages), True))
+        if fixed.get("appendix"):
+            toc_items.append((academic.title("appendix", lang), positions.get("APPENDIX", pages), True))
+        _mq_toc(doc, toc_items, academic.title("toc", lang))
+
+    # --- Maqola sarlavhasi (IMRAD) ---
+    if compact:
+        heading_size = 14 if service == "maqola" else 13
+        _mq_heading(doc, topic, size=heading_size, center=True, uppercase=False, after=6)
+        meta = [str(author or "").strip()]
+        institution = str(extra_data.get("ref_institution") or "").strip()
+        faculty = str(extra_data.get("ref_faculty") or "").strip()
+        email = str(extra_data.get("ref_email") or extra_data.get("email") or "").strip()
+        if institution:
+            meta.append(institution + (f", {faculty}" if faculty else ""))
+        if email:
+            meta.append(email)
+        for value in [item for item in meta if item]:
+            para = doc.add_paragraph()
+            para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            fmt = para.paragraph_format
+            fmt.first_line_indent = Cm(0)
+            fmt.line_spacing = 1.15
+            fmt.space_after = Pt(0)
+            run = para.add_run(value)
+            _mq_font(run, 12)
+        _mq_blank(doc, 1)
+        if service == "maqola":
+            abstract = found.get("ABSTRACT", "").strip()
+            if abstract:
+                _mq_para(doc, f'{academic.title("abstract", lang)}:', indent=0, bold=True)
+                for part in _mq_split_blocks(abstract):
+                    _mq_para(doc, part, size=12)
+            keywords = found.get("KEYWORDS", "").strip()
+            if keywords:
+                _mq_para(doc, f'{academic.title("keywords", lang)}: {keywords}', indent=0, size=12)
+            _mq_blank(doc, 1)
+
+    # --- Asosiy bo'limlar ---
+    previous_chapter = None
+    for marker, section_title, desc, sec_pages in plan:
+        if marker in ("XULOSA", "CONCL"):
+            continue  # xulosa alohida yoziladi
+        if not compact:
+            doc.add_page_break()
+        chapter = str(marker).split(".")[0]
+        is_intro = marker in ("KIRISH", "INTRO")
+        if not compact and not is_intro and chapters_map.get(chapter) and chapter != previous_chapter:
+            chapter_title = academic.title(chapters_map[chapter], lang)
+            _mq_heading(doc, f'{lbl.get("chapter", "BOB")} {chapter}. {chapter_title}', after=10)
+            previous_chapter = chapter
+        if is_intro:
+            _mq_heading(doc, section_title, size=16 if not compact else 12)
+        elif not compact:
+            _mq_heading(doc, f"{marker}. {section_title}", center=False, uppercase=False, after=8)
+        else:
+            _mq_heading(doc, section_title, size=12, center=False, uppercase=False, after=8)
+
+        body_text = found.get(marker, "")
+        _acad_write_section(doc, body_text, 0 if compact else sec_pages, lang, topic,
+                            section_title, size=size, capacity=capacity)
+
+        # Kurs ishida jadvallar matn ichida, diplomda ilovalarda beriladi.
+        if service == "kurs":
+            if marker == "2.1":
+                header, rows = _acad_table_data(found.get("JADVAL1", ""))
+                _acad_table(doc, academic.title("table1", lang), header, rows, size=12)
+            elif marker == "2.3":
+                header, rows = _acad_table_data(found.get("JADVAL2", ""))
+                _acad_table(doc, academic.title("table2", lang), header, rows, size=12)
+
+    # --- Xulosa ---
+    if not compact:
+        doc.add_page_break()
+    conclusion_key = "conclusion_diplom" if service == "diplom" else "conclusion"
+    _mq_heading(doc, lbl.get(conclusion_key, academic.title("concl", lang)),
+                size=16 if not compact else 12)
+    conclusion_text = found.get("XULOSA", "") or found.get("CONCL", "")
+    if service == "referat" and len(conclusion_text) > 1150:
+        # Adabiyotlar ro'yxati shu sahifada davom etadi — xulosa juda cho'zilmasin.
+        cut = conclusion_text[:1150]
+        stop = max(cut.rfind(". "), cut.rfind("! "), cut.rfind("? "))
+        conclusion_text = cut[:stop + 1] if stop > 700 else cut
+    # Xulosa ham rejadagi sahifa byudjetini to'liq egallaydi.
+    concl_pages = next((item[3] for item in plan if item[0] in ("XULOSA", "CONCL")), 1)
+    _acad_write_section(doc, conclusion_text, 0 if compact else concl_pages, lang, topic,
+                        academic.title("concl", lang), size=size, capacity=capacity)
+
+    # --- Adabiyotlar (referatda xulosa sahifasida davom etadi) ---
+    if fixed.get("refs") or service == "referat":
+        if fixed.get("refs"):
+            doc.add_page_break()
+        else:
+            _mq_blank(doc, 1)
+        _mq_heading(doc, academic.title("refs", lang), size=16 if not compact else 12)
+        entries = _acad_references(found.get("ADABIYOTLAR", ""))
+        if not entries:
+            entries = list(mq["sources"])
+        for number, item in enumerate(entries, 1):
+            _mq_para(doc, f"{number}. {item}", indent=0, size=size)
+
+    # --- Ilovalar (diplom) ---
+    if fixed.get("appendix"):
+        doc.add_page_break()
+        _mq_heading(doc, academic.title("appendix", lang))
+        header1, rows1 = _acad_table_data(found.get("JADVAL1", ""))
+        header2, rows2 = _acad_table_data(found.get("JADVAL2", ""))
+        labels = {"uz": ("A-ilova", "B-ilova"), "ru": ("Приложение A", "Приложение B"),
+                  "en": ("Appendix A", "Appendix B"), "tr": ("Ek A", "Ek B"),
+                  "de": ("Anhang A", "Anhang B"), "fr": ("Annexe A", "Annexe B")}
+        label_a, label_b = labels.get(lang, labels["en"])
+        _mq_para(doc, _loc("results_fb", lang, topic), indent=1.25)
+        _mq_blank(doc, 1)
+        _acad_table(doc, f'{label_a}. {academic.title("table1", lang).split(". ", 1)[-1]}', header1, rows1)
+        doc.add_page_break()
+        _mq_heading(doc, academic.title("appendix", lang))
+        _acad_table(doc, f'{label_b}. {academic.title("table2", lang).split(". ", 1)[-1]}', header2, rows2)
+
+    buf = io.BytesIO()
+    doc.save(buf)
+    buf.seek(0)
+    return buf
+
+
 def _generate_paginated_academic(doc, topic, service_code, pages, content_text, author, lbl, extra_data=None):
     """Create exact 10/15/20-page academic structures using the supplied templates."""
     try:
@@ -1688,15 +2083,11 @@ def generate_docx(topic, service_name, service_code, lang, pages, content_text, 
     # Page-based document services offer only 10, 15, or 20 pages. The matching
     # user-supplied DOCX is used as the base, but all hard-coded sample text is
     # removed so accidental IT placeholders/other-language text cannot leak.
-    if service_code in ("referat", "mustaqil", "kurs", "diplom", "maqola", "tezis"):
-        try:
-            selected_pages = int(pages)
-        except (TypeError, ValueError):
-            selected_pages = 10
-        if selected_pages not in (10, 15, 20):
-            selected_pages = min((10, 15, 20), key=lambda n: abs(n - selected_pages))
-        return _generate_paginated_academic(
-            doc, topic, service_code, selected_pages, content_text, author, lbl, extra_data=extra_data
+    if service_code in academic.ACADEMIC_SERVICES or service_code in academic.COMPACT_SERVICES:
+        # Referat, kurs, diplom, maqola va tezis: har bir bo'lim o'z sahifalarini
+        # to'liq to'ldiradigan yagona standart shablon.
+        return _generate_standard_docx(
+            doc, topic, service_code, service_name, pages, content_text, author, lbl, extra_data=extra_data
         )
 
     if service_code == "test":
