@@ -529,18 +529,14 @@ async def _generate(job_id):
 
         if service == "slide":
             from pptx_generator import generate_pptx
-            from ai_api import generate_slides_structured, localize_topic
+            from ai_api import generate_slides_structured
             from designs import subject_name
 
             count = int(options.get("count") or 10)
             subject_key = payload.get("subject_key") or "umumiy"
             subject = subject_name(subject_key, lang)
-            # Bot bilan bir xil: mavzu tanlangan tilga o'giriladi.
+            # Bot bilan bir xil: mavzu o'zgartirilmaydi (tarjima qilinmaydi).
             generation_topic = topic
-            try:
-                generation_topic = await localize_topic(topic, lang) or topic
-            except Exception:
-                generation_topic = topic
             slides_content, real = await generate_slides_structured(
                 generation_topic, subject, lang, max(2, count - 3))
             job["stage"] = "images"
@@ -569,15 +565,11 @@ async def _generate(job_id):
                     pass
             content, ext = buffer.read(), "pptx"
         else:
-            from ai_api import generate as generate_content, localize_topic
+            from ai_api import generate as generate_content
             from docx_generator import generate_docx
 
-            # Botdagi kabi: matn tanlangan tilda yoziladi (mavzu ham o'giriladi).
+            # Botdagi kabi: mavzu o'zgartirilmaydi, matn tanlangan tilda yoziladi.
             generation_topic = topic
-            try:
-                generation_topic = await localize_topic(topic, lang) or topic
-            except Exception:
-                generation_topic = topic
             text, real = await generate_content(service, generation_topic, options, lang)
             job["stage"] = "building"
             pages = int(options.get("pages") or options.get("count") or 10)

@@ -12,7 +12,7 @@ from keyboards import (option_kb_for, confirm_kb, main_kb, option_label,
 from designs import (subject_name, detect_subject_key, lang_full_name, SLIDE_COUNTS,
                      design_name, DESIGNS, DESIGN_KEYS)
 from ai_api import (generate, generate_slides_structured, get_last_error, search_images, download_image,
-                    generate_insho_plan, localize_topic, image_keywords_batch)
+                    generate_insho_plan, image_keywords_batch)
 from pptx_generator import generate_pptx
 from docx_generator import generate_docx
 
@@ -575,7 +575,9 @@ async def cb_confirm(call: CallbackQuery, state: FSMContext):
     await msg.edit_text(t("generating", lang))
     await call.answer()
     language_code = data.get("language", lang)
-    generation_topic = await localize_topic(topic, language_code)
+    # Foydalanuvchi yozgan mavzu o'zgartirilmaydi: tarjima qilinmaydi, matn,
+    # titul va rasm qidiruvi aynan shu mavzu bo'yicha bajariladi.
+    generation_topic = topic
     await state.update_data(generation_topic=generation_topic)
     data["generation_topic"] = generation_topic
     
@@ -675,9 +677,7 @@ async def cb_confirm(call: CallbackQuery, state: FSMContext):
         # Foydalanuvchi kiritgan titul ma'lumotlarini saqlaymiz; faqat fan nomi
         # tanlangan hujjat tiliga tarjima qilinadi. Ism va muassasa nomlari o'z holicha qoladi.
         document_data = dict(data)
-        for field in ("ref_subject", "ref_faculty", "ref_dept"):
-            if document_data.get(field):
-                document_data[field] = await localize_topic(document_data[field], language_code)
+        # Titul maydonlari ham foydalanuvchi yozganidek qoladi (tarjima qilinmaydi).
         buf = generate_docx(
             topic=generation_topic,
             service_name=service_name(service, language_code),
@@ -743,9 +743,7 @@ async def cb_essay_go(call: CallbackQuery, state: FSMContext):
     pages = int(options.get("pages", 3) or 3)
     document_data = dict(data)
     document_data["insho_plan"] = plan
-    for field in ("ref_subject", "ref_faculty", "ref_dept"):
-        if document_data.get(field):
-            document_data[field] = await localize_topic(document_data[field], language_code)
+    # Titul maydonlari foydalanuvchi yozganidek qoladi.
     buf = generate_docx(generation_topic, service_name(service, language_code), service, language_code, pages, text_content, author=author, extra_data=document_data)
     docx_bytes = buf.read()
     fmt = data.get("file_format", "docx")
