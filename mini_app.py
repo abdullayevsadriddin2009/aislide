@@ -329,6 +329,64 @@ def api_order():
     })
 
 
+# =====================  AI Chat  =====================
+def _chat_history(uid, limit=16):
+    try:
+        with _db() as con:
+            rows = con.execute(
+                "SELECT role, content FROM chat_messages WHERE user_id=? ORDER BY id DESC LIMIT ?",
+                (int(uid), limit),
+            ).fetchall()
+    except Exception:
+        return []
+    return [{"role": row["role"], "content": row["content"]} for row in reversed(rows)]
+
+
+def _chat_save(uid, role, text):
+    try:
+        with _db() as con:
+            con.execute(
+                "INSERT INTO chat_messages(user_id,role,content,created_at) VALUES(?,?,?,?)",
+                (int(uid), role, str(text)[:8000], int(time.time())),
+            )
+            con.commit()
+    except Exception:
+        pass
+
+
+@mini.route("/api/mini/chat", methods=["GET", "POST"])
+def api_chat():
+    """Botdagi AI Chat bilan bir xil suhbat (tarix umumiy)."""
+    uid = _token_user()
+    if not uid:
+        return _unauthorized()
+    if request.method == "GET":
+        return jsonify({"ok": True, "messages": _chat_history(uid, 30)})
+
+    data = request.get_json(silent=True) or {}
+    message = re.sub(r"\s+", " ", str(data.get("message") or "")).strip()
+    if not message:
+        return jsonify({"ok": False, "error": "message", "message": "Savol bo'sh."}), 400
+    message = message[:4000]
+    lang = str(data.get("lang") or "uz").lower()
+    if lang not in ALL_LANGS:
+        lang = "uz"
+
+    history = _chat_history(uid, 16)
+    try:
+        from ai_api import chat_answer
+        answer = asyncio.run(chat_answer(message, user_lang=lang, history=history))
+    except Exception as exc:
+        return jsonify({"ok": False, "error": "chat", "message": str(exc)[:200]}), 502
+    if not answer or not str(answer).strip():
+        return jsonify({"ok": False, "error": "chat",
+                        "message": "AI javob bermadi. Birozdan keyin urinib ko'ring."}), 502
+    answer = str(answer).strip()[:8000]
+    _chat_save(uid, "user", message)
+    _chat_save(uid, "assistant", answer)
+    return jsonify({"ok": True, "answer": answer})
+
+
 # =====================  Insho REJA  =====================
 @mini.route("/api/mini/plan", methods=["POST"])
 def api_plan():

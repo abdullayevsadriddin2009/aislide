@@ -18,7 +18,7 @@ import io
 from collections import Counter
 from dotenv import load_dotenv
 load_dotenv()
-from config import AI_API_URL, AI_MODEL, AI_TIMEOUT
+from config import AI_API_URL, AI_MODEL, AI_TIMEOUT, GEN_TIMEOUT
 
 LAST_ERROR = "hali sinanmadi"
 PIXABAY_KEY  = os.getenv("PIXABAY_KEY", "")
@@ -1367,6 +1367,19 @@ async def _generate_standard(service, topic, pages, lang):
 
 
 async def generate(service, topic, options, lang="uz"):
+    """Umumiy vaqt chegarasi bilan generatsiya (jim qotib qolmasligi uchun)."""
+    try:
+        return await asyncio.wait_for(
+            _generate_impl(service, topic, options, lang),
+            timeout=max(1, int(GEN_TIMEOUT)),
+        )
+    except asyncio.TimeoutError:
+        raise TimeoutError(
+            f"AI {GEN_TIMEOUT}s ichida javob bermadi. Keyinroq qayta urinib ko'ring."
+        )
+
+
+async def _generate_impl(service, topic, options, lang="uz"):
     if service == "esse":
         lc = str(lang or "uz").lower()
         ln = _lang_name(lc)

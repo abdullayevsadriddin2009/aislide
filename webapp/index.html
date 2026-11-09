@@ -100,6 +100,13 @@
   .order.tap{cursor:pointer}
   .order.tap:active{background:rgba(127,127,127,.12)}
   .chev{margin-left:auto;color:var(--hint);font-size:22px;line-height:1}
+  .chat-list{display:flex;flex-direction:column;gap:8px;margin-bottom:12px;min-height:200px}
+  .bubble{max-width:86%;padding:10px 12px;border-radius:14px;font-size:14px;line-height:1.45;white-space:pre-wrap;word-break:break-word}
+  .bubble.me{align-self:flex-end;background:var(--btn,#3b82f6);color:#fff;border-bottom-right-radius:4px}
+  .bubble.ai{align-self:flex-start;background:rgba(127,127,127,.16);border-bottom-left-radius:4px}
+  .chat-bar{position:sticky;bottom:0;display:flex;gap:8px;padding:10px 0;background:var(--bg,transparent)}
+  .chat-bar textarea{flex:1;min-height:44px;max-height:110px;resize:none}
+  .chat-bar button{width:auto;padding:0 16px}
   .kv:last-child{border-bottom:none}
   .kv span{color:var(--hint)}
   .loading{display:flex;flex-direction:column;align-items:center;padding:60px 0;color:var(--hint)}
@@ -110,6 +117,7 @@
 <nav class="tabs" id="tabs" style="display:none">
   <button data-tab="home" class="on"><span class="ic">✨</span><span id="tab-home">Yaratish</span></button>
   <button data-tab="orders"><span class="ic">🗂</span><span id="tab-orders">Buyurtmalar</span></button>
+  <button data-tab="chat"><span class="ic">💬</span><span id="tab-chat">AI Chat</span></button>
   <button data-tab="profile"><span class="ic">👤</span><span id="tab-profile">Profil</span></button>
 </nav>
 <div class="toast" id="toast"></div>
@@ -133,6 +141,8 @@ const T = {
     wait:"Bu 1–4 daqiqa vaqt olishi mumkin. Sahifani yopsangiz ham ish davom etadi.",
     ready:"Fayl tayyor!", download:"Yuklab olish", send:"Telegramga yuborish",
     sent:"Yuborildi!", again:"Yana yaratish", error:"Xatolik",
+    confirmTitle:"Buyurtmani tasdiqlang", confirmYes:"Tasdiqlash", cancelBtn:"Bekor qilish", serviceLabel:"Xizmat", priceLabel:"Narx", freeLabel:"Bepul",
+    chat:"AI Chat", chatPh:"Savolingizni yozing…", chatEmpty:"Savol bering — javob beraman va suhbatni davom ettiraman.", chatThinking:"O‘ylayapman…",
     date:"Sana",
     fileGone:"Yuklab olish fayli 3 soatdan keyin o‘chiriladi — hujjatni qaytadan yaratishingiz mumkin.",
     emptyOrders:"Hozircha buyurtma yo‘q", bal:"Balans", bonus:"Bonus", premium:"Premium",
@@ -154,6 +164,8 @@ const T = {
     wait:"Это может занять 1–4 минуты. Работа продолжится, даже если закрыть страницу.",
     ready:"Файл готов!", download:"Скачать", send:"Отправить в Telegram",
     sent:"Отправлено!", again:"Создать ещё", error:"Ошибка",
+    confirmTitle:"Подтвердите заказ", confirmYes:"Подтвердить", cancelBtn:"Отмена", serviceLabel:"Услуга", priceLabel:"Цена", freeLabel:"Бесплатно",
+    chat:"AI Chat", chatPh:"Напишите вопрос…", chatEmpty:"Задайте вопрос — отвечу и продолжу диалог.", chatThinking:"Думаю…",
     date:"Дата",
     fileGone:"Файл хранится 3 часа — документ можно создать заново.",
     emptyOrders:"Заказов пока нет", bal:"Баланс", bonus:"Бонус", premium:"Премиум",
@@ -175,6 +187,8 @@ const T = {
     wait:"This can take 1–4 minutes. The job continues even if you close the page.",
     ready:"Your file is ready!", download:"Download", send:"Send to Telegram",
     sent:"Sent!", again:"Create another", error:"Error",
+    confirmTitle:"Confirm your order", confirmYes:"Confirm", cancelBtn:"Cancel", serviceLabel:"Service", priceLabel:"Price", freeLabel:"Free",
+    chat:"AI Chat", chatPh:"Write your question…", chatEmpty:"Ask a question — I will answer and keep the conversation going.", chatThinking:"Thinking…",
     date:"Date",
     fileGone:"The file is kept for 3 hours — you can create the document again.",
     emptyOrders:"No orders yet", bal:"Balance", bonus:"Bonus", premium:"Premium",
@@ -196,6 +210,8 @@ const T = {
     wait:"Bu 1–4 dakika sürebilir. Sayfayı kapatsanız da iş devam eder.",
     ready:"Dosya hazır!", download:"İndir", send:"Telegram’a gönder",
     sent:"Gönderildi!", again:"Yeniden oluştur", error:"Hata",
+    confirmTitle:"Siparişi onaylayın", confirmYes:"Onayla", cancelBtn:"İptal", serviceLabel:"Hizmet", priceLabel:"Fiyat", freeLabel:"Ücretsiz",
+    chat:"AI Chat", chatPh:"Sorunuzu yozın…", chatEmpty:"Bir soru sorun — cevaplayıp sohbete devam ederim.", chatThinking:"Düşünüyorum…",
     date:"Tarih",
     fileGone:"Dosya 3 saat saklanır — belgeyi yeniden oluşturabilirsiniz.",
     emptyOrders:"Henüz sipariş yok", bal:"Bakiye", bonus:"Bonus", premium:"Premium",
@@ -217,6 +233,8 @@ const T = {
     wait:"Das kann 1–4 Minuten dauern. Der Auftrag läuft auch nach dem Schließen weiter.",
     ready:"Datei ist fertig!", download:"Herunterladen", send:"An Telegram senden",
     sent:"Gesendet!", again:"Weiteres erstellen", error:"Fehler",
+    confirmTitle:"Bestellung bestätigen", confirmYes:"Bestätigen", cancelBtn:"Abbrechen", serviceLabel:"Dienst", priceLabel:"Preis", freeLabel:"Kostenlos",
+    chat:"AI Chat", chatPh:"Schreiben Sie Ihre Frage…", chatEmpty:"Stellen Sie eine Frage — ich antworte und führe das Gespräch fort.", chatThinking:"Denke nach…",
     date:"Datum",
     fileGone:"Die Datei bleibt 3 Stunden verfügbar — das Dokument lässt sich neu erstellen.",
     emptyOrders:"Noch keine Bestellungen", bal:"Guthaben", bonus:"Bonus", premium:"Premium",
@@ -238,6 +256,8 @@ const T = {
     wait:"Cela peut prendre 1 à 4 minutes. Le travail continue même si vous fermez la page.",
     ready:"Le fichier est prêt !", download:"Télécharger", send:"Envoyer sur Telegram",
     sent:"Envoyé !", again:"Créer un autre", error:"Erreur",
+    confirmTitle:"Confirmez la commande", confirmYes:"Confirmer", cancelBtn:"Annuler", serviceLabel:"Service", priceLabel:"Prix", freeLabel:"Gratuit",
+    chat:"AI Chat", chatPh:"Écrivez votre question…", chatEmpty:"Posez une question — je réponds et je continue la conversation.", chatThinking:"Je réfléchis…",
     date:"Date",
     fileGone:"Le fichier est conservé 3 heures — vous pouvez recréer le document.",
     emptyOrders:"Aucune commande pour l’instant", bal:"Solde", bonus:"Bonus", premium:"Premium",
@@ -256,7 +276,7 @@ const state = {
   form:{ topic:"", pages:"", words:"", questions:"", count:10, lang:"uz", format:"docx",
          author:"", institution:"", faculty:"", dept:"", subject:"", checker:"", email:"",
          design_key:"modern" },
-  orderDetail:null
+  orderDetail:null, chat:[], chatBusy:false, confirming:false
 };
 const app = document.getElementById("app");
 const tabs = document.getElementById("tabs");
@@ -286,6 +306,7 @@ function switchTab(tab){
 function setTabsLabels(){
   document.getElementById("tab-home").textContent = t("create");
   document.getElementById("tab-orders").textContent = t("orders");
+  document.getElementById("tab-chat").textContent = t("chat");
   document.getElementById("tab-profile").textContent = t("profile");
 }
 
@@ -326,7 +347,9 @@ function render(){
   setTabsLabels();
   if (state.orderDetail) return renderOrderDetail();
   if (state.tab === "orders") return renderOrders();
+  if (state.tab === "chat") return renderChat();
   if (state.tab === "profile") return renderProfile();
+  if (state.service && state.confirming) return renderConfirm();
   if (state.service) return renderForm();
   return renderHome();
 }
@@ -377,6 +400,59 @@ function openService(code){
   state.form.format = code === "slide" ? "pptx" : "docx";
   state.form.lang = state.lang;
   render();
+}
+
+function orderOptionText(item, options){
+  const unit = item.option_type === "words" ? t("wordsUnit") : item.option_type === "questions" ? t("questionsUnit")
+    : item.option_type === "slides" ? t("slidesUnit") : t("pagesUnit");
+  const value = options.words || options.questions || options.count || options.pages || "";
+  return value ? value + " " + unit : "";
+}
+
+function renderConfirm(){
+  const item = state.service;
+  const topic = (state.form.topic || "").trim();
+  const options = currentOptions();
+  const langName = (LANGS.find(([code]) => code === state.form.lang) || ["uz", "O‘zbekcha"])[1];
+  const design = (state.designs.find(d => d.key === state.form.design_key) || {}).name || "";
+  const price = state.freeMode ? t("freeLabel") : ((item.price || 0) + " so‘m");
+  const extra = state.form.author ? `<div class="kv"><span>${esc(t("author"))}</span><b>${esc(state.form.author)}</b></div>` : "";
+  app.innerHTML = `<div class="wrap">
+    <div class="head"><button class="back" id="back">‹</button><h1>${esc(t("confirmTitle"))}</h1></div>
+    <div class="card">
+      <div class="kv"><span>${esc(t("serviceLabel"))}</span><b>${FILES[item.code] || ""} ${esc(item.name)}</b></div>
+      <div class="kv"><span>${esc(t("topic"))}</span><b>${esc(topic)}</b></div>
+      <div class="kv"><span>${esc(t("pages"))}</span><b>${esc(orderOptionText(item, options))}</b></div>
+      <div class="kv"><span>${esc(t("lang"))}</span><b>${esc(langName)}</b></div>
+      ${item.code === "slide"
+        ? `<div class="kv"><span>${esc(t("design"))}</span><b>${esc(design)}</b></div>`
+        : `<div class="kv"><span>${esc(t("format"))}</span><b>${esc((state.form.format || "docx").toUpperCase())}</b></div>`}
+      ${extra}
+      <div class="kv"><span>${esc(t("priceLabel"))}</span><b>${esc(price)}</b></div>
+    </div>
+    <div class="stack">
+      <button class="btn" id="confirmYes">✅ ${esc(t("confirmYes"))}</button>
+      <button class="btn ghost" id="confirmNo">${esc(t("cancelBtn"))}</button>
+    </div>
+    <p class="muted center" style="margin:12px 0 4px">${esc(t("wait"))}</p>
+  </div>`;
+  document.getElementById("back").onclick = () => { state.confirming = false; render(); };
+  document.getElementById("confirmNo").onclick = () => { state.confirming = false; render(); };
+  document.getElementById("confirmYes").onclick = (event) => {
+    const button = event.currentTarget;
+    button.disabled = true; button.textContent = "⏳ " + t("creating");
+    startGeneration();
+  };
+}
+
+function currentOptions(){
+  const item = state.service;
+  const options = {};
+  if (item.option_type === "words") options.words = parseInt(state.form.words || item.options[0], 10);
+  else if (item.option_type === "questions") options.questions = parseInt(state.form.questions || item.options[0], 10);
+  else if (item.option_type === "slides") options.count = parseInt(state.form.count || item.options[0], 10);
+  else options.pages = parseInt(state.form.pages || item.options[0], 10);
+  return options;
 }
 
 function renderForm(){
@@ -454,9 +530,13 @@ function renderForm(){
   document.getElementById("formats")?.querySelectorAll("[data-fmt]").forEach(node => node.onclick = () => {
     state.form.format = node.dataset.fmt; renderForm();
   });
-  document.getElementById("back").onclick = () => { state.service = null; state.tab = "home"; render(); };
+  document.getElementById("back").onclick = () => { state.service = null; state.confirming = false; state.tab = "home"; render(); };
   document.getElementById("planBtn")?.addEventListener("click", buildPlan);
-  document.getElementById("go").onclick = startGeneration;
+  document.getElementById("go").onclick = () => {
+    if (!(state.form.topic || "").trim()) return toast(t("needTopic"));
+    state.confirming = true;
+    render();
+  };
 }
 
 async function buildPlan(){
@@ -497,11 +577,7 @@ async function startGeneration(){
   const topic = (state.form.topic || "").trim();
   if (topic.length < 3) return toast(t("needTopic"));
   const item = state.service;
-  const options = {};
-  if (item.option_type === "words") options.words = parseInt(state.form.words || item.options[0], 10);
-  else if (item.option_type === "questions") options.questions = parseInt(state.form.questions || item.options[0], 10);
-  else if (item.option_type === "slides") options.count = parseInt(state.form.count || 12, 10);
-  else options.pages = parseInt(state.form.pages || item.options[0], 10);
+  const options = currentOptions();
 
   const button = document.getElementById("go");
   if (button) { button.disabled = true; button.textContent = "⏳ " + t("creating"); }
@@ -686,6 +762,52 @@ function remakeOrder(order){
   render();
 }
 
+function renderChat(){
+  const bubbles = state.chat.map(m =>
+    `<div class="bubble ${m.role === "assistant" ? "ai" : "me"}">${esc(m.content)}</div>`).join("");
+  app.innerHTML = `<div class="wrap">
+    <h2>💬 ${esc(t("chat"))}</h2>
+    <div class="chat-list" id="chatList">${bubbles || `<div class="empty">💬<br>${esc(t("chatEmpty"))}</div>`}</div>
+    <div class="chat-bar">
+      <textarea id="chatText" placeholder="${esc(t("chatPh"))}">${esc(state.chatDraft || "")}</textarea>
+      <button class="btn" id="chatSend" ${state.chatBusy ? "disabled" : ""}>➤</button>
+    </div>
+  </div>`;
+  const list = document.getElementById("chatList");
+  list.scrollTop = list.scrollHeight;
+  const box = document.getElementById("chatText");
+  box.oninput = () => { state.chatDraft = box.value; };
+  document.getElementById("chatSend").onclick = () => sendChat();
+  box.onkeydown = (event) => {
+    if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); sendChat(); }
+  };
+}
+
+async function sendChat(){
+  const text = (document.getElementById("chatText").value || "").trim();
+  if (!text || state.chatBusy) return;
+  state.chatDraft = "";
+  state.chat.push({role:"user", content:text});
+  state.chat.push({role:"assistant", content:t("chatThinking")});
+  state.chatBusy = true;
+  renderChat();
+  try {
+    const data = await api("/api/mini/chat", {method:"POST", body: JSON.stringify({token: state.token, message: text, lang: state.lang})});
+    state.chat[state.chat.length - 1] = {role:"assistant", content: data.answer};
+  } catch (error) {
+    state.chat[state.chat.length - 1] = {role:"assistant", content: "⚠️ " + (error.message || t("error"))};
+  }
+  state.chatBusy = false;
+  if (state.tab === "chat") renderChat();
+}
+
+async function loadChat(){
+  try {
+    const data = await api(`/api/mini/chat?token=${encodeURIComponent(state.token)}`);
+    state.chat = data.messages || [];
+  } catch (error) { state.chat = []; }
+}
+
 function renderProfile(){
   const user = state.user;
   const botLink = "https://t.me/" + (window.__BOT_USERNAME__ || "Talaba_AI_SlideBot");
@@ -710,11 +832,13 @@ function renderProfile(){
   });
 }
 
-document.getElementById("tabs").addEventListener("click", (event) => {
+document.getElementById("tabs").addEventListener("click", async (event) => {
   const button = event.target.closest("button[data-tab]");
   if (!button) return;
   document.querySelectorAll("#tabs button").forEach(b => b.classList.toggle("on", b === button));
-  state.tab = button.dataset.tab; state.service = null; state.orderDetail = null; render();
+  state.tab = button.dataset.tab; state.service = null; state.orderDetail = null;
+  if (state.tab === "chat" && !state.chatLoaded) { state.chatLoaded = true; await loadChat(); }
+  render();
 });
 
 const stored = (() => { try { return localStorage.getItem("mini_lang"); } catch(e){ return null; } })();

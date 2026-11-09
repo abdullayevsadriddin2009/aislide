@@ -26,6 +26,8 @@ AI_API_URL = AI_BASE_URL
 AI_API_KEY = os.environ.get("AI_API_KEY", "").strip()
 AI_MODEL = os.getenv("AI_MODEL", "auto")
 AI_TIMEOUT = int(os.getenv("AI_TIMEOUT", "120"))
+# Bitta hujjat uchun umumiy chegara: undan oshsa xato xabari yuboriladi, jim qolmaydi.
+GEN_TIMEOUT = int(os.getenv("GEN_TIMEOUT", "900"))
 
 # ===== Proxy =====
 PROXY_URL = os.getenv("PROXY_URL", "")

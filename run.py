@@ -70,6 +70,45 @@ async def main():
     bot = Bot(token=config.BOT_TOKEN, session=session,
               default=DefaultBotProperties(parse_mode="HTML"))
     dp = Dispatcher(storage=MemoryStorage())
+
+    @dp.errors()
+    async def on_handler_error(event):
+        """Har qanday handler xatosi foydalanuvchiga xabar bo'lib qaytadi.
+
+        Ilgari generate() xato bersa "Yaratilmoqda..." xabari shundayligicha
+        qolib, foydalanuvchiga hech narsa kelmasdi.
+        """
+        from aiogram.types import ErrorEvent  # noqa: F401  (turi hujjat uchun)
+        exc = event.exception
+        log.exception("Handler xatosi: %s: %s", type(exc).__name__, exc)
+
+        upd = event.update
+        user = getattr(upd.message, "from_user", None) or getattr(
+            getattr(upd, "callback_query", None), "from_user", None)
+        target = upd.message or getattr(getattr(upd, "callback_query", None), "message", None)
+        lang = "uz"
+        try:
+            if user:
+                row = await db.get_user(user.id)
+                if row and row["lang"] in ("uz", "ru", "en", "tr", "de", "fr"):
+                    lang = row["lang"]
+        except Exception:
+            pass
+        try:
+            from texts import t
+            from keyboards import main_kb
+            text = t("gen_error", lang)
+            if target is not None:
+                try:
+                    await target.answer(text, reply_markup=main_kb(lang))
+                except Exception:
+                    if user:
+                        await bot.send_message(user.id, text, reply_markup=main_kb(lang))
+        except Exception as send_err:
+            log.warning("Xato xabarini yuborib bo'lmadi: %s", send_err)
+        await _notify_admin(bot, f"⚠️ Handler xatosi ({type(exc).__name__}): {str(exc)[:400]}")
+        return True
+
     dp.include_router(admin.router)
     dp.include_router(creation.router)
     dp.include_router(user.router)

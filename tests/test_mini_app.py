@@ -45,6 +45,8 @@ class MiniAppTests(unittest.TestCase):
             topic TEXT, options TEXT, price INTEGER DEFAULT 0, status TEXT DEFAULT 'done',
             result TEXT, created_at INTEGER);
         CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT);
+        CREATE TABLE chat_messages (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER,
+            role TEXT, content TEXT, created_at INTEGER);
         """)
         con.commit()
         con.close()
@@ -145,6 +147,30 @@ class MiniAppTests(unittest.TestCase):
         other_token = self._token_for(556)
         self.assertEqual(self.client.get(f"/api/mini/order?id={order_id}&token={other_token}").status_code, 404)
 
+    def test_chat_returns_answer_and_stores_history(self):
+        token = self._token_for(570)
+
+        async def fake_answer(question, user_lang="uz", history=None):
+            return "Javob: " + question
+
+        import ai_api
+        original = ai_api.chat_answer
+        ai_api.chat_answer = fake_answer
+        try:
+            response = self.client.post("/api/mini/chat", json={
+                "token": token, "message": "Referat nima?", "lang": "uz"})
+            self.assertEqual(response.status_code, 200)
+            self.assertIn("Referat nima?", response.get_json()["answer"])
+            history = self.client.get(f"/api/mini/chat?token={token}").get_json()["messages"]
+        finally:
+            ai_api.chat_answer = original
+        self.assertEqual([m["role"] for m in history], ["user", "assistant"])
+
+    def test_chat_rejects_empty_message(self):
+        token = self._token_for(571)
+        self.assertEqual(self.client.post("/api/mini/chat", json={"token": token, "message": "  "}).status_code, 400)
+        self.assertEqual(self.client.get("/api/mini/chat").status_code, 401)
+
     def test_page_is_served(self):
         response = self.client.get("/app")
         self.assertEqual(response.status_code, 200)
@@ -193,3 +219,25 @@ class WebAppUrlTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class GenerateTimeoutTests(unittest.TestCase):
+    def test_slow_generation_raises_timeout(self):
+        import asyncio as _asyncio
+
+        import ai_api
+
+        async def slow(*args, **kwargs):
+            await _asyncio.sleep(30)
+            return "never", True
+
+        original_impl = ai_api._generate_impl
+        original_timeout = ai_api.GEN_TIMEOUT
+        ai_api._generate_impl = slow
+        ai_api.GEN_TIMEOUT = 1
+        try:
+            with self.assertRaises(TimeoutError):
+                _asyncio.run(ai_api.generate("referat", "Mavzu", {"pages": 7}, "uz"))
+        finally:
+            ai_api._generate_impl = original_impl
+            ai_api.GEN_TIMEOUT = original_timeout
