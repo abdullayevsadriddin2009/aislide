@@ -58,14 +58,23 @@ async def main():
 
     log.info("Bot ishga tushdi: @%s (id=%s). Admin: %s", me.username, me.id, config.ADMIN_ID)
 
-    # Mini App: chat input yonidagi menyu tugmasi
+    # Mini App: chat input yonidagi "Ilova" tugmasi
     if config.WEBAPP_URL:
         try:
-            from aiogram.types import MenuButtonWebApp, WebAppInfo
+            from aiogram.types import BotCommand, MenuButtonWebApp, WebAppInfo
             await bot.set_chat_menu_button(menu_button=MenuButtonWebApp(
-                text="Mini App",
+                text=config.MINI_APP_TEXT,
                 web_app=WebAppInfo(url=config.WEBAPP_URL + "/app"),
             ))
+            await bot.set_my_commands([
+                BotCommand(command="start", description="Boshlash"),
+                BotCommand(command="app", description="📱 Ilova (Mini App)"),
+                BotCommand(command="price", description="Narxlar"),
+                BotCommand(command="balance", description="Balans"),
+                BotCommand(command="buy", description="Balansni to'ldirish"),
+                BotCommand(command="referral", description="Taklif qilish"),
+                BotCommand(command="help", description="Yordam"),
+            ])
             log.info("Mini App menyu tugmasi o'rnatildi: %s/app", config.WEBAPP_URL)
         except Exception as e:
             log.warning("Mini App menyu tugmasi o'rnatilmadi: %s", e)

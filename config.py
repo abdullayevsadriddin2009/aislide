@@ -40,6 +40,8 @@ WEB_ADMIN_SECRET_KEY = os.getenv("WEB_ADMIN_SECRET_KEY", "").strip()
 # HTTPS manzil (Render domeni). Bo'sh bo'lsa Mini App tugmasi ko'rsatilmaydi.
 WEBAPP_URL = (os.getenv("WEBAPP_URL", "").strip()
               or (os.getenv("RENDER_EXTERNAL_URL", "").strip())).rstrip("/")
+# Chat input yonidagi menyu tugmasining matni (Telegram cheklovi: 64 belgi).
+MINI_APP_TEXT = (os.getenv("MINI_APP_TEXT", "").strip() or "Ilova")[:64]
 
 # ===== To'lov =====
 FREE_MODE = os.getenv("FREE_MODE", "1") == "1"
