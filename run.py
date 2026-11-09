@@ -17,6 +17,37 @@ from admin_web import start_web_thread
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger("bot")
 
+
+async def _resolve_webapp_url(bot):
+    """Mini App uchun public HTTPS manzil: WEBAPP_URL -> Render domeni -> webhook domeni.
+
+    Telegram web_app tugmasi faqat https:// manzil bilan ko'rinadi, shuning uchun
+    qo'lda sozlanmagan bo'lsa botning o'z webhook manzilidan domen olinadi.
+    """
+    if config.WEBAPP_URL:
+        return config.WEBAPP_URL
+    try:
+        info = await bot.get_webhook_info()
+        url = (info.url or "").strip()
+    except Exception as e:
+        log.warning("Webhook manzilini olib bo'lmadi: %s", e)
+        return ""
+    if not url.startswith("https://"):
+        return ""
+    origin = "/".join(url.split("/")[:3])
+    config.WEBAPP_URL = origin.rstrip("/")
+    log.info("Mini App manzili webhook domenidan olindi: %s", config.WEBAPP_URL)
+    return config.WEBAPP_URL
+
+
+async def _notify_admin(bot, text):
+    try:
+        if config.ADMIN_ID:
+            await bot.send_message(int(config.ADMIN_ID), text)
+    except Exception:
+        pass
+
+
 async def main():
     if not config.BOT_TOKEN:
         log.error("BOT_TOKEN muhit o'zgaruvchisi sozlanmagan. .env yoki hosting Environment Variables ichida kiriting.")
@@ -59,6 +90,7 @@ async def main():
     log.info("Bot ishga tushdi: @%s (id=%s). Admin: %s", me.username, me.id, config.ADMIN_ID)
 
     # Mini App: chat input yonidagi "Ilova" tugmasi
+    await _resolve_webapp_url(bot)
     if config.WEBAPP_URL:
         try:
             from aiogram.types import BotCommand, MenuButtonWebApp, WebAppInfo
@@ -78,8 +110,18 @@ async def main():
             log.info("Mini App menyu tugmasi o'rnatildi: %s/app", config.WEBAPP_URL)
         except Exception as e:
             log.warning("Mini App menyu tugmasi o'rnatilmadi: %s", e)
+            await _notify_admin(bot, (
+                "⚠️ Mini App tugmasi o'rnatilmadi.\n"
+                f"Manzil: {config.WEBAPP_URL}/app\n"
+                f"Sabab: {e}\n\n"
+                "Manzil public HTTPS bo'lishi shart (Render domeni yoki o'z domeningiz)."))
     else:
         log.warning("WEBAPP_URL sozlanmagan — Mini App tugmasi ko'rinmaydi.")
+        await _notify_admin(bot, (
+            "⚠️ Mini App tugmasi ko'rinmaydi: public HTTPS manzil yo'q.\n"
+            "Render → Environment → WEBAPP_URL = https://<domen> qo'ying "
+            "va qayta deploy qiling, keyin BotFather → Menu Button ga shu "
+            "manzilning /app qismini yozing."))
     try:
         from texts import t
         try:

@@ -9,6 +9,8 @@ import time
 import unittest
 from urllib.parse import urlencode
 
+import asyncio
+
 import config
 import mini_app
 from admin_web import app
@@ -99,6 +101,46 @@ class MiniAppTests(unittest.TestCase):
         response = self.client.get("/app")
         self.assertEqual(response.status_code, 200)
         self.assertIn("telegram-web-app.js", response.get_data(as_text=True))
+
+
+class WebAppUrlTests(unittest.TestCase):
+    def setUp(self):
+        self._url = config.WEBAPP_URL
+        config.WEBAPP_URL = ""
+
+    def tearDown(self):
+        config.WEBAPP_URL = self._url
+
+    def test_webhook_origin_is_used_when_nothing_is_configured(self):
+        import run
+
+        class Info:
+            url = "https://bot.example.com/hook/abc"
+
+        class FakeBot:
+            async def get_webhook_info(self):
+                return Info()
+
+        resolved = asyncio.run(run._resolve_webapp_url(FakeBot()))
+        self.assertEqual(resolved, "https://bot.example.com")
+
+    def test_http_webhook_is_ignored(self):
+        import run
+
+        class Info:
+            url = "http://192.168.1.5:8080/hook"
+
+        class FakeBot:
+            async def get_webhook_info(self):
+                return Info()
+
+        self.assertEqual(asyncio.run(run._resolve_webapp_url(FakeBot())), "")
+        self.assertEqual(config.WEBAPP_URL, "")
+
+    def test_explicit_url_wins(self):
+        import run
+        config.WEBAPP_URL = "https://my.domain"
+        self.assertEqual(asyncio.run(run._resolve_webapp_url(None)), "https://my.domain")
 
 
 if __name__ == "__main__":
