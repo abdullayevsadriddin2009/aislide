@@ -72,6 +72,13 @@ async def _init():
             await db.commit()
         except Exception:
             pass
+    # Mini App yaratgan fayllar buyurtmaga bog'lanadi (istalgan vaqtda yuklab olish uchun).
+    for col, typ in [("file_path", "TEXT"), ("file_name", "TEXT")]:
+        try:
+            await db.execute(f"ALTER TABLE orders ADD COLUMN {col} {typ}")
+            await db.commit()
+        except Exception:
+            pass
     await _restore_from_firebase()
     await set_setting("payment_info", DEFAULT_PAYMENT_INFO, if_not_exists=True)
     await set_setting("free_mode", "1" if FREE_MODE else "0", if_not_exists=True)

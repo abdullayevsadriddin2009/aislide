@@ -36,8 +36,12 @@ The bot serves a Mini App from the same web service, so no extra hosting is requ
    chat list and in the chat header — exactly the entry point other Mini Apps have.
    (`/setmenubutton` and **Bot Settings → Configure Mini App** set the same value.)
 5. Telegram requires a verified HTTPS certificate, so use the Render domain or a custom domain — not an IP.
-6. Files created in the Mini App are stored in `DATA_DIR/mini/` for three hours; the user can
-   download them or send them to the bot chat with one tap.
+6. Files created in the Mini App are copied to `DATA_DIR/files/` and linked to the order, so an
+   order can be downloaded again at any time (the temporary copy in `DATA_DIR/mini/` expires
+   after three hours). Orders created before this version have no stored file and only offer
+   "Qayta yaratish".
+7. Attach a persistent disk to `DATA_DIR` if downloads must survive a redeploy; on an ephemeral
+   filesystem `DATA_DIR/files/` is cleared when the service is rebuilt.
 
 ## 3. SQLite persistence
 

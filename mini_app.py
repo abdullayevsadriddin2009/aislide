@@ -34,6 +34,9 @@ mini = Blueprint("mini_app", __name__)
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 WEBAPP_FILE = os.path.join(BASE_DIR, "webapp", "index.html")
 OUTPUT_DIR = os.path.join(config.DATA_DIR, "mini")
+# Buyurtma fayllari doimiy saqlanadi: 3 soatlik vaqtinchalik papkadan farqli,
+# istalgan vaqtda yuklab olish mumkin.
+FILES_DIR = os.path.join(config.DATA_DIR, "files")
 
 JOBS = {}
 TOKENS = {}
@@ -312,8 +315,11 @@ def api_order():
             job = item
             job_id = key
             break
+    stored_path, stored_name = _order_file(uid, order_id)
     return jsonify({
         "ok": True,
+        "download": bool(stored_path),
+        "filename": stored_name,
         "order": {
             "id": row["id"],
             "service": row["service"],
@@ -584,10 +590,47 @@ async def _generate(job_id):
         job.update(status="done", stage="done", file=path, filename=filename,
                    size=len(content), real=bool(real))
         job["order_id"] = _save_order(job["user_id"], service, topic, options)
+        if job["order_id"]:
+            job["stored"] = _store_file(job["order_id"], content, ext, filename)
     except Exception as exc:
         job["status"] = "error"
         job["stage"] = "error"
         job["error"] = str(exc)[:300] or exc.__class__.__name__
+
+
+def _store_file(order_id, content, ext, filename):
+    """Faylni doimiy papkaga yozib, buyurtmaga bog'laydi."""
+    try:
+        os.makedirs(FILES_DIR, exist_ok=True)
+        path = os.path.join(FILES_DIR, f"{int(order_id)}.{ext}")
+        with open(path, "wb") as handle:
+            handle.write(content)
+        with _db() as con:
+            con.execute("UPDATE orders SET file_path=?, file_name=? WHERE id=?",
+                        (path, filename, int(order_id)))
+            con.commit()
+        return path
+    except Exception:
+        return None
+
+
+def _order_file(uid, order_id):
+    """(path, filename) — buyurtma fayli mavjud bo'lsa."""
+    try:
+        with _db() as con:
+            row = con.execute(
+                "SELECT file_path, file_name FROM orders WHERE id=? AND user_id=?",
+                (int(order_id), int(uid)),
+            ).fetchone()
+    except Exception:
+        return None, None
+    if not row:
+        return None, None
+    path = row["file_path"] if "file_path" in row.keys() else None
+    name = row["file_name"] if "file_name" in row.keys() else None
+    if path and os.path.isfile(path):
+        return path, name or os.path.basename(path)
+    return None, None
 
 
 def _save_order(user_id, service, topic, options):
@@ -682,6 +725,26 @@ def api_download():
     uid = _token_user()
     if not uid:
         return _unauthorized()
+
+    # Doimiy saqlangan buyurtma fayli (muddat cheklovisiz).
+    order_id = request.args.get("order")
+    if order_id:
+        try:
+            order_id = int(order_id)
+        except (TypeError, ValueError):
+            order_id = 0
+        path, name = _order_file(uid, order_id) if order_id else (None, None)
+        if not path and order_id:
+            # Doimiy nusxa yo'q bo'lsa, hali xotirada turgan ish faylini beramiz.
+            for item in JOBS.values():
+                if (item.get("user_id") == uid and item.get("order_id") == order_id
+                        and item.get("file") and os.path.isfile(item["file"])):
+                    path, name = item["file"], item.get("filename")
+                    break
+        if path:
+            return send_file(path, as_attachment=True, download_name=name)
+        return jsonify({"ok": False, "error": "file", "message": "Fayl topilmadi."}), 404
+
     job = JOBS.get(str(request.args.get("id") or ""))
     if not job or job.get("user_id") != uid or job.get("status") != "done":
         return jsonify({"ok": False, "error": "file", "message": "Fayl tayyor emas."}), 404
@@ -699,11 +762,23 @@ def api_send():
         return _unauthorized()
     data = request.get_json(silent=True) or {}
     job = JOBS.get(str(data.get("job") or ""))
-    if not job or job.get("user_id") != uid or job.get("status") != "done":
-        return jsonify({"ok": False, "error": "file", "message": "Fayl tayyor emas."}), 404
-    path = job.get("file")
+    filename = None
+    if job and job.get("user_id") == uid and job.get("status") == "done":
+        path = job.get("file")
+        filename = job.get("filename")
+    else:
+        job = None
+        path = None
     if not path or not os.path.isfile(path):
-        return jsonify({"ok": False, "error": "file", "message": "Fayl o'chirilgan."}), 404
+        # Doimiy saqlangan nusxa
+        try:
+            order_id = int(data.get("order") or 0)
+        except (TypeError, ValueError):
+            order_id = 0
+        path, stored_name = _order_file(uid, order_id) if order_id else (None, None)
+        filename = stored_name
+    if not path or not os.path.isfile(path):
+        return jsonify({"ok": False, "error": "file", "message": "Fayl topilmadi."}), 404
     if not config.BOT_TOKEN:
         return jsonify({"ok": False, "error": "bot", "message": "Bot tokeni sozlanmagan."}), 500
 
@@ -716,7 +791,7 @@ def api_send():
         try:
             await bot.send_document(
                 chat_id=int(uid),
-                document=FSInputFile(path, filename=job.get("filename") or os.path.basename(path)),
+                document=FSInputFile(path, filename=filename or os.path.basename(path)),
             )
         finally:
             await bot.session.close()

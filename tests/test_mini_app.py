@@ -43,7 +43,7 @@ class MiniAppTests(unittest.TestCase):
             bonus_awarded INTEGER DEFAULT 0, created_at INTEGER, lang_set INTEGER DEFAULT 0);
         CREATE TABLE orders (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, service TEXT,
             topic TEXT, options TEXT, price INTEGER DEFAULT 0, status TEXT DEFAULT 'done',
-            result TEXT, created_at INTEGER);
+            result TEXT, created_at INTEGER, file_path TEXT, file_name TEXT);
         CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT);
         CREATE TABLE chat_messages (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER,
             role TEXT, content TEXT, created_at INTEGER);
@@ -170,6 +170,33 @@ class MiniAppTests(unittest.TestCase):
         token = self._token_for(571)
         self.assertEqual(self.client.post("/api/mini/chat", json={"token": token, "message": "  "}).status_code, 400)
         self.assertEqual(self.client.get("/api/mini/chat").status_code, 401)
+
+    def test_saved_order_file_can_be_downloaded_later(self):
+        token = self._token_for(580)
+        con = sqlite3.connect(config.DB_PATH)
+        con.execute("INSERT INTO orders(user_id,service,topic,options,price,status,created_at) "
+                    "VALUES(580,'referat','Saqlangan',?,0,'done',?)", ('{"pages": 7}', int(time.time())))
+        con.commit()
+        order_id = con.execute("SELECT id FROM orders WHERE user_id=580").fetchone()[0]
+        con.close()
+
+        original_dir = mini_app.FILES_DIR
+        with tempfile.TemporaryDirectory() as files_dir:
+            mini_app.FILES_DIR = files_dir
+            try:
+                stored = mini_app._store_file(order_id, b"FILE-BYTES", "docx", "Referat.docx")
+                self.assertTrue(stored and os.path.isfile(stored))
+                detail = self.client.get(f"/api/mini/order?id={order_id}&token={token}").get_json()
+                self.assertTrue(detail["download"])
+                self.assertEqual(detail["filename"], "Referat.docx")
+                response = self.client.get(f"/api/mini/download?order={order_id}&token={token}")
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(response.data, b"FILE-BYTES")
+                other = self._token_for(581)
+                self.assertEqual(
+                    self.client.get(f"/api/mini/download?order={order_id}&token={other}").status_code, 404)
+            finally:
+                mini_app.FILES_DIR = original_dir
 
     def test_page_is_served(self):
         response = self.client.get("/app")

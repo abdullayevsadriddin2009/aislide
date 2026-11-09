@@ -144,7 +144,7 @@ const T = {
     confirmTitle:"Buyurtmani tasdiqlang", confirmYes:"Tasdiqlash", cancelBtn:"Bekor qilish", serviceLabel:"Xizmat", priceLabel:"Narx", freeLabel:"Bepul",
     chat:"AI Chat", chatPh:"Savolingizni yozing…", chatEmpty:"Savol bering — javob beraman va suhbatni davom ettiraman.", chatThinking:"O‘ylayapman…",
     date:"Sana",
-    fileGone:"Yuklab olish fayli 3 soatdan keyin o‘chiriladi — hujjatni qaytadan yaratishingiz mumkin.",
+    fileGone:"Bu buyurtma uchun fayl saqlanmagan — hujjatni qaytadan yaratishingiz mumkin.",
     emptyOrders:"Hozircha buyurtma yo‘q", bal:"Balans", bonus:"Bonus", premium:"Premium",
     ordersCount:"Buyurtmalar", openBot:"Botni ochish", freeMode:"Bepul rejim yoqilgan",
     needTopic:"Mavzuni kamida 3 belgi bilan yozing", copied:"Nusxa olindi",
@@ -167,7 +167,7 @@ const T = {
     confirmTitle:"Подтвердите заказ", confirmYes:"Подтвердить", cancelBtn:"Отмена", serviceLabel:"Услуга", priceLabel:"Цена", freeLabel:"Бесплатно",
     chat:"AI Chat", chatPh:"Напишите вопрос…", chatEmpty:"Задайте вопрос — отвечу и продолжу диалог.", chatThinking:"Думаю…",
     date:"Дата",
-    fileGone:"Файл хранится 3 часа — документ можно создать заново.",
+    fileGone:"Файл для этого заказа не сохранён — документ можно создать заново.",
     emptyOrders:"Заказов пока нет", bal:"Баланс", bonus:"Бонус", premium:"Премиум",
     ordersCount:"Заказов", openBot:"Открыть бота", freeMode:"Включён бесплатный режим",
     needTopic:"Введите тему минимум из 3 символов", copied:"Скопировано",
@@ -190,7 +190,7 @@ const T = {
     confirmTitle:"Confirm your order", confirmYes:"Confirm", cancelBtn:"Cancel", serviceLabel:"Service", priceLabel:"Price", freeLabel:"Free",
     chat:"AI Chat", chatPh:"Write your question…", chatEmpty:"Ask a question — I will answer and keep the conversation going.", chatThinking:"Thinking…",
     date:"Date",
-    fileGone:"The file is kept for 3 hours — you can create the document again.",
+    fileGone:"No file was saved for this order — you can create the document again.",
     emptyOrders:"No orders yet", bal:"Balance", bonus:"Bonus", premium:"Premium",
     ordersCount:"Orders", openBot:"Open the bot", freeMode:"Free mode is on",
     needTopic:"Enter a topic of at least 3 characters", copied:"Copied",
@@ -213,7 +213,7 @@ const T = {
     confirmTitle:"Siparişi onaylayın", confirmYes:"Onayla", cancelBtn:"İptal", serviceLabel:"Hizmet", priceLabel:"Fiyat", freeLabel:"Ücretsiz",
     chat:"AI Chat", chatPh:"Sorunuzu yozın…", chatEmpty:"Bir soru sorun — cevaplayıp sohbete devam ederim.", chatThinking:"Düşünüyorum…",
     date:"Tarih",
-    fileGone:"Dosya 3 saat saklanır — belgeyi yeniden oluşturabilirsiniz.",
+    fileGone:"Bu sipariş için dosya kaydedilmemiş — belgeyi yeniden oluşturabilirsiniz.",
     emptyOrders:"Henüz sipariş yok", bal:"Bakiye", bonus:"Bonus", premium:"Premium",
     ordersCount:"Sipariş", openBot:"Botu aç", freeMode:"Ücretsiz mod açık",
     needTopic:"En az 3 karakterlik konu girin", copied:"Kopyalandı",
@@ -236,7 +236,7 @@ const T = {
     confirmTitle:"Bestellung bestätigen", confirmYes:"Bestätigen", cancelBtn:"Abbrechen", serviceLabel:"Dienst", priceLabel:"Preis", freeLabel:"Kostenlos",
     chat:"AI Chat", chatPh:"Schreiben Sie Ihre Frage…", chatEmpty:"Stellen Sie eine Frage — ich antworte und führe das Gespräch fort.", chatThinking:"Denke nach…",
     date:"Datum",
-    fileGone:"Die Datei bleibt 3 Stunden verfügbar — das Dokument lässt sich neu erstellen.",
+    fileGone:"Für diese Bestellung ist keine Datei gespeichert — das Dokument lässt sich neu erstellen.",
     emptyOrders:"Noch keine Bestellungen", bal:"Guthaben", bonus:"Bonus", premium:"Premium",
     ordersCount:"Bestellungen", openBot:"Bot öffnen", freeMode:"Kostenloser Modus aktiv",
     needTopic:"Geben Sie ein Thema mit mindestens 3 Zeichen ein", copied:"Kopiert",
@@ -259,7 +259,7 @@ const T = {
     confirmTitle:"Confirmez la commande", confirmYes:"Confirmer", cancelBtn:"Annuler", serviceLabel:"Service", priceLabel:"Prix", freeLabel:"Gratuit",
     chat:"AI Chat", chatPh:"Écrivez votre question…", chatEmpty:"Posez une question — je réponds et je continue la conversation.", chatThinking:"Je réfléchis…",
     date:"Date",
-    fileGone:"Le fichier est conservé 3 heures — vous pouvez recréer le document.",
+    fileGone:"Aucun fichier n’est conservé pour cette commande — vous pouvez recréer le document.",
     emptyOrders:"Aucune commande pour l’instant", bal:"Solde", bonus:"Bonus", premium:"Premium",
     ordersCount:"Commandes", openBot:"Ouvrir le bot", freeMode:"Mode gratuit activé",
     needTopic:"Saisissez un sujet d’au moins 3 caractères", copied:"Copié",
@@ -719,8 +719,8 @@ function renderOrderDetail(){
   else if (options.questions) detail = options.questions + " " + t("questionsUnit");
   else if (options.count) detail = options.count + " " + t("slidesUnit");
   const job = state.orderDetail.job;
-  const hasFile = !!job && !!state.orderDetail.file;
-  const href = hasFile ? `/api/mini/download?id=${encodeURIComponent(job)}&token=${encodeURIComponent(state.token)}` : "";
+  const hasFile = !!state.orderDetail.download;
+  const href = hasFile ? `/api/mini/download?order=${encodeURIComponent(order.id)}&token=${encodeURIComponent(state.token)}` : "";
   app.innerHTML = `<div class="wrap">
     <div class="head"><button class="back" id="back">‹</button><h1>${FILES[order.service] || "📄"} ${esc(order.service_name || order.service)}</h1></div>
     <div class="card">
@@ -740,7 +740,7 @@ function renderOrderDetail(){
   if (sendBtn) sendBtn.onclick = async (event) => {
     const button = event.currentTarget; button.disabled = true; button.textContent = "⏳";
     try {
-      await api("/api/mini/send", {method:"POST", body: JSON.stringify({token: state.token, job})});
+      await api("/api/mini/send", {method:"POST", body: JSON.stringify({token: state.token, job, order: order.id})});
       button.textContent = "✅ " + t("sent");
       toast(t("sent"));
     } catch (error) { button.disabled = false; button.textContent = "📤 " + t("send"); toast(error.message); }
