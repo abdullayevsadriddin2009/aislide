@@ -36,6 +36,11 @@ WEB_ADMIN_PORT = int(os.getenv("PORT", os.getenv("WEB_ADMIN_PORT", "5000")))
 WEB_ADMIN_PASSWORD = os.getenv("WEB_ADMIN_PASSWORD", "").strip()
 WEB_ADMIN_SECRET_KEY = os.getenv("WEB_ADMIN_SECRET_KEY", "").strip()
 
+# ===== Telegram Mini App =====
+# HTTPS manzil (Render domeni). Bo'sh bo'lsa Mini App tugmasi ko'rsatilmaydi.
+WEBAPP_URL = (os.getenv("WEBAPP_URL", "").strip()
+              or (os.getenv("RENDER_EXTERNAL_URL", "").strip())).rstrip("/")
+
 # ===== To'lov =====
 FREE_MODE = os.getenv("FREE_MODE", "1") == "1"
 DEFAULT_PAYMENT_INFO = os.getenv("DEFAULT_PAYMENT_INFO", "Humo: 9860 0000 0000 0000")

@@ -1,13 +1,29 @@
 from aiogram.types import (ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton)
+from aiogram.types import WebAppInfo
+import config
 from texts import t
 from services import SERVICES, service_name
 # Eski dizaynlarga tegishli importlar olib tashlandi
 from designs import SUBJECT_KEYS, subject_name, LANGUAGES, DESIGNS, DESIGN_KEYS, design_name
 
 # ===== Asosiy menyu =====
+def mini_app_kb(lang="uz"):
+    """Mini App'ni ochuvchi inline tugma (Telegram WebApp)."""
+    if not config.WEBAPP_URL:
+        return None
+    return InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(text=t("btn_app", lang),
+                             web_app=WebAppInfo(url=config.WEBAPP_URL + "/app"))
+    ]])
+
+
 def main_kb(lang="uz"):
+    mini_row = []
+    if config.WEBAPP_URL:
+        mini_row = [[KeyboardButton(text=t("btn_app", lang),
+                                    web_app=WebAppInfo(url=config.WEBAPP_URL + "/app"))]]
     return ReplyKeyboardMarkup(keyboard=[
-        [KeyboardButton(text=t("btn_create", lang))],
+        [KeyboardButton(text=t("btn_create", lang))]] + mini_row + [
         [KeyboardButton(text=t("btn_chat", lang)), KeyboardButton(text=t("btn_balance", lang))],
         [KeyboardButton(text=t("btn_referral", lang)), KeyboardButton(text=t("btn_help", lang))],
         [KeyboardButton(text=t("btn_lang", lang))],

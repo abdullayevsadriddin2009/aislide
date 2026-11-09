@@ -57,6 +57,20 @@ async def main():
         return
 
     log.info("Bot ishga tushdi: @%s (id=%s). Admin: %s", me.username, me.id, config.ADMIN_ID)
+
+    # Mini App: chat input yonidagi menyu tugmasi
+    if config.WEBAPP_URL:
+        try:
+            from aiogram.types import MenuButtonWebApp, WebAppInfo
+            await bot.set_chat_menu_button(menu_button=MenuButtonWebApp(
+                text="Mini App",
+                web_app=WebAppInfo(url=config.WEBAPP_URL + "/app"),
+            ))
+            log.info("Mini App menyu tugmasi o'rnatildi: %s/app", config.WEBAPP_URL)
+        except Exception as e:
+            log.warning("Mini App menyu tugmasi o'rnatilmadi: %s", e)
+    else:
+        log.warning("WEBAPP_URL sozlanmagan — Mini App tugmasi ko'rinmaydi.")
     try:
         from texts import t
         try:

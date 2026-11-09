@@ -1,0 +1,642 @@
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Talaba AI — Mini App</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+  :root{
+    --bg: var(--tg-theme-bg-color, #f4f6fb);
+    --card: var(--tg-theme-secondary-bg-color, #ffffff);
+    --text: var(--tg-theme-text-color, #172033);
+    --hint: var(--tg-theme-hint-color, #7c8799);
+    --link: var(--tg-theme-link-color, #4f7cff);
+    --btn: var(--tg-theme-button-color, #4f7cff);
+    --btn-text: var(--tg-theme-button-text-color, #ffffff);
+    --accent: linear-gradient(135deg,#5b8cff,#8b5cf6);
+    --line: rgba(120,135,160,.18);
+    --ok: #22c55e;
+    --warn: #f59e0b;
+    --err: #ef4444;
+    --radius: 18px;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;padding:0;background:var(--bg);color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+    font-size:15px;line-height:1.45;overscroll-behavior-y:contain}
+  body{padding-bottom:86px}
+  a{color:var(--link);text-decoration:none}
+  .wrap{max-width:640px;margin:0 auto;padding:14px 14px 0}
+  .top{display:flex;align-items:center;gap:12px;padding:8px 2px 14px}
+  .avatar{width:44px;height:44px;border-radius:50%;background:var(--accent);color:#fff;
+    display:flex;align-items:center;justify-content:center;font-weight:700;font-size:18px;flex:0 0 auto}
+  .hello{flex:1;min-width:0}
+  .hello b{display:block;font-size:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .hello span{font-size:12.5px;color:var(--hint)}
+  .pill{background:var(--card);border:1px solid var(--line);border-radius:999px;
+    padding:7px 12px;font-size:12.5px;font-weight:600;white-space:nowrap}
+  h2{font-size:15px;margin:18px 2px 10px;color:var(--hint);font-weight:600;letter-spacing:.2px}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .svc{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);
+    padding:14px;display:flex;flex-direction:column;gap:6px;cursor:pointer;transition:transform .12s,box-shadow .12s}
+  .svc:active{transform:scale(.97)}
+  .svc .emoji{font-size:22px}
+  .svc .name{font-weight:600;font-size:14px}
+  .svc .meta{font-size:11.5px;color:var(--hint)}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:14px;margin-bottom:12px}
+  label{display:block;font-size:12.5px;color:var(--hint);margin:10px 2px 6px;font-weight:600}
+  input,textarea,select{width:100%;padding:12px 13px;border-radius:14px;border:1px solid var(--line);
+    background:var(--bg);color:var(--text);font-size:15px;font-family:inherit;outline:none}
+  input:focus,textarea:focus,select:focus{border-color:var(--btn)}
+  textarea{min-height:84px;resize:vertical}
+  .chips{display:flex;flex-wrap:wrap;gap:8px}
+  .chip{padding:9px 14px;border-radius:999px;border:1px solid var(--line);background:var(--bg);
+    font-size:13.5px;font-weight:600;cursor:pointer;color:var(--text)}
+  .chip.sel{background:var(--btn);border-color:var(--btn);color:var(--btn-text)}
+  .row{display:flex;gap:10px}
+  .row>*{flex:1}
+  .btn{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;padding:15px;
+    border-radius:16px;border:none;background:var(--btn);color:var(--btn-text);
+    font-size:15.5px;font-weight:700;cursor:pointer;font-family:inherit}
+  .btn:disabled{opacity:.5}
+  .btn.ghost{background:transparent;border:1px solid var(--line);color:var(--text)}
+  .btn.small{padding:11px;font-size:14px;border-radius:13px}
+  .btn.danger{background:var(--err)}
+  .stack{display:flex;flex-direction:column;gap:10px}
+  .muted{color:var(--hint);font-size:12.5px}
+  .center{text-align:center}
+  .head{display:flex;align-items:center;gap:10px;margin:6px 0 14px}
+  .back{width:38px;height:38px;border-radius:12px;border:1px solid var(--line);background:var(--card);
+    color:var(--text);font-size:18px;display:flex;align-items:center;justify-content:center;cursor:pointer}
+  .head h1{font-size:18px;margin:0}
+  .progress{height:8px;border-radius:99px;background:var(--line);overflow:hidden;margin:14px 0 6px}
+  .progress i{display:block;height:100%;width:0;background:var(--accent);transition:width .4s}
+  .spinner{width:26px;height:26px;border-radius:50%;border:3px solid var(--line);
+    border-top-color:var(--btn);animation:spin 1s linear infinite;margin:0 auto 10px}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .order{display:flex;gap:12px;align-items:center;padding:12px 0;border-bottom:1px solid var(--line)}
+  .order:last-child{border-bottom:none}
+  .order .ico{width:38px;height:38px;border-radius:12px;background:var(--bg);display:flex;
+    align-items:center;justify-content:center;font-size:18px;flex:0 0 auto}
+  .order .body{flex:1;min-width:0}
+  .order .body b{display:block;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .order .body span{font-size:11.5px;color:var(--hint)}
+  .empty{text-align:center;color:var(--hint);padding:32px 10px}
+  .tabs{position:fixed;left:0;right:0;bottom:0;background:var(--card);border-top:1px solid var(--line);
+    display:flex;padding:8px 6px calc(8px + env(safe-area-inset-bottom));z-index:20}
+  .tabs button{flex:1;background:none;border:none;color:var(--hint);font-size:11.5px;font-weight:600;
+    display:flex;flex-direction:column;align-items:center;gap:3px;padding:6px 0;cursor:pointer;font-family:inherit}
+  .tabs button .ic{font-size:19px;line-height:1}
+  .tabs button.on{color:var(--btn)}
+  .toast{position:fixed;left:50%;bottom:96px;transform:translateX(-50%) translateY(20px);
+    background:#111827;color:#fff;padding:11px 16px;border-radius:12px;font-size:13px;
+    opacity:0;pointer-events:none;transition:.25s;z-index:50;max-width:88%;text-align:center}
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+  .badge{display:inline-block;font-size:11px;font-weight:700;padding:3px 8px;border-radius:99px;
+    background:rgba(79,124,255,.12);color:var(--btn)}
+  .field-note{font-size:11.5px;color:var(--hint);margin:4px 2px 0}
+  .kv{display:flex;justify-content:space-between;padding:9px 0;border-bottom:1px solid var(--line);font-size:14px}
+  .kv:last-child{border-bottom:none}
+  .kv span{color:var(--hint)}
+  .loading{display:flex;flex-direction:column;align-items:center;padding:60px 0;color:var(--hint)}
+</style>
+</head>
+<body>
+<div id="app"><div class="loading"><div class="spinner"></div>Yuklanmoqda…</div></div>
+<nav class="tabs" id="tabs" style="display:none">
+  <button data-tab="home" class="on"><span class="ic">✨</span><span id="tab-home">Yaratish</span></button>
+  <button data-tab="orders"><span class="ic">🗂</span><span id="tab-orders">Buyurtmalar</span></button>
+  <button data-tab="profile"><span class="ic">👤</span><span id="tab-profile">Profil</span></button>
+</nav>
+<div class="toast" id="toast"></div>
+
+<script>
+"use strict";
+const tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
+if (tg) { try { tg.ready(); tg.expand(); tg.setHeaderColor && tg.setHeaderColor("secondary_bg_color"); } catch(e){} }
+
+const T = {
+  uz:{ create:"Yaratish", orders:"Buyurtmalar", profile:"Profil", newdoc:"Yangi hujjat",
+    pick:"Xizmatni tanlang", topic:"Mavzu", topicPh:"Masalan: Sun’iy intellekt ta’lim tizimida",
+    pages:"Hajm", lang:"Til", format:"Format", author:"Bajardi (F.I.Sh.)", authorPh:"Aliyeva N., 201-guruh",
+    inst:"OTM nomi", instPh:"Toshkent davlat iqtisodiyot universiteti",
+    fac:"Fakultet", dept:"Kafedra", subject:"Fan", checker:"Tekshirdi",
+    extra:"Titul ma’lumotlari", slides:"Taqdimot", design:"Dizayn", subj:"Fan yo‘nalishi",
+    make:"Yaratish", next:"Davom etish", plan:"REJA tuzish", planTitle:"REJA",
+    planHint:"Rejani tekshiring yoki tahrirlang, so‘ng davom eting.",
+    creating:"Yaratilmoqda", queued:"Navbatda…", writing:"Matn yozilmoqda…",
+    images:"Rasmlar yuklanmoqda…", building:"Fayl yig‘ilmoqda…", convert:"PDF ga o‘girilmoqda…",
+    wait:"Bu 1–4 daqiqa vaqt olishi mumkin. Sahifani yopsangiz ham ish davom etadi.",
+    ready:"Fayl tayyor!", download:"Yuklab olish", send:"Telegramga yuborish",
+    sent:"Yuborildi!", again:"Yana yaratish", error:"Xatolik",
+    emptyOrders:"Hozircha buyurtma yo‘q", bal:"Balans", bonus:"Bonus", premium:"Premium",
+    ordersCount:"Buyurtmalar", openBot:"Botni ochish", freeMode:"Bepul rejim yoqilgan",
+    needTopic:"Mavzuni kamida 3 belgi bilan yozing", copied:"Nusxa olindi",
+    size:"Hajm", serv:"Xizmat", noAuth:"Mini App faqat Telegram ichida ishlaydi.",
+    pagesUnit:"bet", wordsUnit:"so‘z", slidesUnit:"slayd", questionsUnit:"savol",
+    close:"Yopish", planReady:"Reja tayyor", retry:"Qayta urinish"},
+  ru:{ create:"Создать", orders:"Заказы", profile:"Профиль", newdoc:"Новый документ",
+    pick:"Выберите услугу", topic:"Тема", topicPh:"Например: Искусственный интеллект в образовании",
+    pages:"Объём", lang:"Язык", format:"Формат", author:"Исполнитель (Ф.И.О.)", authorPh:"Алиева Н., 201-группа",
+    inst:"Название вуза", instPh:"Ташкентский государственный экономический университет",
+    fac:"Факультет", dept:"Кафедра", subject:"Предмет", checker:"Проверил",
+    extra:"Данные титульного листа", slides:"Презентация", design:"Дизайн", subj:"Направление",
+    make:"Создать", next:"Продолжить", plan:"Составить ПЛАН", planTitle:"ПЛАН",
+    planHint:"Проверьте или отредактируйте план, затем продолжите.",
+    creating:"Создаётся", queued:"В очереди…", writing:"Пишется текст…",
+    images:"Загрузка изображений…", building:"Собирается файл…", convert:"Конвертация в PDF…",
+    wait:"Это может занять 1–4 минуты. Работа продолжится, даже если закрыть страницу.",
+    ready:"Файл готов!", download:"Скачать", send:"Отправить в Telegram",
+    sent:"Отправлено!", again:"Создать ещё", error:"Ошибка",
+    emptyOrders:"Заказов пока нет", bal:"Баланс", bonus:"Бонус", premium:"Премиум",
+    ordersCount:"Заказов", openBot:"Открыть бота", freeMode:"Включён бесплатный режим",
+    needTopic:"Введите тему минимум из 3 символов", copied:"Скопировано",
+    size:"Объём", serv:"Услуга", noAuth:"Mini App работает только внутри Telegram.",
+    pagesUnit:"стр.", wordsUnit:"слов", slidesUnit:"слайдов", questionsUnit:"вопросов",
+    close:"Закрыть", planReady:"План готов", retry:"Повторить"},
+  en:{ create:"Create", orders:"Orders", profile:"Profile", newdoc:"New document",
+    pick:"Choose a service", topic:"Topic", topicPh:"For example: Artificial intelligence in education",
+    pages:"Volume", lang:"Language", format:"Format", author:"Author (full name)", authorPh:"Aliyeva N., group 201",
+    inst:"University", instPh:"Tashkent State University of Economics",
+    fac:"Faculty", dept:"Department", subject:"Subject", checker:"Supervisor",
+    extra:"Title page details", slides:"Presentation", design:"Design", subj:"Subject area",
+    make:"Create", next:"Continue", plan:"Build OUTLINE", planTitle:"OUTLINE",
+    planHint:"Review or edit the outline, then continue.",
+    creating:"Creating", queued:"Queued…", writing:"Writing the text…",
+    images:"Downloading images…", building:"Building the file…", convert:"Converting to PDF…",
+    wait:"This can take 1–4 minutes. The job continues even if you close the page.",
+    ready:"Your file is ready!", download:"Download", send:"Send to Telegram",
+    sent:"Sent!", again:"Create another", error:"Error",
+    emptyOrders:"No orders yet", bal:"Balance", bonus:"Bonus", premium:"Premium",
+    ordersCount:"Orders", openBot:"Open the bot", freeMode:"Free mode is on",
+    needTopic:"Enter a topic of at least 3 characters", copied:"Copied",
+    size:"Size", serv:"Service", noAuth:"Mini App works only inside Telegram.",
+    pagesUnit:"pages", wordsUnit:"words", slidesUnit:"slides", questionsUnit:"questions",
+    close:"Close", planReady:"Outline ready", retry:"Retry"},
+  tr:{ create:"Oluştur", orders:"Siparişler", profile:"Profil", newdoc:"Yeni belge",
+    pick:"Hizmet seçin", topic:"Konu", topicPh:"Örneğin: Eğitimde yapay zekâ",
+    pages:"Hacim", lang:"Dil", format:"Format", author:"Hazırlayan (ad soyad)", authorPh:"Aliyeva N., 201. grup",
+    inst:"Üniversite", instPh:"Taşkent Devlet Ekonomi Üniversitesi",
+    fac:"Fakülte", dept:"Bölüm", subject:"Ders", checker:"Kontrol eden",
+    extra:"Kapak bilgileri", slides:"Sunum", design:"Tasarım", subj:"Alan",
+    make:"Oluştur", next:"Devam", plan:"PLAN oluştur", planTitle:"PLAN",
+    planHint:"Planı kontrol edin veya düzenleyin, sonra devam edin.",
+    creating:"Oluşturuluyor", queued:"Sırada…", writing:"Metin yazılıyor…",
+    images:"Görseller indiriliyor…", building:"Dosya hazırlanıyor…", convert:"PDF’e dönüştürülüyor…",
+    wait:"Bu 1–4 dakika sürebilir. Sayfayı kapatsanız da iş devam eder.",
+    ready:"Dosya hazır!", download:"İndir", send:"Telegram’a gönder",
+    sent:"Gönderildi!", again:"Yeniden oluştur", error:"Hata",
+    emptyOrders:"Henüz sipariş yok", bal:"Bakiye", bonus:"Bonus", premium:"Premium",
+    ordersCount:"Sipariş", openBot:"Botu aç", freeMode:"Ücretsiz mod açık",
+    needTopic:"En az 3 karakterlik konu girin", copied:"Kopyalandı",
+    size:"Hacim", serv:"Hizmet", noAuth:"Mini App yalnızca Telegram içinde çalışır.",
+    pagesUnit:"sayfa", wordsUnit:"kelime", slidesUnit:"slayt", questionsUnit:"soru",
+    close:"Kapat", planReady:"Plan hazır", retry:"Tekrar"},
+  de:{ create:"Erstellen", orders:"Bestellungen", profile:"Profil", newdoc:"Neues Dokument",
+    pick:"Dienst wählen", topic:"Thema", topicPh:"Zum Beispiel: Künstliche Intelligenz in der Bildung",
+    pages:"Umfang", lang:"Sprache", format:"Format", author:"Bearbeiter (Name)", authorPh:"Aliyeva N., Gruppe 201",
+    inst:"Hochschule", instPh:"Staatliche Wirtschaftsuniversität Taschkent",
+    fac:"Fakultät", dept:"Lehrstuhl", subject:"Fach", checker:"Geprüft von",
+    extra:"Angaben zum Titelblatt", slides:"Präsentation", design:"Design", subj:"Fachbereich",
+    make:"Erstellen", next:"Weiter", plan:"GLIEDERUNG erstellen", planTitle:"GLIEDERUNG",
+    planHint:"Prüfen oder bearbeiten Sie die Gliederung und fahren Sie fort.",
+    creating:"Wird erstellt", queued:"In der Warteschlange…", writing:"Text wird geschrieben…",
+    images:"Bilder werden geladen…", building:"Datei wird erstellt…", convert:"Umwandlung in PDF…",
+    wait:"Das kann 1–4 Minuten dauern. Der Auftrag läuft auch nach dem Schließen weiter.",
+    ready:"Datei ist fertig!", download:"Herunterladen", send:"An Telegram senden",
+    sent:"Gesendet!", again:"Weiteres erstellen", error:"Fehler",
+    emptyOrders:"Noch keine Bestellungen", bal:"Guthaben", bonus:"Bonus", premium:"Premium",
+    ordersCount:"Bestellungen", openBot:"Bot öffnen", freeMode:"Kostenloser Modus aktiv",
+    needTopic:"Geben Sie ein Thema mit mindestens 3 Zeichen ein", copied:"Kopiert",
+    size:"Umfang", serv:"Dienst", noAuth:"Mini App funktioniert nur in Telegram.",
+    pagesUnit:"Seiten", wordsUnit:"Wörter", slidesUnit:"Folien", questionsUnit:"Fragen",
+    close:"Schließen", planReady:"Gliederung fertig", retry:"Erneut"},
+  fr:{ create:"Créer", orders:"Commandes", profile:"Profil", newdoc:"Nouveau document",
+    pick:"Choisissez un service", topic:"Sujet", topicPh:"Par exemple : L’intelligence artificielle dans l’éducation",
+    pages:"Volume", lang:"Langue", format:"Format", author:"Auteur (nom complet)", authorPh:"Aliyeva N., groupe 201",
+    inst:"Université", instPh:"Université d’État d’économie de Tachkent",
+    fac:"Faculté", dept:"Chaire", subject:"Matière", checker:"Vérifié par",
+    extra:"Données de la page de titre", slides:"Présentation", design:"Design", subj:"Domaine",
+    make:"Créer", next:"Continuer", plan:"Créer le PLAN", planTitle:"PLAN",
+    planHint:"Vérifiez ou modifiez le plan, puis continuez.",
+    creating:"Création", queued:"En attente…", writing:"Rédaction du texte…",
+    images:"Téléchargement des images…", building:"Assemblage du fichier…", convert:"Conversion en PDF…",
+    wait:"Cela peut prendre 1 à 4 minutes. Le travail continue même si vous fermez la page.",
+    ready:"Le fichier est prêt !", download:"Télécharger", send:"Envoyer sur Telegram",
+    sent:"Envoyé !", again:"Créer un autre", error:"Erreur",
+    emptyOrders:"Aucune commande pour l’instant", bal:"Solde", bonus:"Bonus", premium:"Premium",
+    ordersCount:"Commandes", openBot:"Ouvrir le bot", freeMode:"Mode gratuit activé",
+    needTopic:"Saisissez un sujet d’au moins 3 caractères", copied:"Copié",
+    size:"Volume", serv:"Service", noAuth:"La Mini App fonctionne uniquement dans Telegram.",
+    pagesUnit:"pages", wordsUnit:"mots", slidesUnit:"diapositives", questionsUnit:"questions",
+    close:"Fermer", planReady:"Plan prêt", retry:"Réessayer"}
+};
+const LANGS = [["uz","O‘zbekcha"],["ru","Русский"],["en","English"],["tr","Türkçe"],["de","Deutsch"],["fr","Français"]];
+const FILES = {slide:"📊",referat:"📄",mustaqil:"📝",kurs:"📘",diplom:"🎓",insho:"✍️",esse:"🖊️",test:"✅",maqola:"📰",tezis:"🎓"};
+
+const state = {
+  lang:"uz", token:"", user:null, services:[], designs:[], subjects:[], history:[],
+  freeMode:true, tab:"home", service:null, job:null, plan:"", busy:false,
+  form:{ topic:"", pages:"", words:"", questions:"", count:12, lang:"uz", format:"docx",
+         author:"", institution:"", faculty:"", dept:"", subject:"", checker:"", email:"",
+         design_key:"modern", subject_key:"umumiy" }
+};
+const app = document.getElementById("app");
+const tabs = document.getElementById("tabs");
+const toastEl = document.getElementById("toast");
+const esc = (v) => String(v == null ? "" : v).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const t = (key) => (T[state.lang] && T[state.lang][key]) || T.en[key] || key;
+
+function toast(message){
+  toastEl.textContent = message; toastEl.classList.add("show");
+  clearTimeout(toastEl._timer); toastEl._timer = setTimeout(() => toastEl.classList.remove("show"), 2400);
+}
+function fmtSize(bytes){ if(!bytes) return ""; const kb = bytes/1024; return kb > 1024 ? (kb/1024).toFixed(1)+" MB" : Math.round(kb)+" KB"; }
+function fmtDate(ts){ try { return new Date(ts*1000).toLocaleDateString(); } catch(e){ return ""; } }
+
+async function api(path, options){
+  const response = await fetch(path, Object.assign({headers:{"Content-Type":"application/json"}}, options));
+  let data = {};
+  try { data = await response.json(); } catch(e){ data = {}; }
+  if(!response.ok || data.ok === false){ throw new Error((data && data.message) || ("HTTP " + response.status)); }
+  return data;
+}
+
+function setTabsLabels(){
+  document.getElementById("tab-home").textContent = t("create");
+  document.getElementById("tab-orders").textContent = t("orders");
+  document.getElementById("tab-profile").textContent = t("profile");
+}
+
+function boot(initPayload){
+  state.lang = initPayload.user?.lang || state.lang;
+  state.token = initPayload.token;
+  state.user = initPayload.user;
+  state.services = initPayload.services || [];
+  state.designs = initPayload.designs || [];
+  state.subjects = initPayload.subjects || [];
+  state.history = initPayload.history || [];
+  state.freeMode = !!initPayload.free_mode;
+  state.form.lang = state.lang;
+  tabs.style.display = "flex";
+  setTabsLabels();
+  render();
+}
+
+async function bootFromTelegram(){
+  const dev = new URLSearchParams(location.search).get("dev");
+  const payload = { initData: tg ? tg.initData : "", lang: (tg && tg.initDataUnsafe && tg.initDataUnsafe.user && tg.initDataUnsafe.user.language_code) || "uz" };
+  if (dev) payload.dev_user = dev;
+  else if (!payload.initData && window.__MINI_DEV__) payload.dev_user = "123";
+  try {
+    boot(await api("/api/mini/init", {method:"POST", body: JSON.stringify(payload)}));
+  } catch (error) {
+    app.innerHTML = `<div class="wrap"><div class="card center" style="margin-top:40px">
+      <div style="font-size:42px">📱</div><h3>${esc(t("noAuth"))}</h3>
+      <p class="muted">${esc(error.message || "")}</p>
+      ${tg ? `<button class="btn" onclick="tg.close()">${esc(t("close"))}</button>` : ""}
+    </div></div>`;
+  }
+}
+
+/* =====================  Render  ===================== */
+function render(){
+  if (!state.user) return;
+  setTabsLabels();
+  if (state.tab === "orders") return renderOrders();
+  if (state.tab === "profile") return renderProfile();
+  if (state.service) return renderForm();
+  return renderHome();
+}
+
+function header(){
+  const name = (state.user.first_name || "Talaba").slice(0, 24);
+  const initial = (name[0] || "T").toUpperCase();
+  return `<div class="top">
+    <div class="avatar">${esc(initial)}</div>
+    <div class="hello"><b>${esc(name)}</b><span>${state.freeMode ? esc(t("freeMode")) : esc(t("bal")) + ": " + (state.user.balance||0) + " so‘m"}</span></div>
+    <div class="pill">💎 ${state.user.balance||0}</div>
+  </div>`;
+}
+
+function renderHome(){
+  const cards = state.services.map(item => `
+    <div class="svc" data-svc="${esc(item.code)}">
+      <div class="emoji">${FILES[item.code] || item.emoji || "📄"}</div>
+      <div class="name">${esc(item.name)}</div>
+      <div class="meta">${optionSummary(item)}</div>
+    </div>`).join("");
+  app.innerHTML = `<div class="wrap">${header()}
+    <h2>${esc(t("pick"))}</h2>
+    <div class="grid">${cards}</div>
+    ${state.history.length ? `<h2>${esc(t("orders"))}</h2><div class="card">${state.history.slice(0,3).map(orderRow).join("")}</div>` : ""}
+    <p class="muted center" style="margin:18px 0 8px">Talaba AI · Mini App</p>
+  </div>`;
+  app.querySelectorAll("[data-svc]").forEach(node => node.onclick = () => openService(node.dataset.svc));
+}
+
+function optionSummary(item){
+  const unit = item.option_type === "words" ? t("wordsUnit") : item.option_type === "questions" ? t("questionsUnit")
+    : item.option_type === "slides" ? t("slidesUnit") : t("pagesUnit");
+  const values = (item.options || []).slice(0, 4).join(" / ");
+  return values + " " + unit;
+}
+
+function openService(code){
+  const item = state.services.find(s => s.code === code);
+  if (!item) return;
+  state.service = item;
+  state.job = null; state.plan = "";
+  state.form.pages = String(item.options[0]);
+  state.form.words = String(item.options[0]);
+  state.form.questions = String(item.options[0]);
+  state.form.count = 12;
+  state.form.format = code === "slide" ? "pptx" : "docx";
+  state.form.lang = state.lang;
+  render();
+}
+
+function renderForm(){
+  const item = state.service;
+  const academic = item.title_fields, authorOnly = item.author_only;
+  const isSlide = item.code === "slide";
+  const optionKey = item.option_type;
+  const unit = optionKey === "words" ? t("wordsUnit") : optionKey === "questions" ? t("questionsUnit")
+    : optionKey === "slides" ? t("slidesUnit") : t("pagesUnit");
+  const chips = (item.options || []).map(value =>
+    `<div class="chip ${String(state.form[optionKey === "words" ? "words" : optionKey === "questions" ? "questions" : "pages"]) === String(value) ? "sel" : ""}"
+      data-opt="${value}">${value} ${esc(unit)}</div>`).join("");
+  const langChips = LANGS.map(([code, name]) =>
+    `<div class="chip ${state.form.lang === code ? "sel" : ""}" data-lang="${code}">${esc(name)}</div>`).join("");
+
+  app.innerHTML = `<div class="wrap">
+    <div class="head"><button class="back" id="back">‹</button><h1>${FILES[item.code]||""} ${esc(item.name)}</h1></div>
+    <div class="card">
+      <label>${esc(t("topic"))}</label>
+      <textarea id="topic" placeholder="${esc(t("topicPh"))}"></textarea>
+      ${isSlide ? `<div class="field-note">${esc(t("slides"))}: ${esc(t("design"))} / ${esc(t("subj"))}</div>` : ""}
+    </div>
+    <div class="card">
+      <label>${esc(t("pages"))}${isSlide ? " (" + esc(t("slidesUnit")) + ")" : ""}</label>
+      <div class="chips" id="opts">${isSlide ? "" : chips}</div>
+      ${isSlide ? `<input id="slideCount" type="number" min="3" max="30" value="${state.form.count}">` : ""}
+      <label>${esc(t("lang"))}</label>
+      <div class="chips" id="langs">${langChips}</div>
+      ${isSlide ? `<label>${esc(t("subj"))}</label><select id="subjectKey">${state.subjects.map(s =>
+          `<option value="${esc(s.key)}" ${state.form.subject_key===s.key?"selected":""}>${esc(s.name)}</option>`).join("")}</select>
+        <label>${esc(t("design"))}</label><select id="designKey">${state.designs.map(d =>
+          `<option value="${esc(d.key)}" ${state.form.design_key===d.key?"selected":""}>${esc(d.name)}</option>`).join("")}</select>`
+        : `<label>${esc(t("format"))}</label><div class="chips" id="formats">
+            <div class="chip ${state.form.format==="docx"?"sel":""}" data-fmt="docx">DOCX</div>
+            <div class="chip ${state.form.format==="pdf"?"sel":""}" data-fmt="pdf">PDF</div></div>`}
+    </div>
+    <div class="card">
+      <label>${esc(t("author"))}</label>
+      <input id="author" placeholder="${esc(t("authorPh"))}">
+      ${academic ? `<label>${esc(t("extra"))}</label>
+        <input id="institution" placeholder="${esc(t("inst"))} · ${esc(t("instPh"))}">
+        <div class="row" style="margin-top:8px">
+          <input id="faculty" placeholder="${esc(t("fac"))}">
+          <input id="dept" placeholder="${esc(t("dept"))}">
+        </div>
+        <div class="row" style="margin-top:8px">
+          <input id="subject" placeholder="${esc(t("subject"))}">
+          <input id="checker" placeholder="${esc(t("checker"))}">
+        </div>` : ""}
+      ${authorOnly && item.code === "maqola" ? `<label>${esc(t("inst"))}</label>
+        <input id="institution" placeholder="${esc(t("instPh"))}">
+        <div class="row" style="margin-top:8px"><input id="faculty" placeholder="${esc(t("fac"))}">
+        <input id="email" placeholder="email@example.com"></div>` : ""}
+    </div>
+    <div class="stack">
+      ${item.needs_plan ? `<button class="btn ghost" id="planBtn">📋 ${esc(t("plan"))}</button>` : ""}
+      <button class="btn" id="go">${esc(t("make"))} →</button>
+    </div>
+    <p class="muted center" style="margin:12px 0 4px">${esc(t("wait"))}</p>
+  </div>`;
+
+  const topicEl = document.getElementById("topic");
+  topicEl.value = state.form.topic;
+  topicEl.oninput = () => { state.form.topic = topicEl.value; };
+  const bind = (id, key) => { const el = document.getElementById(id); if (el){ el.value = state.form[key] || ""; el.oninput = () => { state.form[key] = el.value; }; } };
+  ["author","institution","faculty","dept","subject","checker","email"].forEach(key => bind(key, key));
+  const slideCount = document.getElementById("slideCount");
+  if (slideCount) slideCount.oninput = () => { state.form.count = parseInt(slideCount.value || "12", 10); };
+  const subjectKey = document.getElementById("subjectKey"); if (subjectKey) subjectKey.onchange = () => state.form.subject_key = subjectKey.value;
+  const designKey = document.getElementById("designKey"); if (designKey) designKey.onchange = () => state.form.design_key = designKey.value;
+
+  document.getElementById("opts")?.querySelectorAll("[data-opt]").forEach(node => node.onclick = () => {
+    const key = optionKey === "words" ? "words" : optionKey === "questions" ? "questions" : "pages";
+    state.form[key] = node.dataset.opt;
+    renderForm();
+  });
+  document.getElementById("langs").querySelectorAll("[data-lang]").forEach(node => node.onclick = () => {
+    state.form.lang = node.dataset.lang; renderForm();
+  });
+  document.getElementById("formats")?.querySelectorAll("[data-fmt]").forEach(node => node.onclick = () => {
+    state.form.format = node.dataset.fmt; renderForm();
+  });
+  document.getElementById("back").onclick = () => { state.service = null; state.tab = "home"; render(); };
+  document.getElementById("planBtn")?.addEventListener("click", buildPlan);
+  document.getElementById("go").onclick = startGeneration;
+}
+
+async function buildPlan(){
+  const topic = (state.form.topic || "").trim();
+  if (topic.length < 3) return toast(t("needTopic"));
+  const button = document.getElementById("planBtn");
+  button.disabled = true; button.textContent = "⏳ " + t("creating");
+  try {
+    const data = await api("/api/mini/plan", {method:"POST", body: JSON.stringify({
+      token: state.token, topic, lang: state.form.lang,
+      pages: parseInt(state.form.pages || "3", 10)})});
+    state.plan = data.plan || "";
+    renderPlan();
+  } catch (error) {
+    toast(error.message || t("error"));
+  } finally {
+    if (button) { button.disabled = false; button.textContent = "📋 " + t("plan"); }
+  }
+}
+
+function renderPlan(){
+  app.innerHTML = `<div class="wrap">
+    <div class="head"><button class="back" id="back">‹</button><h1>📋 ${esc(t("planTitle"))}</h1></div>
+    <div class="card">
+      <p class="muted" style="margin-top:0">${esc(t("planHint"))}</p>
+      <textarea id="planText" style="min-height:220px">${esc(state.plan)}</textarea>
+    </div>
+    <button class="btn" id="planGo">${esc(t("next"))} →</button>
+  </div>`;
+  document.getElementById("back").onclick = () => { renderForm(); };
+  document.getElementById("planGo").onclick = () => {
+    state.plan = document.getElementById("planText").value;
+    startGeneration();
+  };
+}
+
+async function startGeneration(){
+  const topic = (state.form.topic || "").trim();
+  if (topic.length < 3) return toast(t("needTopic"));
+  const item = state.service;
+  const options = {};
+  if (item.option_type === "words") options.words = parseInt(state.form.words || item.options[0], 10);
+  else if (item.option_type === "questions") options.questions = parseInt(state.form.questions || item.options[0], 10);
+  else if (item.option_type === "slides") options.count = parseInt(state.form.count || 12, 10);
+  else options.pages = parseInt(state.form.pages || item.options[0], 10);
+
+  const button = document.getElementById("go");
+  if (button) { button.disabled = true; button.textContent = "⏳ " + t("creating"); }
+  try {
+    const payload = {
+      token: state.token, service: item.code, topic, lang: state.form.lang,
+      format: state.form.format, options, author: state.form.author,
+      institution: state.form.institution, faculty: state.form.faculty,
+      dept: state.form.dept, subject: state.form.subject, checker: state.form.checker,
+      email: state.form.email, design_key: state.form.design_key,
+      subject_key: state.form.subject_key, plan: state.plan
+    };
+    const data = await api("/api/mini/generate", {method:"POST", body: JSON.stringify(payload)});
+    state.job = data.job;
+    renderProgress();
+  } catch (error) {
+    toast(error.message || t("error"));
+    if (button) { button.disabled = false; button.textContent = t("make") + " →"; }
+  }
+}
+
+const STAGES = {queued:["queued",10], writing:["writing",35], images:["images",55],
+                building:["building",75], convert:["convert",88], done:["ready",100]};
+
+function renderProgress(){
+  const stage = STAGES.queued;
+  app.innerHTML = `<div class="wrap">
+    <div class="head"><button class="back" id="back">‹</button><h1>${esc(t("creating"))}</h1></div>
+    <div class="card center" style="padding:26px 18px">
+      <div class="spinner"></div>
+      <h3 id="stageText" style="margin:8px 0 2px">${esc(t(stage[0]))}</h3>
+      <p class="muted">${esc(t("wait"))}</p>
+      <div class="progress"><i id="bar" style="width:8%"></i></div>
+      <p class="muted" id="elapsed">0 s</p>
+    </div>
+  </div>`;
+  document.getElementById("back").onclick = () => { state.tab = "home"; state.service = null; state.job = null; render(); };
+  let ticks = 0;
+  const timer = setInterval(() => { ticks += 2; const el = document.getElementById("elapsed"); if (el) el.textContent = ticks + " s"; }, 2000);
+  pollJob(timer);
+}
+
+async function pollJob(timer){
+  try {
+    const data = await api(`/api/mini/job?id=${encodeURIComponent(state.job)}&token=${encodeURIComponent(state.token)}`);
+    const stage = STAGES[data.stage] || STAGES.writing;
+    const textEl = document.getElementById("stageText");
+    const barEl = document.getElementById("bar");
+    if (textEl) textEl.textContent = data.status === "error" ? t("error") : t(stage[0]);
+    if (barEl) barEl.style.width = (data.status === "error" ? 100 : stage[1]) + "%";
+    if (data.status === "done"){ clearInterval(timer); return renderDone(data); }
+    if (data.status === "error"){ clearInterval(timer); return renderError(data.error); }
+    setTimeout(() => pollJob(timer), 1800);
+  } catch (error) {
+    clearInterval(timer);
+    renderError(error.message);
+  }
+}
+
+function renderDone(data){
+  const href = `/api/mini/download?id=${encodeURIComponent(state.job)}&token=${encodeURIComponent(state.token)}`;
+  app.innerHTML = `<div class="wrap">
+    <div class="head"><h1>✅ ${esc(t("ready"))}</h1></div>
+    <div class="card center" style="padding:26px 18px">
+      <div style="font-size:46px">🎉</div>
+      <h3 style="margin:8px 0 4px">${esc(data.filename || "document")}</h3>
+      <p class="muted">${esc(t("size"))}: ${fmtSize(data.size)}${data.real === false ? " · ⚠️ " + esc(t("error")) : ""}</p>
+    </div>
+    <div class="stack">
+      <a class="btn" href="${href}" target="_blank" rel="noopener">⬇️ ${esc(t("download"))}</a>
+      <button class="btn ghost" id="sendTg">📤 ${esc(t("send"))}</button>
+      <button class="btn ghost" id="again">✨ ${esc(t("again"))}</button>
+    </div>
+  </div>`;
+  document.getElementById("sendTg").onclick = async (event) => {
+    const button = event.currentTarget; button.disabled = true; button.textContent = "⏳";
+    try {
+      await api("/api/mini/send", {method:"POST", body: JSON.stringify({token: state.token, job: state.job})});
+      button.textContent = "✅ " + t("sent");
+      toast(t("sent"));
+    } catch (error) { button.disabled = false; button.textContent = "📤 " + t("send"); toast(error.message); }
+  };
+  document.getElementById("again").onclick = () => { state.tab = "home"; state.service = null; state.job = null; render(); };
+}
+
+function renderError(message){
+  app.innerHTML = `<div class="wrap">
+    <div class="head"><button class="back" id="back">‹</button><h1>⚠️ ${esc(t("error"))}</h1></div>
+    <div class="card"><p class="muted" style="margin:0">${esc(message || "")}</p></div>
+    <div class="stack"><button class="btn" id="retry">${esc(t("retry"))}</button>
+    <button class="btn ghost" id="back2">${esc(t("close"))}</button></div>
+  </div>`;
+  const back = () => { state.tab = "home"; state.service = null; state.job = null; render(); };
+  document.getElementById("back").onclick = back;
+  document.getElementById("back2").onclick = back;
+  document.getElementById("retry").onclick = () => { state.service = null; state.tab = "home"; render(); };
+}
+
+function orderRow(order){
+  const icon = FILES[order.service] || "📄";
+  const options = order.options || {};
+  let detail = "";
+  if (options.pages) detail = options.pages + " " + t("pagesUnit");
+  else if (options.words) detail = options.words + " " + t("wordsUnit");
+  else if (options.questions) detail = options.questions + " " + t("questionsUnit");
+  else if (options.count) detail = options.count + " " + t("slidesUnit");
+  return `<div class="order"><div class="ico">${icon}</div>
+    <div class="body"><b>${esc(order.topic)}</b>
+      <span>${esc(order.service_name || order.service)} · ${esc(detail)} · ${fmtDate(order.created_at)}</span></div></div>`;
+}
+
+function renderOrders(){
+  const list = state.history.length
+    ? `<div class="card">${state.history.map(orderRow).join("")}</div>`
+    : `<div class="empty">🗂<br>${esc(t("emptyOrders"))}</div>`;
+  app.innerHTML = `<div class="wrap">${header()}<h2>${esc(t("orders"))}</h2>${list}</div>`;
+}
+
+function renderProfile(){
+  const user = state.user;
+  const botLink = "https://t.me/" + (window.__BOT_USERNAME__ || "Talaba_AI_SlideBot");
+  app.innerHTML = `<div class="wrap">${header()}
+    <h2>${esc(t("profile"))}</h2>
+    <div class="card">
+      <div class="kv"><span>${esc(t("bal"))}</span><b>${user.balance||0} so‘m</b></div>
+      <div class="kv"><span>${esc(t("bonus"))}</span><b>${user.bonus_balance||0} so‘m</b></div>
+      <div class="kv"><span>${esc(t("premium"))}</span><b>${user.premium ? "✅" : "—"}</b></div>
+      <div class="kv"><span>${esc(t("ordersCount"))}</span><b>${state.history.length}</b></div>
+    </div>
+    <h2>${esc(t("lang"))}</h2>
+    <div class="card"><div class="chips">${LANGS.map(([code, name]) =>
+      `<div class="chip ${state.lang===code?"sel":""}" data-plang="${code}">${esc(name)}</div>`).join("")}</div></div>
+    <div class="stack"><a class="btn ghost" href="${botLink}" target="_blank" rel="noopener">🤖 ${esc(t("openBot"))}</a></div>
+    <p class="muted center" style="margin:16px 0">Talaba AI Mini App</p>
+  </div>`;
+  app.querySelectorAll("[data-plang]").forEach(node => node.onclick = () => {
+    state.lang = node.dataset.plang; state.form.lang = state.lang;
+    try { localStorage.setItem("mini_lang", state.lang); } catch(e){}
+    render();
+  });
+}
+
+document.getElementById("tabs").addEventListener("click", (event) => {
+  const button = event.target.closest("button[data-tab]");
+  if (!button) return;
+  document.querySelectorAll("#tabs button").forEach(b => b.classList.toggle("on", b === button));
+  state.tab = button.dataset.tab; state.service = null; render();
+});
+
+const stored = (() => { try { return localStorage.getItem("mini_lang"); } catch(e){ return null; } })();
+if (stored) state.lang = stored;
+bootFromTelegram();
+</script>
+</body>
+</html>

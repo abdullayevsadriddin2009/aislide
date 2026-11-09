@@ -8,12 +8,25 @@ from aiogram.fsm.context import FSMContext
 import config
 import database as db
 from texts import t, btn_all
-from keyboards import (main_kb, bot_lang_kb, balance_kb, check_review_kb, services_all_kb,
-                       chat_kb, chat_labels)
+from keyboards import (main_kb, mini_app_kb, bot_lang_kb, balance_kb, check_review_kb,
+                       services_all_kb, chat_kb, chat_labels)
 from states import TopUp, Chat, Creation, Admin
 from services import SERVICES, SUBSCRIPTION_PLANS, service_name, ALL_LANGS
 
 router = Router()
+
+
+@router.message(Command("app"))
+async def cmd_mini_app(message: Message):
+    """Mini App'ni ochish: /app buyrug'i."""
+    lang = await _lang(message.from_user.id)
+    kb = mini_app_kb(lang)
+    if kb is None:
+        await message.answer("Mini App manzili sozlanmagan (WEBAPP_URL).")
+        return
+    await message.answer(
+        "📱 <b>Mini App</b>\n\nHujjat va taqdimotlarni bot ichidagi qulay ilovada yaratishingiz mumkin.",
+        reply_markup=kb)
 
 async def _lang(user_id):
     u = await db.get_user(user_id)

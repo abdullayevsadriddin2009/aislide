@@ -1,0 +1,609 @@
+"""Telegram Mini App — backend (Flask blueprint).
+
+Sahifa:      GET  /app
+JSON API:    POST /api/mini/init      — initData tekshiruvi, profil + xizmatlar
+             POST /api/mini/plan      — insho uchun REJA
+             POST /api/mini/generate  — hujjat/slayd yaratishni navbatga qo'yish
+             GET  /api/mini/job       — holat
+             GET  /api/mini/download  — tayyor fayl
+             GET  /api/mini/orders    — oxirgi buyurtmalar
+             GET  /api/mini/profile   — balans va sozlamalar
+
+Mini App bot bilan bir Flask jarayonida (Render'dagi bitta port) ishlaydi.
+"""
+import asyncio
+import hashlib
+import hmac
+import json
+import os
+import re
+import secrets
+import sqlite3
+import threading
+import time
+import uuid
+from urllib.parse import parse_qsl
+
+from flask import Blueprint, Response, jsonify, request, send_file
+
+import config
+from services import ALL_LANGS, SERVICES, service_name
+
+mini = Blueprint("mini_app", __name__)
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+WEBAPP_FILE = os.path.join(BASE_DIR, "webapp", "index.html")
+OUTPUT_DIR = os.path.join(config.DATA_DIR, "mini")
+
+JOBS = {}
+TOKENS = {}
+_LOCK = threading.Lock()
+_SEMAPHORE = threading.BoundedSemaphore(max(1, int(os.getenv("MINI_MAX_JOBS", "2"))))
+JOB_TTL = 3 * 3600
+TOKEN_TTL = 12 * 3600
+MAX_ACTIVE_PER_USER = 3
+
+# To'liq titul varaq talab qiladigan xizmatlar (institut, fakultet, kafedra...).
+TITLE_SERVICES = ("referat", "mustaqil", "kurs", "diplom")
+COMPACT_AUTHOR_SERVICES = ("maqola", "tezis", "insho", "esse")
+
+
+# =====================  Bazaga yordamchi funksiyalar  =====================
+def _db():
+    con = sqlite3.connect(config.DB_PATH, timeout=15)
+    con.row_factory = sqlite3.Row
+    return con
+
+
+def _setting(key, default=""):
+    try:
+        with _db() as con:
+            row = con.execute("SELECT value FROM settings WHERE key=?", (key,)).fetchone()
+        return row["value"] if row else default
+    except Exception:
+        return default
+
+
+def _price(service):
+    default = int(SERVICES.get(service, {}).get("price", 0) or 0)
+    try:
+        return int(_setting(f"price_{service}", str(default)))
+    except (TypeError, ValueError):
+        return default
+
+
+def _ensure_user(tg_id, username=None, first_name=None):
+    """Mini App'dan kirgan foydalanuvchini bazaga yozadi (bot bilan bir xil jadval)."""
+    tg_id = int(tg_id)
+    with _db() as con:
+        con.execute(
+            "INSERT OR IGNORE INTO users(telegram_id,username,first_name,created_at) VALUES(?,?,?,?)",
+            (tg_id, username, first_name, int(time.time())),
+        )
+        con.commit()
+        row = con.execute("SELECT * FROM users WHERE telegram_id=?", (tg_id,)).fetchone()
+    return row
+
+
+def _profile(uid):
+    try:
+        with _db() as con:
+            row = con.execute("SELECT * FROM users WHERE telegram_id=?", (uid,)).fetchone()
+            orders = con.execute(
+                "SELECT id,service,topic,options,price,status,created_at FROM orders "
+                "WHERE user_id=? ORDER BY id DESC LIMIT 30", (uid,)
+            ).fetchall()
+    except Exception:
+        return {"id": uid, "first_name": "", "username": "", "balance": 0,
+                "bonus_balance": 0, "premium": 0, "lang": "uz"}, []
+    data = {
+        "id": uid,
+        "first_name": (row["first_name"] if row else "") or "",
+        "username": (row["username"] if row else "") or "",
+        "balance": int((row["balance"] if row else 0) or 0),
+        "bonus_balance": int((row["bonus_balance"] if row else 0) or 0),
+        "premium": int((row["premium"] if row else 0) or 0),
+        "lang": (row["lang"] if row and row["lang"] in ALL_LANGS else "uz"),
+    }
+    history = []
+    for order in orders:
+        try:
+            options = json.loads(order["options"] or "{}")
+        except Exception:
+            options = {}
+        history.append({
+            "id": order["id"],
+            "service": order["service"],
+            "service_name": service_name(order["service"], data["lang"]),
+            "topic": order["topic"],
+            "options": options,
+            "price": int(order["price"] or 0),
+            "status": order["status"],
+            "created_at": int(order["created_at"] or 0),
+        })
+    return data, history
+
+
+# =====================  Autentifikatsiya  =====================
+def verify_init_data(init_data):
+    """Telegram WebApp initData imzosini tekshiradi va user dict qaytaradi."""
+    if not init_data or not config.BOT_TOKEN:
+        return None
+    try:
+        parsed = dict(parse_qsl(str(init_data), keep_blank_values=True))
+    except Exception:
+        return None
+    received = str(parsed.pop("hash", "") or "").strip()
+    if not received:
+        return None
+    data_check = "\n".join(f"{key}={parsed[key]}" for key in sorted(parsed))
+    secret = hmac.new(b"WebAppData", config.BOT_TOKEN.encode(), hashlib.sha256).digest()
+    calculated = hmac.new(secret, data_check.encode(), hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(calculated, received):
+        return None
+    try:
+        auth_date = int(parsed.get("auth_date") or 0)
+    except (TypeError, ValueError):
+        auth_date = 0
+    if auth_date and time.time() - auth_date > 86400:
+        return None
+    user = {}
+    if parsed.get("user"):
+        try:
+            user = json.loads(parsed["user"])
+        except Exception:
+            user = {}
+    if not isinstance(user, dict) or not user.get("id"):
+        return None
+    return user
+
+
+def _issue_token(user_id):
+    token = secrets.token_urlsafe(32)
+    with _LOCK:
+        TOKENS[token] = (int(user_id), time.time() + TOKEN_TTL)
+    return token
+
+
+def _token_user():
+    token = (request.headers.get("X-Mini-Token")
+             or request.args.get("token")
+             or ((request.get_json(silent=True) or {}).get("token") if request.is_json else ""))
+    if not token:
+        return 0
+    with _LOCK:
+        entry = TOKENS.get(str(token))
+    if not entry:
+        return 0
+    user_id, expires = entry
+    if time.time() > expires:
+        TOKENS.pop(str(token), None)
+        return 0
+    return user_id
+
+
+def _unauthorized():
+    return jsonify({"ok": False, "error": "auth", "message": "Mini App sessiyasi tugagan. Qayta oching."}), 401
+
+
+# =====================  Xizmatlar ro'yxati  =====================
+def _services_payload(lang):
+    from designs import DESIGN_KEYS, SUBJECT_KEYS, design_name, subject_name
+
+    items = []
+    for code, info in SERVICES.items():
+        options = [int(value) for value in (info.get("options") or ())]
+        if not options:
+            options = [10, 15, 20]
+        items.append({
+            "code": code,
+            "emoji": info.get("emoji", "📄"),
+            "name": service_name(code, lang),
+            "names": {lc: service_name(code, lc) for lc in ALL_LANGS},
+            "option_type": info.get("option_type", "pages"),
+            "options": options,
+            "price": _price(code),
+            "title_fields": code in TITLE_SERVICES,
+            "author_only": code in COMPACT_AUTHOR_SERVICES,
+            "needs_plan": code == "insho",
+        })
+    return {
+        "services": items,
+        "designs": [{"key": key, "name": design_name(key, lang)} for key in DESIGN_KEYS],
+        "subjects": [{"key": key, "name": subject_name(key, lang)} for key in SUBJECT_KEYS],
+    }
+
+
+@mini.route("/app")
+@mini.route("/app/")
+def mini_page():
+    """Mini App sahifasi (Telegram WebApp SDK bilan)."""
+    if not os.path.isfile(WEBAPP_FILE):
+        return "Mini App topilmadi", 404
+    with open(WEBAPP_FILE, "r", encoding="utf-8") as handle:
+        html = handle.read()
+    if os.getenv("MINI_DEV") == "1":
+        # Faqat lokal demo: brauzerda Telegram imzosisiz ochish uchun.
+        html = html.replace('"use strict";', '"use strict";window.__MINI_DEV__=true;', 1)
+    return Response(html, mimetype="text/html")
+
+
+@mini.route("/api/mini/init", methods=["POST"])
+def api_init():
+    data = request.get_json(silent=True) or {}
+    tg_user = verify_init_data(data.get("initData"))
+    if tg_user is None and os.getenv("MINI_DEV") == "1":
+        # Faqat lokal sinov uchun: Telegram imzosisiz ham ishlaydi.
+        dev_id = int(data.get("dev_user") or 0)
+        if dev_id:
+            tg_user = {"id": dev_id, "first_name": "Local test", "username": "dev"}
+    if not tg_user or not tg_user.get("id"):
+        return jsonify({"ok": False, "error": "auth",
+                        "message": "Mini App faqat Telegram ichidan ochiladi."}), 401
+    uid = int(tg_user["id"])
+    row = _ensure_user(uid, tg_user.get("username"), tg_user.get("first_name"))
+    profile, history = _profile(uid)
+    lang = str(data.get("lang") or profile.get("lang") or "uz").lower()
+    if lang not in ALL_LANGS:
+        lang = profile.get("lang") if profile.get("lang") in ALL_LANGS else "uz"
+    payload = {
+        "ok": True,
+        "token": _issue_token(uid),
+        "user": profile,
+        "history": history,
+        "languages": list(ALL_LANGS),
+        "free_mode": _setting("free_mode", "1") == "1",
+        "max_active": MAX_ACTIVE_PER_USER,
+    }
+    payload.update(_services_payload(lang))
+    return jsonify(payload)
+
+
+@mini.route("/api/mini/profile", methods=["GET"])
+def api_profile():
+    uid = _token_user()
+    if not uid:
+        return _unauthorized()
+    profile, history = _profile(uid)
+    return jsonify({"ok": True, "user": profile, "history": history,
+                    "free_mode": _setting("free_mode", "1") == "1"})
+
+
+@mini.route("/api/mini/orders", methods=["GET"])
+def api_orders():
+    uid = _token_user()
+    if not uid:
+        return _unauthorized()
+    _profile_data, history = _profile(uid)
+    return jsonify({"ok": True, "orders": history})
+
+
+# =====================  Insho REJA  =====================
+@mini.route("/api/mini/plan", methods=["POST"])
+def api_plan():
+    uid = _token_user()
+    if not uid:
+        return _unauthorized()
+    data = request.get_json(silent=True) or {}
+    topic = re.sub(r"\s+", " ", str(data.get("topic") or "")).strip()
+    lang = str(data.get("lang") or "uz").lower()
+    if len(topic) < 3:
+        return jsonify({"ok": False, "error": "topic", "message": "Mavzuni yozing."}), 400
+    if lang not in ALL_LANGS:
+        lang = "uz"
+    try:
+        pages = int(data.get("pages") or 3)
+    except (TypeError, ValueError):
+        pages = 3
+    try:
+        from ai_api import generate_insho_plan
+        plan = asyncio.run(generate_insho_plan(topic, lang, pages))
+    except Exception as exc:
+        return jsonify({"ok": False, "error": "plan", "message": str(exc)[:200]}), 500
+    return jsonify({"ok": True, "plan": plan})
+
+
+# =====================  Generatsiya navbati  =====================
+def _clean_jobs():
+    now = time.time()
+    with _LOCK:
+        stale = [jid for jid, job in JOBS.items() if now - float(job.get("created", now)) > JOB_TTL]
+    for jid in stale:
+        job = JOBS.pop(jid, None)
+        path = job.get("file") if job else None
+        if path and os.path.isfile(path):
+            try:
+                os.remove(path)
+            except OSError:
+                pass
+
+
+def _payload_options(service, data):
+    info = SERVICES.get(service, {})
+    option_type = info.get("option_type", "pages")
+    allowed = [int(value) for value in (info.get("options") or (10, 15, 20))]
+    options = {}
+    raw = data.get("options") or {}
+    if not isinstance(raw, dict):
+        raw = {}
+    if option_type in ("pages", "questions", "words"):
+        try:
+            value = int(raw.get(option_type) or raw.get("value") or allowed[0])
+        except (TypeError, ValueError):
+            value = allowed[0]
+        if value not in allowed:
+            value = min(allowed, key=lambda item: abs(item - value))
+        options[option_type] = value
+    if option_type == "slides":
+        try:
+            count = int(raw.get("count") or data.get("slide_count") or 10)
+        except (TypeError, ValueError):
+            count = 10
+        options["count"] = max(3, min(30, count))
+    if service == "insho":
+        options["plan"] = str(data.get("plan") or "")[:4000]
+    return options
+
+
+def _extra_data(service, data, options):
+    return {
+        "ref_institution": str(data.get("institution") or "").strip()[:160],
+        "ref_faculty": str(data.get("faculty") or "").strip()[:120],
+        "ref_dept": str(data.get("dept") or "").strip()[:120],
+        "ref_subject": str(data.get("subject") or "").strip()[:120],
+        "ref_author": str(data.get("author") or "").strip()[:120],
+        "ref_checker": str(data.get("checker") or "").strip()[:120],
+        "ref_email": str(data.get("email") or "").strip()[:120],
+        "ref_brief": str(data.get("brief") or "").strip()[:400],
+        "insho_plan": options.get("plan", ""),
+    }
+
+
+def _safe_name(text, fallback="document"):
+    value = "".join(char for char in str(text or "")[:30] if char.isalnum() or char in " _-").strip()
+    return (value.replace(" ", "_") or fallback)
+
+
+def _start_job(user_id, payload):
+    _clean_jobs()
+    with _LOCK:
+        active = sum(1 for job in JOBS.values()
+                     if job.get("user_id") == user_id and job.get("status") in ("queued", "running"))
+        if active >= MAX_ACTIVE_PER_USER:
+            return None
+        job_id = uuid.uuid4().hex
+        JOBS[job_id] = {
+            "id": job_id,
+            "user_id": user_id,
+            "status": "queued",
+            "stage": "queued",
+            "created": time.time(),
+            "payload": payload,
+        }
+    threading.Thread(target=_worker, args=(job_id,), daemon=True).start()
+    return job_id
+
+
+def _worker(job_id):
+    with _SEMAPHORE:
+        try:
+            asyncio.run(_generate(job_id))
+        except Exception as exc:  # pragma: no cover - himoya qatlami
+            job = JOBS.get(job_id)
+            if job:
+                job["status"] = "error"
+                job["error"] = str(exc)[:300]
+
+
+async def _generate(job_id):
+    job = JOBS.get(job_id)
+    if not job:
+        return
+    payload = job["payload"]
+    service = payload["service"]
+    topic = payload["topic"]
+    lang = payload["lang"]
+    options = payload["options"]
+    fmt = payload.get("format", "docx")
+    author = payload.get("author") or ""
+    data = payload.get("extra") or {}
+    try:
+        job["status"] = "running"
+        job["stage"] = "writing"
+
+        if service == "slide":
+            from pptx_generator import generate_pptx
+            from ai_api import generate_slides_structured
+            from designs import subject_name
+
+            count = int(options.get("count") or 10)
+            subject_key = payload.get("subject_key") or "umumiy"
+            subject = subject_name(subject_key, lang)
+            slides_content, real = await generate_slides_structured(
+                topic, subject, lang, max(2, count - 3))
+            job["stage"] = "images"
+            images = []
+            try:
+                from handlers.creation import _collect_images
+                images = await _collect_images(
+                    topic, slides_content, total=min(12, max(5, len(slides_content))), lang=lang)
+            except Exception:
+                images = []
+            job["stage"] = "building"
+            buffer = generate_pptx(
+                topic=topic, subject=subject, lang=lang,
+                design_key=payload.get("design_key") or "modern",
+                slide_count=count, slides_content=slides_content,
+                images=images, author=author,
+            )
+            if images:
+                try:
+                    import shutil
+                    from pathlib import Path
+                    shutil.rmtree(Path(images[0]).parent, ignore_errors=True)
+                except Exception:
+                    pass
+            content, ext = buffer.read(), "pptx"
+        else:
+            from ai_api import generate as generate_content
+            from docx_generator import generate_docx
+
+            text, real = await generate_content(service, topic, options, lang)
+            job["stage"] = "building"
+            pages = int(options.get("pages") or options.get("count") or 10)
+            buffer = generate_docx(
+                topic, service_name(service, lang), service, lang, pages, text,
+                author=author, extra_data=data,
+            )
+            content, ext = buffer.read(), "docx"
+            if fmt == "pdf":
+                job["stage"] = "convert"
+                try:
+                    from handlers.creation import _to_pdf
+                    pdf = _to_pdf(content, topic)
+                    if pdf:
+                        content, ext = pdf, "pdf"
+                except Exception:
+                    pass
+
+        filename = f"{_safe_name(service_name(service, lang))}_{_safe_name(topic)}_{job_id[:6]}.{ext}"
+        os.makedirs(OUTPUT_DIR, exist_ok=True)
+        path = os.path.join(OUTPUT_DIR, f"{job_id}.{ext}")
+        with open(path, "wb") as handle:
+            handle.write(content)
+        job.update(status="done", stage="done", file=path, filename=filename,
+                   size=len(content), real=bool(real))
+        _save_order(job["user_id"], service, topic, options)
+    except Exception as exc:
+        job["status"] = "error"
+        job["stage"] = "error"
+        job["error"] = str(exc)[:300] or exc.__class__.__name__
+
+
+def _save_order(user_id, service, topic, options):
+    try:
+        with _db() as con:
+            con.execute(
+                "INSERT INTO orders(user_id,service,topic,options,price,status,created_at) "
+                "VALUES(?,?,?,?,?,?,?)",
+                (int(user_id), service, topic, json.dumps(options, ensure_ascii=False),
+                 _price(service), "done", int(time.time())),
+            )
+            con.commit()
+    except Exception:
+        pass
+
+
+@mini.route("/api/mini/generate", methods=["POST"])
+def api_generate():
+    uid = _token_user()
+    if not uid:
+        return _unauthorized()
+    data = request.get_json(silent=True) or {}
+    service = str(data.get("service") or "").strip()
+    if service not in SERVICES:
+        return jsonify({"ok": False, "error": "service", "message": "Xizmat tanlanmadi."}), 400
+    topic = re.sub(r"\s+", " ", str(data.get("topic") or "")).strip()
+    if len(topic) < 3:
+        return jsonify({"ok": False, "error": "topic", "message": "Mavzuni to‘liqroq yozing."}), 400
+    if len(topic) > 200:
+        topic = topic[:200]
+    lang = str(data.get("lang") or "uz").lower()
+    if lang not in ALL_LANGS:
+        lang = "uz"
+    fmt = str(data.get("format") or "docx").lower()
+    if fmt not in ("docx", "pdf", "pptx"):
+        fmt = "docx"
+    if service == "slide":
+        fmt = "pptx"
+    options = _payload_options(service, data)
+    extra = _extra_data(service, data, options)
+    payload = {
+        "service": service,
+        "topic": topic,
+        "lang": lang,
+        "options": options,
+        "format": fmt,
+        "author": str(data.get("author") or "").strip()[:120],
+        "subject_key": str(data.get("subject_key") or "").strip()[:40],
+        "design_key": str(data.get("design_key") or "").strip()[:40],
+        "extra": extra,
+    }
+    job_id = _start_job(uid, payload)
+    if not job_id:
+        return jsonify({"ok": False, "error": "limit",
+                        "message": "Bir vaqtda ko‘pi bilan 3 ta ish yaratish mumkin."}), 429
+    return jsonify({"ok": True, "job": job_id})
+
+
+@mini.route("/api/mini/job", methods=["GET"])
+def api_job():
+    uid = _token_user()
+    if not uid:
+        return _unauthorized()
+    job = JOBS.get(str(request.args.get("id") or ""))
+    if not job or job.get("user_id") != uid:
+        return jsonify({"ok": False, "error": "job", "message": "Ish topilmadi."}), 404
+    response = {
+        "ok": True,
+        "id": job["id"],
+        "status": job["status"],
+        "stage": job["stage"],
+        "filename": job.get("filename"),
+        "size": job.get("size"),
+        "error": job.get("error"),
+        "real": job.get("real"),
+        "elapsed": int(time.time() - float(job.get("created") or time.time())),
+    }
+    return jsonify(response)
+
+
+@mini.route("/api/mini/download", methods=["GET"])
+def api_download():
+    uid = _token_user()
+    if not uid:
+        return _unauthorized()
+    job = JOBS.get(str(request.args.get("id") or ""))
+    if not job or job.get("user_id") != uid or job.get("status") != "done":
+        return jsonify({"ok": False, "error": "file", "message": "Fayl tayyor emas."}), 404
+    path = job.get("file")
+    if not path or not os.path.isfile(path):
+        return jsonify({"ok": False, "error": "file", "message": "Fayl o‘chirilgan."}), 404
+    return send_file(path, as_attachment=True, download_name=job.get("filename") or os.path.basename(path))
+
+
+@mini.route("/api/mini/send", methods=["POST"])
+def api_send():
+    """Tayyor faylni foydalanuvchining Telegram chatiga bot orqali yuboradi."""
+    uid = _token_user()
+    if not uid:
+        return _unauthorized()
+    data = request.get_json(silent=True) or {}
+    job = JOBS.get(str(data.get("job") or ""))
+    if not job or job.get("user_id") != uid or job.get("status") != "done":
+        return jsonify({"ok": False, "error": "file", "message": "Fayl tayyor emas."}), 404
+    path = job.get("file")
+    if not path or not os.path.isfile(path):
+        return jsonify({"ok": False, "error": "file", "message": "Fayl o'chirilgan."}), 404
+    if not config.BOT_TOKEN:
+        return jsonify({"ok": False, "error": "bot", "message": "Bot tokeni sozlanmagan."}), 500
+
+    async def _send():
+        from aiogram import Bot
+        from aiogram.client.default import DefaultBotProperties
+        from aiogram.types import FSInputFile
+
+        bot = Bot(token=config.BOT_TOKEN, default=DefaultBotProperties(parse_mode="HTML"))
+        try:
+            await bot.send_document(
+                chat_id=int(uid),
+                document=FSInputFile(path, filename=job.get("filename") or os.path.basename(path)),
+            )
+        finally:
+            await bot.session.close()
+
+    try:
+        asyncio.run(_send())
+    except Exception as exc:
+        return jsonify({"ok": False, "error": "send", "message": str(exc)[:200]}), 502
+    return jsonify({"ok": True})

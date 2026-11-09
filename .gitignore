@@ -11,3 +11,5 @@ temp/
 downloads/
 firebase_key.json
 .venv/
+# Mini App vaqtinchalik fayllari
+mini/

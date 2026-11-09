@@ -9,6 +9,13 @@ import config
 app = Flask(__name__)
 app.secret_key = config.WEB_ADMIN_SECRET_KEY or secrets.token_hex(32)
 
+# Telegram Mini App: /app sahifasi va /api/mini/* endpointlari.
+try:
+    from mini_app import mini as mini_app_blueprint
+    app.register_blueprint(mini_app_blueprint)
+except Exception as _mini_err:  # Mini App yuklanmasa bot baribir ishlaydi
+    print(f"[mini_app] yuklanmadi: {_mini_err}", flush=True)
+
 @app.route("/health")
 def health():
     """Cron / UptimeRobot uchun — bot tirikligini tekshirish. Login shart emas."""

@@ -17,7 +17,22 @@
    - `AI_API_KEY` — key for that endpoint.
    - `WEB_ADMIN_PASSWORD` — unique and strong password.
    - `WEB_ADMIN_SECRET_KEY` — a long random value, separate from the AI key.
+   - `WEBAPP_URL` — the public HTTPS address of this service, for example `https://ai-slide-bot.onrender.com`.
+     On Render the value is taken from `RENDER_EXTERNAL_URL` automatically; set it explicitly if you use a custom domain.
 4. Deploy and review the logs.
+
+## 2b. Telegram Mini App
+
+The bot serves a Mini App from the same web service, so no extra hosting is required.
+
+1. After the first deploy, open `https://<your-service>/app` — the page must load
+   (outside Telegram it only shows the "open inside Telegram" note).
+2. `WEBAPP_URL` must be the same HTTPS origin. Without it the Mini App buttons stay hidden.
+3. On startup the bot sets the chat menu button to the Mini App, so users open it with the
+   button next to the message field. `/app` sends an inline button as well.
+4. Telegram requires a verified HTTPS certificate, so use the Render domain or a custom domain — not an IP.
+5. Files created in the Mini App are stored in `DATA_DIR/mini/` for three hours; the user can
+   download them or send them to the bot chat with one tap.
 
 ## 3. SQLite persistence
 
