@@ -610,14 +610,16 @@ async def cb_confirm(call: CallbackQuery, state: FSMContext):
         
         slides_content, real = await generate_slides_structured(generation_topic, subj_display, language_code, max(2, slide_count - 3))
         
-        try:
-            # One photo per body slide keeps every layout on-topic; the download
-            # budget is still capped so generation stays fast.
-            image_total = min(12, max(5, len(slides_content)))
-            img_paths = await _collect_images(generation_topic, slides_content, total=image_total, lang=language_code)
-        except Exception as e:
-            print(f"[creation] Image download error: {e}", flush=True)
-            img_paths = []
+        img_paths = []
+        if config.SLIDE_IMAGES:
+            try:
+                # One photo per body slide keeps every layout on-topic; the download
+                # budget is still capped so generation stays fast.
+                image_total = min(12, max(5, len(slides_content)))
+                img_paths = await _collect_images(generation_topic, slides_content, total=image_total, lang=language_code)
+            except Exception as e:
+                print(f"[creation] Image download error: {e}", flush=True)
+                img_paths = []
             
         buf = generate_pptx(
             topic=generation_topic,

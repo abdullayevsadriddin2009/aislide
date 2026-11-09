@@ -28,6 +28,8 @@ The bot serves a Mini App from the same web service, so no extra hosting is requ
 1. After the first deploy, open `https://<your-service>/app` — the page must load
    (outside Telegram it only shows the "open inside Telegram" note).
 2. `WEBAPP_URL` must be the same HTTPS origin. Without it the Mini App buttons stay hidden.
+   `SLIDE_IMAGES=0` (default) keeps bot and Mini App decks identical: no stock photos.
+   Set `1` if you want one topic-searched photo per slide in both.
 3. On startup the bot sets the chat menu button (default label “Ilova”, override with
    `MINI_APP_TEXT`) next to the message field and adds `/app` to the command list, so users
    open the app with one tap.

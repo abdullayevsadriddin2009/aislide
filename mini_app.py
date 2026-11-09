@@ -529,25 +529,33 @@ async def _generate(job_id):
 
         if service == "slide":
             from pptx_generator import generate_pptx
-            from ai_api import generate_slides_structured
+            from ai_api import generate_slides_structured, localize_topic
             from designs import subject_name
 
             count = int(options.get("count") or 10)
             subject_key = payload.get("subject_key") or "umumiy"
             subject = subject_name(subject_key, lang)
+            # Bot bilan bir xil: mavzu tanlangan tilga o'giriladi.
+            generation_topic = topic
+            try:
+                generation_topic = await localize_topic(topic, lang) or topic
+            except Exception:
+                generation_topic = topic
             slides_content, real = await generate_slides_structured(
-                topic, subject, lang, max(2, count - 3))
+                generation_topic, subject, lang, max(2, count - 3))
             job["stage"] = "images"
             images = []
-            try:
-                from handlers.creation import _collect_images
-                images = await _collect_images(
-                    topic, slides_content, total=min(12, max(5, len(slides_content))), lang=lang)
-            except Exception:
-                images = []
+            if config.SLIDE_IMAGES:
+                try:
+                    from handlers.creation import _collect_images
+                    images = await _collect_images(
+                        generation_topic, slides_content,
+                        total=min(12, max(5, len(slides_content))), lang=lang)
+                except Exception:
+                    images = []
             job["stage"] = "building"
             buffer = generate_pptx(
-                topic=topic, subject=subject, lang=lang,
+                topic=generation_topic, subject=subject, lang=lang,
                 design_key=payload.get("design_key") or "modern",
                 slide_count=count, slides_content=slides_content,
                 images=images, author=author,
@@ -561,14 +569,20 @@ async def _generate(job_id):
                     pass
             content, ext = buffer.read(), "pptx"
         else:
-            from ai_api import generate as generate_content
+            from ai_api import generate as generate_content, localize_topic
             from docx_generator import generate_docx
 
-            text, real = await generate_content(service, topic, options, lang)
+            # Botdagi kabi: matn tanlangan tilda yoziladi (mavzu ham o'giriladi).
+            generation_topic = topic
+            try:
+                generation_topic = await localize_topic(topic, lang) or topic
+            except Exception:
+                generation_topic = topic
+            text, real = await generate_content(service, generation_topic, options, lang)
             job["stage"] = "building"
             pages = int(options.get("pages") or options.get("count") or 10)
             buffer = generate_docx(
-                topic, service_name(service, lang), service, lang, pages, text,
+                generation_topic, service_name(service, lang), service, lang, pages, text,
                 author=author, extra_data=data,
             )
             content, ext = buffer.read(), "docx"
