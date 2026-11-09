@@ -204,6 +204,22 @@ class MiniAppTests(unittest.TestCase):
         self.assertIn("telegram-web-app.js", response.get_data(as_text=True))
 
 
+class OrderFilePersistenceTests(unittest.TestCase):
+    def test_bot_file_helper_writes_into_data_dir(self):
+        import handlers.creation as creation
+
+        original = config.DATA_DIR
+        with tempfile.TemporaryDirectory() as folder:
+            config.DATA_DIR = folder
+            try:
+                path = creation._persist_file(42, b"DOCX-BYTES", "Referat.docx")
+                self.assertTrue(path and path.endswith("42.docx"))
+                with open(path, "rb") as handle:
+                    self.assertEqual(handle.read(), b"DOCX-BYTES")
+            finally:
+                config.DATA_DIR = original
+
+
 class WebAppUrlTests(unittest.TestCase):
     def setUp(self):
         self._url = config.WEBAPP_URL

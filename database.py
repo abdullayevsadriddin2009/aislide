@@ -277,6 +277,18 @@ async def add_order(user_id, service, topic, options, price, result):
                                        price=price, created_at=created)
     return cur.lastrowid
 
+async def set_order_file(order_id, path, name):
+    """Buyurtma faylini bazaga bog'laydi (Mini App'dan keyin yuklab olish uchun)."""
+    if not order_id:
+        return
+    try:
+        db = await get_db()
+        await db.execute("UPDATE orders SET file_path=?, file_name=? WHERE id=?",
+                         (path, name, int(order_id)))
+        await db.commit()
+    except Exception:
+        pass
+
 async def order_count(user_id=None):
     db = await get_db()
     if user_id:

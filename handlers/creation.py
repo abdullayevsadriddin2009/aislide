@@ -2,6 +2,7 @@ import math  # NAMEERROR XATOSI TUZATILDI
 from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery, BufferedInputFile, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.fsm.context import FSMContext
+import config
 import database as db
 from texts import t
 from states import Creation
@@ -16,6 +17,23 @@ from pptx_generator import generate_pptx
 from docx_generator import generate_docx
 
 router = Router()
+
+
+def _persist_file(order_id, content, filename):
+    """Hujjatni DATA_DIR/files ga saqlaydi — Mini App'da istalgan vaqtda yuklab olinadi."""
+    try:
+        import os
+        folder = os.path.join(config.DATA_DIR, "files")
+        os.makedirs(folder, exist_ok=True)
+        ext = os.path.splitext(str(filename))[1] or ".docx"
+        path = os.path.join(folder, f"{int(order_id)}{ext}")
+        with open(path, "wb") as handle:
+            handle.write(content)
+        return path
+    except Exception as exc:
+        print(f"[creation] faylni saqlab bo'lmadi: {exc}", flush=True)
+        return None
+
 
 
 def _slide_count_prompt(lang):
@@ -693,7 +711,11 @@ async def cb_confirm(call: CallbackQuery, state: FSMContext):
                 caption += f"\n\n🔍 {str(detail)[:350]}"
         await msg.answer_document(doc, caption=caption, reply_markup=main_kb(lang))
         
-    await db.add_order(user_id, service, topic, options, 0 if free_mode else price, topic[:100])
+    order_id = await db.add_order(user_id, service, topic, options, 0 if free_mode else price, topic[:100])
+    if order_id:
+        saved = _persist_file(order_id, doc.data, doc.filename)
+        if saved:
+            await db.set_order_file(order_id, saved, doc.filename)
     await state.clear()
 
 # ===== 11. Essay: reja tasdiqlandi, to'liq matn yoziladi =====
@@ -745,5 +767,9 @@ async def cb_essay_go(call: CallbackQuery, state: FSMContext):
         if detail:
             caption += f"\n\n🔍 {str(detail)[:350]}"
     await msg.answer_document(doc, caption=caption, reply_markup=main_kb(lang))
-    await db.add_order(user_id, service, topic, options, 0 if free_mode else price, topic[:100])
+    order_id = await db.add_order(user_id, service, topic, options, 0 if free_mode else price, topic[:100])
+    if order_id:
+        saved = _persist_file(order_id, doc.data, doc.filename)
+        if saved:
+            await db.set_order_file(order_id, saved, doc.filename)
     await state.clear()
