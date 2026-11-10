@@ -61,7 +61,6 @@ API_LIST = [
             "@cf/google/gemma-7b-it-lora",
             "@cf/mistral/mistral-7b-instruct-v0.2-lora",
             "@cf/deepseek-ai/deepseek-r1-distill-qwen-32b",
-            "@cf/meta-llama/llama-2-7b-chat-hf-lora",
             "@cf/google/gemma-2b-it-lora",
             "@cf/openai/gpt-oss-120b",
             "@cf/qwen/qwen3.8-27b",
@@ -75,9 +74,10 @@ API_LIST = [
         "type": "google",
         "models": [
             "gemini-3.6-flash", "gemini-3.5-flash", "gemini-2.5-flash",
-            "gemini-3-flash-preview", "gemini-3.5-flash-lite",
-            "gemini-3.1-flash-lite", "gemini-3.1-flash-lite-preview",
-            "gemini-flash-lite-latest", "gemma-4-31b-it", "gemma-4-26b-a4b-it"
+            "gemini-flash-lite-latest", "gemini-3-flash-preview",
+            "gemini-3.5-flash-lite", "gemini-3.1-flash-lite",
+            "gemini-3.1-flash-lite-preview", "gemma-4-26b-a4b-it",
+            # gemma-4-31b-it answers far too slowly to be worth an attempt.
         ]
     },
     {
@@ -87,9 +87,10 @@ API_LIST = [
         "type": "google",
         "models": [
             "gemini-3.6-flash", "gemini-3.5-flash", "gemini-2.5-flash",
-            "gemini-3-flash-preview", "gemini-3.5-flash-lite",
-            "gemini-3.1-flash-lite", "gemini-3.1-flash-lite-preview",
-            "gemini-flash-lite-latest", "gemma-4-31b-it", "gemma-4-26b-a4b-it"
+            "gemini-flash-lite-latest", "gemini-3-flash-preview",
+            "gemini-3.5-flash-lite", "gemini-3.1-flash-lite",
+            "gemini-3.1-flash-lite-preview", "gemma-4-26b-a4b-it",
+            # gemma-4-31b-it answers far too slowly to be worth an attempt.
         ]
     }
 ]
@@ -2876,7 +2877,11 @@ def _model_payload(payload, model):
 _MODEL_CACHE = {}
 _MODEL_CACHE_TTL = 1800
 _BAD_MODEL_WORDS = ("embed", "whisper", "tts", "moderation", "rerank", "ocr", "dall",
-                    "image", "audio", "video", "sora", "guard", "deprecated", "codex-mini")
+                    "image", "audio", "video", "sora", "guard", "deprecated", "codex-mini",
+                    # Speech/audio models show up in Groq's catalogue and answer
+                    # HTTP 400 "requires terms acceptance" for a text request.
+                    "orpheus", "playai", "speech", "voice", "sonic", "bark", "music")
+_DISCOVER_ERRORS = {}
 _GOOD_MODEL_FILE = os.path.join(DATA_DIR, "ai_good_models.json")
 _GOOD_MODELS = None
 
@@ -2941,6 +2946,8 @@ async def _discover_models(api):
                                          headers=headers) as session:
             async with session.get(url) as resp:
                 if resp.status != 200:
+                    detail = await resp.text()
+                    _DISCOVER_ERRORS[cache_key] = f"HTTP {resp.status}: {_error_detail(resp.status, detail)}"
                     _log(f"Model ro'yxati olinmadi ({api.get('name')}): HTTP {resp.status}")
                     return []
                 data = await resp.json(content_type=None)
@@ -2957,6 +2964,7 @@ async def _discover_models(api):
                 continue
             ids.append(model_id)
     except Exception as exc:
+        _DISCOVER_ERRORS[cache_key] = f"{type(exc).__name__}: {exc}"
         _log(f"Model discovery failed ({api.get('name')}): {type(exc).__name__}: {exc}")
         return []
     # OpenRouter lists paid and free twins of the same model: without credit the
@@ -3521,8 +3529,11 @@ async def test_api(timeout=12, concurrency=6):
             lines.append(f"❌ {name}: API kaliti yo'q")
             continue
         if name in empty:
-            lines.append(f"⚠️ {name}: model ro'yxati bo'sh — AI_MODEL sozlanmagan "
-                         "va provayder /models ro'yxatini bermadi")
+            api = next((item for item in API_LIST if item["name"] == name), {})
+            base = str(api.get("base_url") or "").rstrip("/")
+            cache_key = f"{base}|{str(api.get('api_key') or '')[-6:]}"
+            why = _DISCOVER_ERRORS.get(cache_key) or "provayder model ro'yxatini bermadi"
+            lines.append(f"⚠️ {name}: model ro'yxati bo'sh — AI_MODEL sozlanmagan va {why}")
             continue
         rows = by_api.get(name) or []
         if any(ok for _, ok, _ in rows):
