@@ -1126,9 +1126,13 @@ WATERMARK_TEXT = "@Talaba_AI_SlideBot orqali yaratildi"
 
 
 def _watermark(slide, text=WATERMARK_TEXT):
-    """Small credit line on the very bottom edge of a slide."""
-    _text(slide, 0.0, 7.32, 13.333, 0.15, text, size=7, color=(150, 150, 150),
-          align=PP_ALIGN.CENTER, margin=0)
+    """Small credit line tucked into the bottom-right corner.
+
+    It used to run across the whole bottom edge, where it landed on top of the
+    design's own footer and page number and both lines became unreadable.
+    """
+    _text(slide, 9.6, 7.35, 3.55, 0.14, text, size=6, color=(170, 170, 170),
+          align=PP_ALIGN.RIGHT, margin=0)
 
 
 def _content_slide(prs, th, lang, item, index, total, design_key, images, topic, subject):

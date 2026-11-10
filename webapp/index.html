@@ -325,20 +325,44 @@ function boot(initPayload){
   render();
 }
 
-function initDataNow(){
-  if (!tg) return "";
-  try { if (tg.initData) return tg.initData; } catch (e) {}
+function initDataFromUrl(){
+  // Ba'zi mijozlar (xususan Desktop'da inline tugma orqali ochilganda) initData'ni
+  // faqat URL fragmentida beradi: #tgWebAppData=<urlencoded>.
+  try {
+    const raw = (location.hash || "").replace(/^#/, "") + "&" + (location.search || "").replace(/^\?/, "");
+    const value = new URLSearchParams(raw).get("tgWebAppData");
+    if (value) return value;
+  } catch (e) {}
+  try {
+    const params = window.Telegram && tg.initParams;
+    if (params && params.tgWebAppData) return params.tgWebAppData;
+  } catch (e) {}
   return "";
 }
 
+function initDataNow(){
+  if (!tg) return initDataFromUrl();
+  try { if (tg.initData) return tg.initData; } catch (e) {}
+  return initDataFromUrl();
+}
+
 async function waitInitData(tries){
-  // Ba'zi mijozlar initData'ni kechroq beradi — biroz kutamiz.
-  for (let i = 0; i < (tries || 10); i++){
+  // Mini App oynasi sekin ochilsa data kechroq keladi — 6 soniyagacha kutamiz.
+  for (let i = 0; i < (tries || 24); i++){
     const value = initDataNow();
     if (value) return value;
     await new Promise((resolve) => setTimeout(resolve, 250));
   }
   return "";
+}
+
+function reopenInTelegram(){
+  const link = window.__BOT_LINK__ || "";
+  try {
+    if (link && tg && tg.openTelegramLink) { tg.openTelegramLink(link); return; }
+  } catch (e) {}
+  if (link) { try { window.location.href = link; return; } catch (e) {} }
+  try { tg.close(); } catch (e) {}
 }
 
 async function bootFromTelegram(){
@@ -357,7 +381,8 @@ async function bootFromTelegram(){
     app.innerHTML = `<div class="wrap"><div class="card center" style="margin-top:40px">
       <div style="font-size:42px">📱</div><h3>${esc(hint)}</h3>
       <p class="muted">${esc(error.message || "")}${code ? ` (${esc(code)})` : ""}</p>
-      ${tg ? `<button class="btn" onclick="tg.close()">${esc(t("close"))}</button>` : ""}
+      ${tg ? `<button class="btn" onclick="reopenInTelegram()">${esc(t("openBot"))}</button>
+      <button class="btn ghost" onclick="tg.close()">${esc(t("close"))}</button>` : ""}
     </div></div>`;
   }
 }

@@ -245,9 +245,16 @@ def mini_page():
         return "Mini App topilmadi", 404
     with open(WEBAPP_FILE, "r", encoding="utf-8") as handle:
         html = handle.read()
+    injected = []
     if os.getenv("MINI_DEV") == "1":
         # Faqat lokal demo: brauzerda Telegram imzosisiz ochish uchun.
-        html = html.replace('"use strict";', '"use strict";window.__MINI_DEV__=true;', 1)
+        injected.append("window.__MINI_DEV__=true;")
+    username = str(getattr(config, "BOT_USERNAME", "") or "").lstrip("@").strip()
+    if username:
+        # initData kelmasa sahifa shu havola orqali qayta ochishni taklif qiladi.
+        injected.append("window.__BOT_LINK__=" + json.dumps(f"https://t.me/{username}") + ";")
+    if injected:
+        html = html.replace('"use strict";', '"use strict";' + "".join(injected), 1)
     return Response(html, mimetype="text/html")
 
 
