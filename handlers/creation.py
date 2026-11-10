@@ -12,7 +12,7 @@ from keyboards import (option_kb_for, confirm_kb, main_kb, option_label,
 from designs import (subject_name, detect_subject_key, lang_full_name, SLIDE_COUNTS,
                      design_name, DESIGNS, DESIGN_KEYS)
 from ai_api import (generate, generate_slides_structured, get_last_error, search_images, download_image,
-                    generate_insho_plan, image_keywords_batch, english_phrase, image_grade)
+                    generate_insho_plan, image_grade)
 from pptx_generator import generate_pptx
 from docx_generator import generate_docx
 
@@ -82,32 +82,14 @@ async def _collect_images(topic, slides_content, total=5, lang="uz"):
     if not queries:
         queries = [topic_text or str(lang)]
 
-    # One AI request produces a precise English search phrase per slot; when the AI
-    # is down Wikipedia supplies the English term instead.
-    try:
-        batch_keywords = await image_keywords_batch(
-            topic_text, titles, max_items=max(1, len(queries) - 1))
-    except Exception as exc:
-        print(f"[creation] image keyword batch failed: {exc}", flush=True)
-        batch_keywords = []
-
-    keywords = [str(value or "") for value in (list(batch_keywords) + [""] * len(queries))[:len(queries)]]
-
-    async def english(text):
-        try:
-            return await english_phrase(text) or text
-        except Exception:
-            return text
-
-    missing = [index for index, keyword in enumerate(keywords) if not keyword]
-    if missing:
-        resolved = await asyncio.gather(*(english(queries[index]) for index in missing))
-        for index, value in zip(missing, resolved):
-            keywords[index] = value or queries[index]
+    # Every photo is searched with exactly the words the user gave us: the topic and
+    # the slide titles as they are written, never a translation or an AI paraphrase.
+    keywords = list(queries)
 
     async def search(query, keyword, count, use_wiki=False):
         try:
-            return await search_images(query, count=count, keywords=keyword, use_wiki=use_wiki) or []
+            return await search_images(query, count=count, keywords=keyword,
+                                       use_wiki=use_wiki, lang=lang) or []
         except Exception as exc:
             print(f"[creation] search_images failed for {query!r}: {exc}", flush=True)
             return []

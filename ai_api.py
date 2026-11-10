@@ -179,7 +179,15 @@ def detect_topic_lang(topic):
 def wiki_langs_for_topic(topic, gen_lang):
     tl = detect_topic_lang(topic)
     gl = str(gen_lang).lower()
-    order = [tl, gl]
+    # The language the deck is written in goes first: a topic typed as "biologiya"
+    # exists on uz.wikipedia, while en.wikipedia answers with an album of that name.
+    latin = bool(re.fullmatch(r"[A-Za-z\s'\u2019\-\.]+", str(topic or "")))
+    if latin and gl not in ("en", "uz"):
+        # A Latin-script topic is almost always Uzbek, and a Russian/Turkish wiki
+        # would only answer with a same-named article or nothing at all.
+        order = ["uz", gl]
+    else:
+        order = [gl, tl]
     for x in ("en", "ru", "uz"):
         if x not in order: order.append(x)
     seen, out = set(), []
@@ -311,6 +319,11 @@ async def wikipedia_fetch(topic, max_chars=4000, full=False, gen_lang="uz"):
                     hits = (await resp.json()).get("query", {}).get("search", [])
                     if not hits: continue
                     title = hits[0]["title"]
+                    # A search hit is not proof: "biologiya" ranked the album first.
+                    if (re.fullmatch(r"[A-Za-z\s'\u2019\-\.]+", str(topic))
+                            and not _looks_like_same_name(topic, title)):
+                        _log(f"[WIKI {lang}] '{title}' mavzuga mos emas, keyingisi")
+                        continue
                 exintro = "" if full else "&exintro"
                 page_url = f"https://{lang}.wikipedia.org/w/api.php?action=query&prop=extracts|pageimages{exintro}&explaintext&piprop=original&titles={aiohttp.helpers.quote(title)}&format=json&redirects=1"
                 async with session.get(page_url) as resp:
@@ -1615,6 +1628,112 @@ async def _generate_test(service, topic, options, lang):
     return result, not used_fallback
 
 # ====== SLAYDLAR GENERATSIYASI (Yangi shablonlar uchun QAT'IY struktura) ======
+_WIKI_SKIP_SECTIONS = (
+    "references", "external links", "see also", "notes", "further reading", "sources",
+    "adabiyotlar", "havolalar", "manbalar", "yana qarang", "izohlar", "adabiyot",
+    "ссылки", "литература", "примечания", "источники", "см. также",
+    "kaynakça", "dış bağlantılar", "ayrıca bakınız",
+    "literatur", "weblinks", "einzelnachweise", "siehe auch",
+    "références", "liens externes", "voir aussi", "bibliographie",
+)
+
+
+def _wiki_sentences(text):
+    """Real sentences of an article, without the short fragments."""
+    flat = re.sub(r"\s+", " ", str(text or "")).strip()
+    parts = re.split(r"(?<=[.!?…])\s+", flat)
+    return [part.strip() for part in parts if len(part.split()) >= 8]
+
+
+async def _wiki_section_titles(title, lang):
+    """Top-level section names of an article, for slides built from its text."""
+    params = {"action": "parse", "page": str(title or ""), "prop": "sections",
+              "format": "json", "redirects": 1}
+    try:
+        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=12),
+                                         headers={"User-Agent": USER_AGENT}) as session:
+            async with session.get(f"https://{lang}.wikipedia.org/w/api.php", params=params) as resp:
+                if resp.status != 200:
+                    return []
+                sections = ((await resp.json(content_type=None)).get("parse") or {}).get("sections") or []
+    except Exception as exc:
+        _log(f"Wikipedia sections failed for {title!r}: {type(exc).__name__}")
+        return []
+    names = []
+    for section in sections:
+        if int(section.get("toclevel") or 1) != 1:
+            continue
+        line = str(section.get("line") or "").strip()
+        if not line or line.casefold().strip(" :.") in _WIKI_SKIP_SECTIONS:
+            continue
+        names.append(line)
+    return names
+
+
+def _wiki_slides(text, count, titles=()):
+    """Slide bodies taken from the article itself, used when the AI is unavailable.
+
+    The deck has to stay about the topic even with no model: its own section
+    headings become titles and its sentences become the body text, so a slide
+    never turns into "this section covers the important aspects of the topic".
+    """
+    blocks, title, buffer = [], "", []
+
+    def flush():
+        if not buffer:
+            return
+        name = re.sub(r"\s+", " ", str(title or "")).strip()
+        sentences = _wiki_sentences(" ".join(buffer))
+        buffer.clear()
+        if not sentences:
+            return
+        if name.casefold().strip(" :.") in _WIKI_SKIP_SECTIONS:
+            return
+        blocks.append((name, sentences))
+
+    for line in str(text or "").splitlines():
+        stripped = line.strip()
+        head = re.match(r"^=+\s*(.+?)\s*=+$", stripped)
+        if head:
+            flush()
+            title = head.group(1)
+        elif stripped:
+            # Plain-text extracts print a section heading as a short line of its
+            # own ("Tarixi"), with no "==" markers around it.
+            words = stripped.split()
+            if (len(words) <= 7 and len(stripped) <= 70
+                    and not stripped.endswith((".", "!", "?", "…", ":", ";", ","))):
+                flush()
+                title = stripped
+                continue
+            buffer.append(stripped)
+    flush()
+
+    slides, leftover = [], []
+    for name, sentences in blocks:
+        if name and len(sentences) >= 3 and len(slides) < count:
+            slides.append({"title": name, "content": sentences[:6]})
+            leftover.extend(sentences[6:])
+        else:
+            leftover.extend(sentences)
+    if len(slides) < count and leftover:
+        # One long run of text: cut it into equal parts and name them with the
+        # article's real section headings, so every slide still has a title.
+        need = count - len(slides)
+        step = max(3, -(-len(leftover) // need))
+        names = [str(item) for item in (titles or [])]
+        for index in range(need):
+            chunk = leftover[index * step:(index + 1) * step]
+            if not chunk:
+                break
+            name = names[index] if index < len(names) else ""
+            slides.append({"title": name, "content": chunk[:6]})
+    while len(slides) < count and leftover:
+        slides.append({"title": "", "content": leftover[:6]})
+        leftover = leftover[6:]
+    return slides
+
+
 async def generate_slides_structured(topic, subject, lang, count):
     """Create exactly ``count`` body slides, all in the requested language.
 
@@ -1735,6 +1854,31 @@ JSON example (translate the sample wording into {ln} in the actual response):
             "and do not repeat any title listed above.",
             n=missing, skip_titles=existing_titles))
         all_slides.extend(extra_slides[:missing])
+    # A deck with an article behind it is finished from that article: real
+    # sentences in the right language beat generic localized filler, and the
+    # topic stays correct even when no AI provider answers.
+    if len(all_slides) < count and wiki.get("found") and str(wiki.get("lang") or "").lower() == lc:
+        # A short extract can end before the later sections; the full article has
+        # enough real material for the remaining slides.
+        longer = await wikipedia_fetch(topic, max_chars=16000, full=True, gen_lang=lc)
+        if longer.get("found") and str(longer.get("lang") or "").lower() == lc and len(
+                str(longer.get("text") or "")) > len(str(wiki.get("text") or "")):
+            wiki = longer
+        existing_titles = {item["title"].casefold() for item in all_slides}
+        section_titles = await _wiki_section_titles(wiki.get("title"), wiki.get("lang") or lc)
+        base_title = str(wiki.get("title") or topic).strip()
+        for extra in _wiki_slides(str(wiki.get("text") or ""), count, section_titles):
+            if len(all_slides) >= count:
+                break
+            extra_title = (extra.get("title") or "").strip()
+            if not extra_title:
+                extra_title = f"{base_title} — {len(all_slides) + 1}"
+            if extra_title.casefold() in existing_titles:
+                continue
+            existing_titles.add(extra_title.casefold())
+            all_slides.append({"title": extra_title, "content": extra["content"]})
+        used_fallback = True
+        LAST_ERROR = "AI javob bermadi; slayd matni Wikipedia maqolasidan olindi."
     while len(all_slides) < count:
         index = len(all_slides) + 1
         title_fallback, body_fallback = _localized_slide_fallback(topic, lc, index)
@@ -1951,9 +2095,9 @@ async def image_keywords_batch(topic, titles, max_items=12):
     return []
 
 
-async def _wiki_image(topic):
+async def _wiki_image(topic, lang="en"):
     try:
-        wiki = await wikipedia_fetch(topic, max_chars=200)
+        wiki = await wikipedia_fetch(topic, max_chars=200, gen_lang=lang)
         if wiki.get("image") and _image_title_usable(str(wiki.get("image"))):
             return [{"url": wiki["image"], "tags": str(wiki.get("title", "")).lower(), "src": "wikipedia"}]
     except Exception:
@@ -2135,8 +2279,12 @@ def _looks_like_same_name(phrase, title):
     return common >= 4
 
 
-async def _wikidata_entity(name):
+async def _wikidata_entity(name, wiki_lang="en"):
     """(Wikidata item, curated Commons category) for a Wikipedia article title.
+
+    ``wiki_lang`` is the Wikipedia the topic was typed on: "biologiya" is the
+    biology article on uz.wikipedia but an album on en.wikipedia, so the item has
+    to come from the same wiki the user meant.
 
     Wikimedia names an article in one spelling ("Ali-Shir Nava'i") and the user
     types another ("Alisher Navoiy"); the item id is the bridge that lets a photo
@@ -2145,15 +2293,18 @@ async def _wikidata_entity(name):
     key = _entity_key(name)
     if len(key) < 3:
         return "", ""
-    if key in _ENTITY_CACHE:
-        return _ENTITY_CACHE[key]
+    lang = str(wiki_lang or "en").lower()
+    cache_key = f"{lang}|{key}"
+    if cache_key in _ENTITY_CACHE:
+        return _ENTITY_CACHE[cache_key]
     qid, category, title = "", "", ""
     try:
         async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=12),
                                          headers={"User-Agent": USER_AGENT}) as session:
             params = {"action": "query", "titles": name, "prop": "pageprops",
                       "ppprop": "wikibase_item", "format": "json", "redirects": 1}
-            async with session.get("https://en.wikipedia.org/w/api.php", params=params) as resp:
+            wiki_api = f"https://{lang}.wikipedia.org/w/api.php"
+            async with session.get(wiki_api, params=params) as resp:
                 if resp.status == 200:
                     pages = (await resp.json(content_type=None)).get("query", {}).get("pages", {})
                     page = next(iter(pages.values()), {}) if isinstance(pages, dict) else {}
@@ -2167,7 +2318,7 @@ async def _wikidata_entity(name):
                 params = {"action": "query", "generator": "search", "gsrsearch": name,
                           "gsrlimit": 1, "gsrnamespace": 0, "prop": "pageprops",
                           "ppprop": "wikibase_item", "format": "json"}
-                async with session.get("https://en.wikipedia.org/w/api.php", params=params) as resp:
+                async with session.get(wiki_api, params=params) as resp:
                     if resp.status == 200:
                         pages = (await resp.json(content_type=None)).get("query", {}).get("pages", {})
                         page = next(iter(pages.values()), {}) if isinstance(pages, dict) else {}
@@ -2192,7 +2343,7 @@ async def _wikidata_entity(name):
         _log(f"Wikidata entity lookup failed for {name!r}: {type(exc).__name__}")
     if title:
         _ENTITY_TITLE[key] = title
-    _ENTITY_CACHE[key] = (qid, category)
+    _ENTITY_CACHE[cache_key] = (qid, category)
     return qid, category
 
 
@@ -2405,45 +2556,30 @@ async def _unsplash_images(query):
     except Exception: return []
 
 
-async def search_images(query, count=5, keywords=None, use_wiki=True):
+async def search_images(query, count=5, keywords=None, use_wiki=True, lang="en"):
     """Return only images whose own tags really match the requested subject.
 
-    A weak one-word tag hit used to be enough, which is why unrelated photos ended
-    up in the deck. Now the main keyword must appear, Commons titles are checked,
-    and the article's own Wikipedia image is preferred.
+    The words searched are exactly the ones the user typed — no translation and no
+    AI paraphrase, so "biologiya" is searched as "biologiya". Only the subject's
+    identity is looked up, on the Wikipedia of the deck's language, so the same
+    word verifies against the article the user meant.
     """
     q = re.sub(r"[^\w\s']", " ", str(query or "")).strip()
     if len(q) < 3:
         return []
-    kw_source = keywords if keywords is not None else await topic_to_english_keywords(q)
-    # Resolve the subject once: its Wikidata item proves which files really show it.
-    # The article name translated by Wikipedia comes first, because an AI keyword
-    # phrase ("history ancient civilization") can resolve to a neighbouring, much
-    # broader article and every photo then belongs to that instead.
-    try:
-        english_name = str(await english_phrase(q) or "").strip()
-    except Exception:
-        english_name = ""
-    qid = ""
-    for name in (english_name, str(kw_source), q):
-        if not name:
-            continue
-        found_qid, _found_category = await _wikidata_entity(name)
-        if found_qid:
-            qid = found_qid
-            break
-    phrase = (_ENTITY_TITLE.get(_entity_key(english_name))
-              or _ENTITY_TITLE.get(_entity_key(str(kw_source)))
-              or _ENTITY_TITLE.get(_entity_key(q))
-              or english_name
-              or str(kw_source)).strip()
+    phrase = re.sub(r"\s+", " ", str(keywords or q)).strip() or q
     kw_list = _keyword_words(phrase)
     if not kw_list:
         return []
     primary = kw_list[0]
+    speaker = str(lang or "en").lower()
+    # Resolve the subject once: its Wikidata item proves which files really show it.
+    qid, category = await _wikidata_entity(q, wiki_lang=speaker)
+    if not qid and speaker != "en":
+        qid, category = await _wikidata_entity(q, wiki_lang="en")
     tasks = [
         _commons_depicts_images(qid, count=20),
-        _commons_category_images(phrase, count=20),
+        _commons_category_images(category or phrase, count=20),
         _commons_category_search(phrase, count=20),
         _commons_images(phrase, count=20),
         _openverse_images(phrase, count=20),
@@ -2452,7 +2588,7 @@ async def search_images(query, count=5, keywords=None, use_wiki=True):
         _unsplash_images(phrase),
     ]
     if use_wiki:
-        tasks.insert(0, _wiki_image(q))
+        tasks.insert(0, _wiki_image(q, speaker))
     results = await asyncio.gather(*tasks, return_exceptions=True)
 
     # Photos filed under the topic's own Commons category are curated by subject,
