@@ -26,7 +26,6 @@ PEXELS_KEY   = os.getenv("PEXELS_KEY", "")
 UNSPLASH_KEY = os.getenv("UNSPLASH_KEY", "")
 USER_AGENT = ("TalabaAISlideBot/1.0 (educational presentation image retrieval; "
                "https://github.com/abdullayevsadriddin2009/aislide)")
-_BROWSER_UA = "Mozilla/5.0 (compatible; TalabaAISlideBot/1.0)"
 
 _KEYWORD_CACHE = {}
 CHARS_PER_PAGE = 1650
