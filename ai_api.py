@@ -1762,14 +1762,29 @@ async def generate_slides_structured(topic, subject, lang, count):
 
     wiki = await wikipedia_fetch(topic, max_chars=7000, full=True, gen_lang=lc)
     wb = wiki_block(wiki, lc)
+    has_source = bool(wiki.get("found") and str(wiki.get("text") or "").strip())
     source_line = ""
-    if wiki.get("found"):
+    if has_source:
         source_line = (f"\nVerified source: {wiki.get('title')} ({wiki.get('url')}). "
                        "Copy its dates, names and figures exactly and never contradict it.")
 
     system = (_pure_language_system(lc) +
               f" You are a professional presentation writer. Write ONLY in {ln}. "
               "Return only a valid JSON array, with no explanation outside the JSON.")
+
+    source_note = ""
+    if not has_source:
+        # No encyclopedia article exists for this topic (a slogan, a quotation, a
+        # very narrow subject). The model still knows the subject: ask for real
+        # information about it instead of the generic sentences every deck shared.
+        source_note = (
+            f"No reference article is available for this topic. Write the slides from your own "
+            f"reliable knowledge about exactly \"{topic}\": its definition, real dates, names, "
+            "figures, examples and consequences. If the topic is a slogan, a quotation or a "
+            "sentence, explain what it means, who uses it, where it comes from and why it matters. "
+            "Never fill a slide with a sentence that would fit any topic; name the subject in "
+            "every sentence instead."
+        )
 
     def build_prompt(n, skip_titles=()):
         skip_line = ""
@@ -1788,6 +1803,7 @@ ACCURACY RULES:
 1. Use verifiable facts from the reference below: dates, numbers, names, places, definitions and their meaning.
 2. Never invent statistics, quotations, sources or dates. If a fact is unknown, describe it generally instead of inventing a figure.
 3. Every slide must carry a different, topic-specific point; no generic filler and no repeated wording.
+{source_note}
 
 STRUCTURE RULES:
 1. Return only a valid JSON array with exactly {n} objects.
@@ -1829,7 +1845,14 @@ JSON example (translate the sample wording into {ln} in the actual response):
             entries.append({"title": title, "content": content})
         return entries
 
-    all_slides = clean_entries(await request())
+    all_slides = []
+    # A weak model on one provider can ignore the JSON contract completely. Without
+    # an article behind the deck the next provider is the only source of real
+    # content, so ask twice before accepting the localized placeholder text.
+    for attempt in range(1 if has_source else 2):
+        all_slides = clean_entries(await request())
+        if all_slides:
+            break
     combined = " ".join(f"{item['title']} {' '.join(item['content'])}" for item in all_slides)
     if len(all_slides) < count or _document_text_is_repetitive(combined):
         repaired = clean_entries(await request(
@@ -1864,7 +1887,7 @@ JSON example (translate the sample wording into {ln} in the actual response):
     # A deck with an article behind it is finished from that article: real
     # sentences in the right language beat generic localized filler, and the
     # topic stays correct even when no AI provider answers.
-    if len(all_slides) < count and wiki.get("found") and str(wiki.get("lang") or "").lower() == lc:
+    if len(all_slides) < count and has_source and str(wiki.get("lang") or "").lower() == lc:
         # A short extract can end before the later sections; the full article has
         # enough real material for the remaining slides.
         longer = await wikipedia_fetch(topic, max_chars=16000, full=True, gen_lang=lc)
@@ -2987,6 +3010,13 @@ async def _models_for_api(api):
     return models[:12]
 
 
+def _budget_rejected(error):
+    """True when a 429 only means "this request asks for more output than allowed"."""
+    low = str(error or "").lower()
+    return ("too large" in low or "otpm" in low or "output tokens per minute" in low
+            or "max_tokens" in low and "limit" in low)
+
+
 async def _chat_complete(prompt, system=None, max_tokens=2500, temperature=0.5,
                          frequency_penalty=0.7, presence_penalty=0.5, history=None):
     """Try every configured model across every provider before returning fallback text.
@@ -3055,6 +3085,12 @@ async def _chat_complete(prompt, system=None, max_tokens=2500, temperature=0.5,
             detail = f"{api.get('name', 'API')} / {model}: {reason}"
             errors.append(detail)
             _log(f"❌ {detail}")
+            if status == 429 and _budget_rejected(reason):
+                # Groq counts the requested completion budget against its per-minute
+                # output limit, so a long deck is refused before the model runs. That
+                # is a property of this model, not of the key: try the next one.
+                _log(f"⏭ {api.get('name', 'API')} / {model}: so'rov hajmi limitdan katta")
+                continue
             # Rejected credentials or an unpaid provider are key-level problems:
             # every other model on the same key would fail the same way.
             if status in (401, 402, 403):
