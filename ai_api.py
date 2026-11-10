@@ -54,16 +54,18 @@ API_LIST = [
         "api_key": os.getenv("CLOUDFLARE_KEY", ""),
         "type": "openai",
         "models": [
-            "@cf/meta/llama-3.2-3b-instruct",      # ✅ Hozir ishlayapti — BIRINCHI O'RINDA!
-            "@cf/meta/llama-3.1-8b-instruct",
-            "@cf/qwen/qwen3.8-27b",
+            # Fastest first: a slow model at the top of the list eats the whole
+            # request budget before the working ones are ever tried.
+            "@cf/meta/llama-3.2-3b-instruct",
+            "@cf/meta/llama-3.2-1b-instruct",
             "@cf/google/gemma-7b-it-lora",
             "@cf/mistral/mistral-7b-instruct-v0.2-lora",
-            "@cf/meta/llama-3.2-1b-instruct",
+            "@cf/deepseek-ai/deepseek-r1-distill-qwen-32b",
             "@cf/meta-llama/llama-2-7b-chat-hf-lora",
             "@cf/google/gemma-2b-it-lora",
             "@cf/openai/gpt-oss-120b",
-            "@cf/deepseek-ai/deepseek-r1-distill-qwen-32b"
+            "@cf/qwen/qwen3.8-27b",
+            # @cf/meta/llama-3.1-8b-instruct was retired on 2026-05-30 (HTTP 410).
         ]
     },
     {
@@ -120,7 +122,11 @@ CURRENT_API_INDEX = 0
 CURRENT_MODEL_INDEX = 0
 
 def get_current_api(): return API_LIST[CURRENT_API_INDEX]
-def get_current_model(): return get_current_api()["models"][CURRENT_MODEL_INDEX % len(get_current_api()["models"])]
+def get_current_model():
+    models = get_current_api().get("models") or []
+    if not models:
+        return "auto"
+    return models[CURRENT_MODEL_INDEX % len(models)]
 
 def switch_to_next_model() -> bool:
     global CURRENT_MODEL_INDEX
@@ -2778,6 +2784,13 @@ async def _try_post(api, model, payload):
             data = {"contents": contents}
             if system_text:
                 data["systemInstruction"] = {"parts": [{"text": system_text}]}
+            generation = {"maxOutputTokens": max(1024, int(payload.get("max_tokens") or 0) * 2)}
+            if payload.get("temperature") is not None:
+                try:
+                    generation["temperature"] = float(payload["temperature"])
+                except (TypeError, ValueError):
+                    pass
+            data["generationConfig"] = generation
             async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=AI_TIMEOUT)) as session:
                 async with session.post(url, json=data, timeout=AI_TIMEOUT) as resp:
                     body = await resp.text()
@@ -2802,11 +2815,39 @@ async def _try_post(api, model, payload):
                         content = message.get("content")
                         if content and str(content).strip():
                             return 200, content, None
-                        if message.get("reasoning") or message.get("reasoning_content"):
+                        reasoning = message.get("reasoning") or message.get("reasoning_content")
+                        if reasoning:
+                            # gpt-oss style models sometimes finish the whole answer
+                            # inside the reasoning channel and leave content empty;
+                            # when we asked for JSON, the answer is still usable.
+                            salvaged = _salvage_json(reasoning) if _payload_expects_json(payload) else None
+                            if salvaged:
+                                return 200, salvaged, None
                             return resp.status, None, "faqat reasoning qaytardi (content bo'sh)"
                         return resp.status, None, "bo'sh javob (HTTP 200)"
                     return resp.status, None, _error_detail(resp.status, body)
     except Exception as e: return None, None, str(e)
+
+def _payload_expects_json(payload):
+    """True when the last user message asks for a JSON answer."""
+    for item in reversed(payload.get("messages") or []):
+        return "json" in str(item.get("content") or "").lower()
+    return False
+
+
+def _salvage_json(text):
+    """Pull the JSON answer out of a reasoning channel, or None."""
+    raw = str(text or "").strip()
+    if not raw:
+        return None
+    try:
+        data = _extract_json(raw)
+    except Exception:
+        return None
+    if isinstance(data, (list, dict)) and data:
+        return json.dumps(data, ensure_ascii=False)
+    return None
+
 
 # Provider-side hard limits: `allam-2-7b` rejects max_tokens above 4096 with
 # HTTP 400, which used to burn an attempt on every single generation.
@@ -2823,6 +2864,12 @@ def _model_payload(payload, model):
         # Without a low reasoning effort these models spend the whole token
         # budget on hidden reasoning and answer with empty content (HTTP 200).
         p["reasoning_effort"] = "low"
+        # On these models the completion budget covers the hidden reasoning too,
+        # so the answer needs headroom on top of the requested text length.
+        budget = int(p.get("max_tokens") or 0)
+        if budget:
+            p.pop("max_tokens", None)
+            p["max_completion_tokens"] = min(budget + 2000, 6000)
     return p
 
 
@@ -3409,7 +3456,7 @@ async def chat_answer(question, user_lang="uz", history=None):
     # FAQAT barcha AI provayderlari ishlamagan holatda failure message.
     return _chat_failure_message(lang)
 
-async def test_api(timeout=7, concurrency=6):
+async def test_api(timeout=12, concurrency=6):
     """Probe every configured provider/model quickly and report each result.
 
     The old version called the models one after another with the full
@@ -3423,17 +3470,26 @@ async def test_api(timeout=7, concurrency=6):
     global LAST_ERROR
     saved_error = LAST_ERROR
 
-    no_key, jobs = [], []
+    no_key, empty, jobs = [], [], []
     for api in API_LIST:
         if not api.get("api_key"):
             no_key.append(api["name"])
             continue
-        for model in api.get("models") or []:
+        # The report must show the models generation would really try: the saved
+        # good model and the provider's live catalogue, not only the hardcoded
+        # names. A provider configured with AI_MODEL=auto has no names at all.
+        models = await _models_for_api(api)
+        if not models:
+            empty.append(api["name"])
+            continue
+        for model in models:
             jobs.append((api, model))
 
     semaphore = asyncio.Semaphore(max(1, int(concurrency)))
-    payload = {"messages": [{"role": "user", "content": "OK"}],
-               "temperature": 0.1, "max_tokens": 10}
+    # A 10-token probe starves reasoning models (they answer with an empty
+    # content and a long hidden chain), so ask for a short but real answer.
+    payload = {"messages": [{"role": "user", "content": "Reply with the single word OK."}],
+               "temperature": 0.1, "max_tokens": 200}
 
     async def probe(api, model):
         async with semaphore:
@@ -3463,6 +3519,10 @@ async def test_api(timeout=7, concurrency=6):
         name = api["name"]
         if name in no_key:
             lines.append(f"❌ {name}: API kaliti yo'q")
+            continue
+        if name in empty:
+            lines.append(f"⚠️ {name}: model ro'yxati bo'sh — AI_MODEL sozlanmagan "
+                         "va provayder /models ro'yxatini bermadi")
             continue
         rows = by_api.get(name) or []
         if any(ok for _, ok, _ in rows):
