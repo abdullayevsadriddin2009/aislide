@@ -11,6 +11,7 @@ import asyncio
 import json
 import re
 import math
+import time
 
 import academic
 import os
@@ -18,7 +19,7 @@ import io
 from collections import Counter
 from dotenv import load_dotenv
 load_dotenv()
-from config import AI_API_URL, AI_MODEL, AI_TIMEOUT, GEN_TIMEOUT
+from config import AI_API_URL, AI_API_KEY, AI_MODEL, AI_TIMEOUT, GEN_TIMEOUT, DATA_DIR
 
 LAST_ERROR = "hali sinanmadi"
 PIXABAY_KEY  = os.getenv("PIXABAY_KEY", "")
@@ -90,6 +91,30 @@ API_LIST = [
         ]
     }
 ]
+
+def _primary_api():
+    """The provider the admin configured with AI_BASE_URL / AI_API_KEY / AI_MODEL.
+
+    Those three variables were documented in render.yaml and .env.example but were
+    never part of the failover list, so a bot with only them configured answered
+    "AI serverga ulanib bo'lmadi" even though its key was valid.
+    """
+    base = str(AI_API_URL or "").strip()
+    if not AI_API_KEY or not base:
+        return None
+    model = str(AI_MODEL or "").strip()
+    return {
+        "name": "Asosiy AI (AI_BASE_URL)",
+        "base_url": base.rstrip("/"),
+        "api_key": AI_API_KEY,
+        "type": "openai",
+        "models": [model] if model and model.lower() != "auto" else [],
+    }
+
+
+_primary_api_config = _primary_api()
+if _primary_api_config:
+    API_LIST.insert(0, _primary_api_config)
 
 CURRENT_API_INDEX = 0
 CURRENT_MODEL_INDEX = 0
@@ -1774,7 +1799,72 @@ def _keyword_words(value):
             if w not in STOP_WORDS and w not in _GENERIC_IMAGE_WORDS]
 
 
+_EN_PHRASE_CACHE = {}
+
+
+async def english_phrase(text):
+    """English name of a topic given in any language, via Wikipedia interlanguage links.
+
+    Photo search must still find real pictures when every AI provider is down, so
+    the English term comes from Wikipedia instead of a translation request.
+    """
+    raw = re.sub(r"\s+", " ", str(text or "")).strip()
+    if len(raw) < 3:
+        return ""
+    cache_key = raw.casefold()
+    if cache_key in _EN_PHRASE_CACHE:
+        return _EN_PHRASE_CACHE[cache_key]
+    phrase = ""
+    try:
+        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=12),
+                                         headers={"User-Agent": USER_AGENT}) as session:
+            for lang in wiki_langs_for_topic(raw, "uz"):
+                try:
+                    search_url = f"https://{lang}.wikipedia.org/w/api.php"
+                    params = {"action": "query", "list": "search", "srsearch": raw,
+                              "format": "json", "srlimit": 1}
+                    async with session.get(search_url, params=params) as resp:
+                        if resp.status != 200:
+                            continue
+                        hits = (await resp.json(content_type=None)).get("query", {}).get("search", [])
+                    if not hits:
+                        continue
+                    title = str(hits[0].get("title") or "")
+                    if not title:
+                        continue
+                    if lang == "en":
+                        phrase = title
+                        break
+                    params = {"action": "query", "titles": title, "prop": "langlinks",
+                              "lllang": "en", "format": "json", "redirects": 1}
+                    async with session.get(search_url, params=params) as resp:
+                        if resp.status != 200:
+                            continue
+                        pages = (await resp.json(content_type=None)).get("query", {}).get("pages", {})
+                    page = next(iter(pages.values()), {}) if isinstance(pages, dict) else {}
+                    links = page.get("langlinks") or []
+                    if links and str(links[0].get("*") or "").strip():
+                        phrase = str(links[0]["*"]).strip()
+                        break
+                except Exception as exc:
+                    _log(f"English phrase lookup failed ({lang}): {type(exc).__name__}")
+                    continue
+    except Exception as exc:
+        _log(f"English phrase session failed: {type(exc).__name__}: {exc}")
+    match = re.search(r"\(([^)]*)\)", phrase)
+    if match:
+        # "Cell (biology)" -> "Cell biology": the disambiguator is the word that
+        # makes the search specific, so it becomes part of the phrase.
+        extra = re.sub(r"[^A-Za-z\s-]", " ", match.group(1))
+        base = re.sub(r"\([^)]*\)", " ", phrase)
+        phrase = re.sub(r"\s+", " ", f"{base} {extra}").strip()
+    _EN_PHRASE_CACHE[cache_key] = phrase
+    return phrase
+
+
 async def topic_to_english_keywords(topic):
+    global LAST_ERROR
+    saved_error = LAST_ERROR
     key = str(topic or "").lower().strip()
     if not key:
         return ""
@@ -1802,8 +1892,12 @@ async def topic_to_english_keywords(topic):
             return kw
     except Exception:
         pass
-    _KEYWORD_CACHE[key] = str(topic)
-    return str(topic)
+    finally:
+        # A helper request must never erase why the real generation failed.
+        LAST_ERROR = saved_error
+    en = await english_phrase(topic)
+    _KEYWORD_CACHE[key] = en or str(topic)
+    return en or str(topic)
 
 
 async def image_keywords_batch(topic, titles, max_items=12):
@@ -1821,6 +1915,8 @@ async def image_keywords_batch(topic, titles, max_items=12):
         f"Return ONLY a JSON array of strings with exactly {len(items)} entries in the same "
         "order, and nothing else.\n" + "\n".join(f"{i + 1}. {item}" for i, item in enumerate(items))
     )
+    global LAST_ERROR
+    saved_error = LAST_ERROR
     try:
         txt = await _chat_complete(
             prompt, system="You generate precise, concrete English image search phrases. Output only a JSON array of strings.",
@@ -1838,6 +1934,8 @@ async def image_keywords_batch(topic, titles, max_items=12):
                 return cleaned[:len(items)]
     except Exception as exc:
         _log(f"image keyword batch failed: {exc}")
+    finally:
+        LAST_ERROR = saved_error
     return []
 
 
@@ -1923,35 +2021,110 @@ async def _commons_images(query, count=20):
                     _log(f"Commons search HTTP {resp.status}")
                     return []
                 data = await resp.json(content_type=None)
-        pages = data.get("query", {}).get("pages", [])
-        if isinstance(pages, dict):
-            pages = list(pages.values())
-        results = []
-        for page in pages:
-            title = str(page.get("title", ""))
-            if not _image_title_usable(title):
-                continue
-            for info in (page.get("imageinfo") or [])[:1]:
-                mime = str(info.get("mime", ""))
-                url = info.get("thumburl") or info.get("url")
-                width = int(info.get("thumbwidth", info.get("width", 0)) or 0)
-                height = int(info.get("thumbheight", info.get("height", 0)) or 0)
-                if not url or mime not in ("image/jpeg", "image/png", "image/webp"):
-                    continue
-                if width and height and (width < 800 or height < 450):
-                    continue
-                results.append({
-                    "url": url,
-                    "tags": _commons_search_tags(page, info),
-                    "title": title,
-                    "width": width,
-                    "height": height,
-                    "credit": _commons_credit(info),
-                    "src": "commons",
-                })
-        return results
+        return _commons_results(data)
     except Exception as exc:
         _log(f"Wikimedia Commons image search failed: {exc}")
+        return []
+
+
+def _commons_results(data):
+    """Turn a Commons API response into usable photo candidates."""
+    pages = data.get("query", {}).get("pages", [])
+    if isinstance(pages, dict):
+        pages = list(pages.values())
+    results = []
+    for page in pages:
+        title = str(page.get("title", ""))
+        if not _image_title_usable(title):
+            continue
+        for info in (page.get("imageinfo") or [])[:1]:
+            mime = str(info.get("mime", ""))
+            url = info.get("thumburl") or info.get("url")
+            width = int(info.get("thumbwidth", info.get("width", 0)) or 0)
+            height = int(info.get("thumbheight", info.get("height", 0)) or 0)
+            if not url or mime not in ("image/jpeg", "image/png", "image/webp"):
+                continue
+            if width and height and (width < 800 or height < 450):
+                continue
+            results.append({
+                "url": url,
+                "tags": _commons_search_tags(page, info),
+                "title": title,
+                "width": width,
+                "height": height,
+                "credit": _commons_credit(info),
+                "src": "commons",
+            })
+    return results
+
+
+async def _commons_category_name(name):
+    """The Commons category Wikidata files a topic's pictures under.
+
+    "Timur" and "Category:Timur" are not guaranteed to line up, but Wikidata's
+    P373 property stores the exact curated category for the Wikipedia article.
+    """
+    name = re.sub(r"\s+", " ", str(name or "")).strip()
+    if len(name) < 3:
+        return ""
+    try:
+        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=12),
+                                         headers={"User-Agent": USER_AGENT}) as session:
+            params = {"action": "query", "titles": name, "prop": "pageprops",
+                      "ppprop": "wikibase_item", "format": "json", "redirects": 1}
+            async with session.get("https://en.wikipedia.org/w/api.php", params=params) as resp:
+                if resp.status != 200:
+                    return ""
+                pages = (await resp.json(content_type=None)).get("query", {}).get("pages", {})
+            page = next(iter(pages.values()), {}) if isinstance(pages, dict) else {}
+            qid = str((page.get("pageprops") or {}).get("wikibase_item") or "")
+            if not qid:
+                return ""
+            params = {"action": "wbgetclaims", "entity": qid, "property": "P373", "format": "json"}
+            async with session.get("https://www.wikidata.org/w/api.php", params=params) as resp:
+                if resp.status != 200:
+                    return ""
+                claims = (await resp.json(content_type=None)).get("claims", {}).get("P373") or []
+        for claim in claims:
+            value = (claim.get("mainsnak", {}).get("datavalue") or {}).get("value")
+            if value:
+                return str(value).strip()
+    except Exception as exc:
+        _log(f"Commons category lookup failed for {name!r}: {type(exc).__name__}")
+    return ""
+
+
+async def _commons_category_images(name, count=15):
+    """Photos filed under the topic's curated Commons category.
+
+    Wikimedia volunteers keep these folders by subject, so "Timur" leads to the
+    conqueror's portraits instead of every place whose name means "east". The
+    category name comes from Wikidata (P373), which is the authoritative link
+    between a Wikipedia article and its Commons folder.
+    """
+    raw = re.sub(r"\s+", " ", str(name or "")).strip()
+    if len(raw) < 3:
+        return []
+    category = await _commons_category_name(raw) or raw
+    params = {
+        "action": "query", "generator": "search",
+        # incategory keeps the search inside the curated folder, filetype keeps
+        # PDFs and audio out of the result set.
+        "gsrsearch": f'incategory:"{category}" filetype:bitmap',
+        "gsrnamespace": 6, "gsrlimit": max(10, min(30, int(count))),
+        "prop": "imageinfo", "iiprop": "url|mime|size|extmetadata",
+        "iiurlwidth": 1600, "format": "json", "formatversion": 2,
+    }
+    try:
+        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=15),
+                                         headers={"User-Agent": USER_AGENT}) as session:
+            async with session.get(COMMONS_API, params=params) as resp:
+                if resp.status != 200:
+                    return []
+                data = await resp.json(content_type=None)
+        return [dict(item, src="commons_category") for item in _commons_results(data)]
+    except Exception as exc:
+        _log(f"Commons category lookup failed ({category}): {type(exc).__name__}")
         return []
 
 
@@ -2008,6 +2181,7 @@ async def search_images(query, count=5, keywords=None, use_wiki=True):
     primary = kw_list[0]
     tasks = [
         _commons_images(str(kw_source), count=20),
+        _commons_category_images(str(kw_source), count=15),
         _pixabay_images(str(kw_source)),
         _pexels_images(str(kw_source)),
         _unsplash_images(str(kw_source)),
@@ -2016,57 +2190,89 @@ async def search_images(query, count=5, keywords=None, use_wiki=True):
         tasks.insert(0, _wiki_image(q))
     results = await asyncio.gather(*tasks, return_exceptions=True)
 
+    # Photos filed under the topic's own Commons category are curated by subject,
+    # so when that folder alone can fill the request, loose full-text hits are
+    # skipped: they are what put unrelated pictures into the deck.
+    def _describe(candidate):
+        tags = str(candidate.get("tags") or "").casefold()
+        title = str(candidate.get("title") or "").casefold()
+        title = re.sub(r"^file:", "", title)
+        title = re.sub(r"\.(jpe?g|png|webp|gif|tiff?|bmp)$", "", title)
+        title_words = set(re.findall(r"[a-z0-9]{3,}", title))
+        matches = sum(1 for word in kw_list
+                      if word in set(re.findall(r"[a-z0-9]+", tags)) or word in tags)
+        return tags, title, title_words, matches
+
+    def _category_photo_ok(candidate):
+        _, _, title_words, matches = _describe(candidate)
+        return primary in title_words if len(kw_list) == 1 else matches >= 2
+
+    # Count only the category photos that would actually pass the checks below.
+    category_hits = sum(1 for group in results if isinstance(group, list)
+                        for item in group if isinstance(item, dict)
+                        and item.get("src") == "commons_category"
+                        and _category_photo_ok(item))
+    category_fills = category_hits >= max(1, int(count))
+
     candidates, seen = [], set()
     for group in results:
         if isinstance(group, Exception) or not group:
             continue
         for candidate in group:
+            if not isinstance(candidate, dict):
+                continue
             url = candidate.get("url")
-            tags = str(candidate.get("tags") or "").casefold()
             if not url or url in seen:
                 continue
-            tag_words = set(re.findall(r"[a-z0-9]+", tags))
-            matches = sum(1 for word in kw_list if word in tag_words or word in tags)
             src = candidate.get("src")
+            if src == "commons" and category_fills:
+                continue
+            tags, title, title_words, matches = _describe(candidate)
+            width = int(candidate.get("width") or 0)
+            height = int(candidate.get("height") or 0)
             if src == "wikipedia":
                 # The article's own lead image is the most reliable topical match.
                 score = 100 + matches
+            elif src == "commons_category":
+                if len(kw_list) == 1:
+                    # "Timur" is also Indonesian for "east": a one-word topic must be
+                    # in the file name itself.
+                    if primary not in title_words:
+                        continue
+                elif matches < 2:
+                    continue
+                score = 60 + matches * 4 + (6 if primary in tags else 0)
             elif src == "commons":
-                # Commons tags are the file title, description and categories, so
-                # the photo has to mention the slide's own words, not just one of
-                # them: a single weak hit is what used to put unrelated pictures in.
+                # Tags are the file title, description and categories, so the photo
+                # has to mention the slide's own words, not just one of them.
                 if not matches:
                     continue
                 if len(kw_list) >= 2 and matches < 2 and primary not in tags:
                     continue
+                if len(kw_list) == 1 and primary not in title_words:
+                    # "cell" alone also appears in "grape cells" and "prison cell".
+                    continue
                 score = 20 + matches * 6 + (10 if primary in tags else 0)
-                # A file whose title is close to the slide's own phrase ("Alisher
-                # Navoiy portrait") beats one that only mentions the name in
-                # passing ("Alisher Navoiy Secondary School, Isfana").
-                title = str(candidate.get("title") or "").casefold()
-                title = re.sub(r"^file:", "", title)
-                title = re.sub(r"\.(jpe?g|png|webp|gif|tiff?|bmp)$", "", title)
-                title_words = [w for w in re.findall(r"[a-z0-9]{3,}", title) if w not in STOP_WORDS]
-                if title_words:
-                    extra = max(0, len(title_words) - matches)
-                    score += max(0, 8 - extra)
-                    # Photos of a street or school named after the subject are not
-                    # the subject itself; keep them behind real portraits/monuments.
-                    if any(word in title for word in (
-                            "street", "ko'chasi", "kochesi", "avenue", "prospekt",
-                            "school", "maktab", "district", "tuman", "village", "qishloq")):
-                        score -= 8
-                    if str(kw_source).casefold().strip() and title.startswith(str(kw_source).casefold().strip()):
-                        score += 12
-                width = int(candidate.get("width") or 0)
-                height = int(candidate.get("height") or 0)
-                if width and height and width >= height:
-                    # Landscape photos fill the slide photo slot without cropping.
-                    score += 3
             else:
                 if matches < 1:
                     continue
                 score = 10 + matches * 3
+            if src in ("commons", "commons_category"):
+                # A file named almost exactly like the slide beats one that only
+                # mentions the subject in passing, and a street, school or venue
+                # named after the subject is not the subject itself.
+                extra = max(0, len([w for w in title_words if w not in STOP_WORDS]) - matches)
+                score += max(0, 8 - extra)
+                if any(word in title for word in (
+                        "street", "ko'chasi", "kochesi", "avenue", "prospekt",
+                        "school", "maktab", "district", "tuman", "village", "qishloq",
+                        "binosi", "building", "metre", "station")):
+                    score -= 8
+                if str(kw_source).casefold().strip() and title.startswith(str(kw_source).casefold().strip()):
+                    score += 12
+            if width and height and width >= height:
+                # Landscape photos fill the slide photo slot without cropping.
+                score += 3
             seen.add(url)
             if candidate.get("credit"):
                 _IMAGE_CREDITS[url] = str(candidate["credit"])
@@ -2193,6 +2399,112 @@ def _model_payload(payload, model):
     return p
 
 
+_MODEL_CACHE = {}
+_MODEL_CACHE_TTL = 1800
+_BAD_MODEL_WORDS = ("embed", "whisper", "tts", "moderation", "rerank", "ocr", "dall",
+                    "image", "audio", "video", "sora", "guard", "deprecated", "codex-mini")
+_GOOD_MODEL_FILE = os.path.join(DATA_DIR, "ai_good_models.json")
+_GOOD_MODELS = None
+
+
+def _load_good_models():
+    global _GOOD_MODELS
+    if _GOOD_MODELS is None:
+        try:
+            with open(_GOOD_MODEL_FILE, encoding="utf-8") as handle:
+                loaded = json.load(handle)
+            _GOOD_MODELS = loaded if isinstance(loaded, dict) else {}
+        except Exception:
+            _GOOD_MODELS = {}
+    return _GOOD_MODELS
+
+
+def _good_model(api):
+    """The model that last answered for this provider, tried first after a restart."""
+    return _load_good_models().get(str(api.get("name") or ""))
+
+
+def _save_good_model(api, model):
+    name = str(api.get("name") or "")
+    state = _load_good_models()
+    if not name or state.get(name) == model:
+        return
+    state[name] = model
+    try:
+        with open(_GOOD_MODEL_FILE, "w", encoding="utf-8") as handle:
+            json.dump(state, handle)
+    except Exception:
+        pass
+
+
+def _clean_model_id(api, value):
+    model = str(value or "").strip()
+    if api.get("type") == "google" and model.startswith("models/"):
+        model = model[len("models/"):]
+    return model
+
+
+async def _discover_models(api):
+    """Ask the provider which models it actually serves right now.
+
+    Hardcoded names rot: once a provider retires a model every request answers 404
+    and the bot falls back to sample content although the key is fine. The live
+    catalogue is cached for half an hour so this costs one request per provider.
+    """
+    base = str(api.get("base_url") or "").rstrip("/")
+    key = str(api.get("api_key") or "")
+    if not base or not key:
+        return []
+    cache_key = f"{base}|{key[-6:]}"
+    cached = _MODEL_CACHE.get(cache_key)
+    if cached and time.time() - cached[0] < _MODEL_CACHE_TTL:
+        return list(cached[1])
+    ids = []
+    try:
+        headers = {"Authorization": f"Bearer {key}"}
+        url = f"{base}/models?key={key}" if api.get("type") == "google" else f"{base}/models"
+        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=12),
+                                         headers=headers) as session:
+            async with session.get(url) as resp:
+                if resp.status != 200:
+                    _log(f"Model ro'yxati olinmadi ({api.get('name')}): HTTP {resp.status}")
+                    return []
+                data = await resp.json(content_type=None)
+        for item in (data.get("data") or data.get("models") or []):
+            if isinstance(item, str):
+                model_id = item
+            else:
+                methods = item.get("supportedGenerationMethods") or []
+                if methods and "generateContent" not in methods:
+                    continue
+                model_id = item.get("id") or item.get("name") or ""
+            model_id = _clean_model_id(api, model_id)
+            if not model_id or any(word in model_id.lower() for word in _BAD_MODEL_WORDS):
+                continue
+            ids.append(model_id)
+    except Exception as exc:
+        _log(f"Model discovery failed ({api.get('name')}): {type(exc).__name__}: {exc}")
+        return []
+    # OpenRouter lists paid and free twins of the same model: without credit the
+    # paid ones answer 402, so the free ones go first.
+    free = [model for model in ids if model.endswith(":free")]
+    if free:
+        ids = free + [model for model in ids if not model.endswith(":free")]
+    ids = ids[:8]
+    _MODEL_CACHE[cache_key] = (time.time(), ids)
+    return ids
+
+
+async def _models_for_api(api):
+    """Last good model, the provider's live catalogue, then the configured names."""
+    models = []
+    for model in [_good_model(api)] + await _discover_models(api) + list(api.get("models") or []):
+        model = _clean_model_id(api, model)
+        if model and model not in models:
+            models.append(model)
+    return models[:12]
+
+
 async def _chat_complete(prompt, system=None, max_tokens=2500, temperature=0.5,
                          frequency_penalty=0.7, presence_penalty=0.5, history=None):
     """Try every configured model across every provider before returning fallback text.
@@ -2238,15 +2550,11 @@ async def _chat_complete(prompt, system=None, max_tokens=2500, temperature=0.5,
         if not api.get("api_key"):
             errors.append(f"{api.get('name', 'API')}: kalit sozlanmagan")
             continue
-        models = list(api.get("models", []))
+        models = await _models_for_api(api)
         if not models:
-            errors.append(f"{api.get('name', 'API')}: model ro'yxati bo'sh")
+            errors.append(f"{api.get('name', 'API')}: model topilmadi "
+                          "(kalit noto'g'ri yoki /models javob bermadi)")
             continue
-        # On the current provider, start from the last successful model position;
-        # for the other providers, try all models in their configured order.
-        if api_index == start_api:
-            model_start = CURRENT_MODEL_INDEX % len(models)
-            models = models[model_start:] + models[:model_start]
         # A 429 can mean "this model's limit is gone" or "this whole key is
         # rate-limited". Give the provider's next model one chance before treating
         # it as key-level and moving on to the next configured provider.
@@ -2256,10 +2564,8 @@ async def _chat_complete(prompt, system=None, max_tokens=2500, temperature=0.5,
             status, answer, error = await _try_post(api, model, _model_payload(payload, model))
             if status == 200 and answer and answer.strip():
                 CURRENT_API_INDEX = api_index
-                try:
-                    CURRENT_MODEL_INDEX = api.get("models", []).index(model)
-                except ValueError:
-                    CURRENT_MODEL_INDEX = 0
+                CURRENT_MODEL_INDEX = 0
+                _save_good_model(api, model)
                 LAST_ERROR = None
                 _log(f"✅ Ishladi: {api.get('name', 'API')} → {model}")
                 return clean_ai_text(answer).strip()

@@ -12,7 +12,7 @@ from keyboards import (option_kb_for, confirm_kb, main_kb, option_label,
 from designs import (subject_name, detect_subject_key, lang_full_name, SLIDE_COUNTS,
                      design_name, DESIGNS, DESIGN_KEYS)
 from ai_api import (generate, generate_slides_structured, get_last_error, search_images, download_image,
-                    generate_insho_plan, image_keywords_batch)
+                    generate_insho_plan, image_keywords_batch, english_phrase)
 from pptx_generator import generate_pptx
 from docx_generator import generate_docx
 
@@ -94,7 +94,8 @@ async def _collect_images(topic, slides_content, total=5, lang="uz"):
     async def urls_for(index, query):
         try:
             keyword = (batch_keywords[index]
-                       if index < len(batch_keywords) and batch_keywords[index] else query)
+                       if index < len(batch_keywords) and batch_keywords[index]
+                       else (await english_phrase(query) or query))
             # Only the cover asks Wikipedia for the article's own lead image.
             urls = await search_images(query, count=3, keywords=keyword, use_wiki=(index == 0))
             if not urls and index > 0 and topic_text:

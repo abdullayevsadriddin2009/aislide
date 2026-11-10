@@ -15,6 +15,9 @@
    - `ADMIN_ID` — administrator's Telegram ID.
    - `AI_BASE_URL` — verified compatible AI endpoint, for example `https://openrouter.ai/api/v1`.
    - `AI_API_KEY` — key for that endpoint.
+   - `AI_MODEL` — `auto` asks the endpoint for its live model list and uses it; a concrete
+     model name pins that model. `AI_BASE_URL` + `AI_API_KEY` are the first provider in the
+     failover chain, followed by any Groq / Cloudflare / Google keys you also set.
    - `WEB_ADMIN_PASSWORD` — unique and strong password.
    - `WEB_ADMIN_SECRET_KEY` — a long random value, separate from the AI key.
    - `WEBAPP_URL` — the public HTTPS address of this service, for example `https://ai-slide-bot.onrender.com`.
