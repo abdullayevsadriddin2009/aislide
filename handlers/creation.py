@@ -12,7 +12,7 @@ from keyboards import (option_kb_for, confirm_kb, main_kb, option_label,
 from designs import (subject_name, detect_subject_key, lang_full_name, SLIDE_COUNTS,
                      design_name, DESIGNS, DESIGN_KEYS)
 from ai_api import (generate, generate_slides_structured, get_last_error, search_images, download_image,
-                    generate_insho_plan, image_keywords_batch, english_phrase)
+                    generate_insho_plan, image_keywords_batch, english_phrase, image_verified)
 from pptx_generator import generate_pptx
 from docx_generator import generate_docx
 
@@ -136,9 +136,16 @@ async def _collect_images(topic, slides_content, total=5, lang="uz"):
     # Slides that found nothing borrow a different photo from the topic pool or
     # from the leftovers of the other slides, so photos repeat only when the topic
     # really has fewer pictures than the deck has slides.
+    # Only photos whose subject was confirmed may be placed: a free-text hit that
+    # happens to contain the word is exactly what put unrelated pictures on slides.
     leftovers = []
     for group in list(groups) + [topic_pool, cover_urls]:
-        leftovers.extend(url for url in (group or []) if url)
+        leftovers.extend(url for url in (group or []) if url and image_verified(url))
+    if cover_url and not image_verified(cover_url):
+        cover_url = take(leftovers)
+    for index, url in enumerate(slot_urls):
+        if url and not image_verified(url):
+            slot_urls[index] = None
     for index in range(len(slot_urls)):
         if not slot_urls[index]:
             slot_urls[index] = take(leftovers)
@@ -146,7 +153,7 @@ async def _collect_images(topic, slides_content, total=5, lang="uz"):
     distinct = len({url for url in ([cover_url] + slot_urls) if url})
     if distinct < min(5, 1 + slide_slots):
         # One more, wider pass is cheaper than a deck that repeats one picture.
-        leftovers.extend(await search(topic_text, None, 10))
+        leftovers.extend(url for url in await search(topic_text, None, 12) if image_verified(url))
         for index in range(len(slot_urls)):
             if not slot_urls[index]:
                 slot_urls[index] = take(leftovers)

@@ -1960,11 +1960,27 @@ COMMONS_API = "https://commons.wikimedia.org/w/api.php"
 # Credit line per chosen Commons photo, filled while scoring and read when the
 # file is saved, so the deck can attribute the photographer and the licence.
 _IMAGE_CREDITS: dict[str, str] = {}
+# True only for photos whose subject is confirmed (article lead image, Wikidata
+# "depicts", or the topic's curated Commons category). Free-text search hits stay
+# False, so a slide never shows an unverified picture.
+_IMAGE_VERIFIED: dict[str, bool] = {}
 
 
 def image_credit(url):
     """Attribution for a Commons image URL ("Artist / Wikimedia Commons (CC BY-SA 4.0)")."""
     return _IMAGE_CREDITS.get(str(url or ""), "")
+
+
+def _image_key(url):
+    """Identity of an image file, ignoring thumbnail width and query string."""
+    tail = str(url or "").split("?")[0].rsplit("/", 1)[-1]
+    tail = re.sub(r"^\d+px-", "", tail).casefold()
+    return tail or str(url or "")
+
+
+def image_verified(url):
+    """Whether this photo was confirmed to show the requested subject."""
+    return bool(_IMAGE_VERIFIED.get(str(url or "")))
 
 
 def _commons_search_tags(page, info):
@@ -2064,40 +2080,129 @@ def _commons_results(data):
     return results
 
 
-async def _commons_category_name(name):
-    """The Commons category Wikidata files a topic's pictures under.
+_ENTITY_CACHE: dict[str, tuple[str, str]] = {}
 
-    "Timur" and "Category:Timur" are not guaranteed to line up, but Wikidata's
-    P373 property stores the exact curated category for the Wikipedia article.
+
+async def _wikidata_entity(name):
+    """(Wikidata item, curated Commons category) for a Wikipedia article title.
+
+    Wikimedia names an article in one spelling ("Ali-Shir Nava'i") and the user
+    types another ("Alisher Navoiy"); the item id is the bridge that lets a photo
+    be verified against the real subject instead of against a spelling.
     """
-    name = re.sub(r"\s+", " ", str(name or "")).strip()
-    if len(name) < 3:
-        return ""
+    key = re.sub(r"\s+", " ", str(name or "")).strip().casefold()
+    if len(key) < 3:
+        return "", ""
+    if key in _ENTITY_CACHE:
+        return _ENTITY_CACHE[key]
+    qid, category = "", ""
     try:
         async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=12),
                                          headers={"User-Agent": USER_AGENT}) as session:
             params = {"action": "query", "titles": name, "prop": "pageprops",
                       "ppprop": "wikibase_item", "format": "json", "redirects": 1}
             async with session.get("https://en.wikipedia.org/w/api.php", params=params) as resp:
-                if resp.status != 200:
-                    return ""
-                pages = (await resp.json(content_type=None)).get("query", {}).get("pages", {})
-            page = next(iter(pages.values()), {}) if isinstance(pages, dict) else {}
-            qid = str((page.get("pageprops") or {}).get("wikibase_item") or "")
-            if not qid:
-                return ""
-            params = {"action": "wbgetclaims", "entity": qid, "property": "P373", "format": "json"}
-            async with session.get("https://www.wikidata.org/w/api.php", params=params) as resp:
-                if resp.status != 200:
-                    return ""
-                claims = (await resp.json(content_type=None)).get("claims", {}).get("P373") or []
-        for claim in claims:
-            value = (claim.get("mainsnak", {}).get("datavalue") or {}).get("value")
-            if value:
-                return str(value).strip()
+                if resp.status == 200:
+                    pages = (await resp.json(content_type=None)).get("query", {}).get("pages", {})
+                    page = next(iter(pages.values()), {}) if isinstance(pages, dict) else {}
+                    qid = str((page.get("pageprops") or {}).get("wikibase_item") or "")
+            if qid:
+                params = {"action": "wbgetclaims", "entity": qid,
+                          "property": "P373", "format": "json"}
+                async with session.get("https://www.wikidata.org/w/api.php", params=params) as resp:
+                    if resp.status == 200:
+                        claims = ((await resp.json(content_type=None)).get("claims", {})
+                                  .get("P373") or [])
+                        for claim in claims:
+                            value = (claim.get("mainsnak", {}).get("datavalue") or {}).get("value")
+                            if value:
+                                category = str(value).strip()
+                                break
     except Exception as exc:
-        _log(f"Commons category lookup failed for {name!r}: {type(exc).__name__}")
-    return ""
+        _log(f"Wikidata entity lookup failed for {name!r}: {type(exc).__name__}")
+    _ENTITY_CACHE[key] = (qid, category)
+    return qid, category
+
+
+async def _commons_category_name(name):
+    """The Commons category Wikidata files a topic's pictures under."""
+    return (await _wikidata_entity(name))[1]
+
+
+async def _commons_depicts_images(qid, count=20):
+    """Commons files whose structured data says they depict this exact item.
+
+    Wikimedia volunteers tag portraits and monuments with "depicts" (P180), which
+    is a human verification that the picture really shows the subject.
+    """
+    qid = str(qid or "").strip()
+    if not qid.startswith("Q"):
+        return []
+    params = {
+        "action": "query", "generator": "search",
+        "gsrsearch": f"haswbstatement:P180={qid} filetype:bitmap",
+        "gsrnamespace": 6, "gsrlimit": max(10, min(30, int(count))),
+        "prop": "imageinfo", "iiprop": "url|mime|size|extmetadata",
+        "iiurlwidth": 1600, "format": "json", "formatversion": 2,
+    }
+    try:
+        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=15),
+                                         headers={"User-Agent": USER_AGENT}) as session:
+            async with session.get(COMMONS_API, params=params) as resp:
+                if resp.status != 200:
+                    return []
+                data = await resp.json(content_type=None)
+        return [dict(item, src="commons_depicts") for item in _commons_results(data)]
+    except Exception as exc:
+        _log(f"Commons depicts lookup failed ({qid}): {type(exc).__name__}")
+        return []
+
+
+OPENVERSE_API = "https://api.openverse.org/v1/images/"
+
+
+async def _openverse_images(query, count=20):
+    """Openverse: one free API over Flickr, museums and other CC archives."""
+    query = re.sub(r"\s+", " ", str(query or "")).strip()
+    if len(query) < 3:
+        return []
+    params = {"q": query, "page_size": max(10, min(20, int(count))),
+              "license_type": "all", "mature": "false"}
+    try:
+        data = {}
+        for attempt in range(2):
+            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=15),
+                                             headers={"User-Agent": USER_AGENT}) as session:
+                async with session.get(OPENVERSE_API, params=params) as resp:
+                    if resp.status == 200:
+                        data = await resp.json(content_type=None)
+                        break
+                    if resp.status in (429, 500, 502, 503, 504) and attempt == 0:
+                        await asyncio.sleep(1.5)
+                        continue
+                    _log(f"Openverse HTTP {resp.status}")
+                    return []
+        results = []
+        for item in data.get("results") or []:
+            url = item.get("url")
+            if not url:
+                continue
+            results.append({
+                "url": url,
+                "tags": (str(item.get("title") or "") + " " + str(item.get("tags") or "")
+                         + " " + str(item.get("creator") or "")).casefold(),
+                "title": str(item.get("title") or ""),
+                "width": int(item.get("width") or 0),
+                "height": int(item.get("height") or 0),
+                "credit": (str(item.get("creator") or "").strip()
+                           + " / " + str(item.get("source") or "Openverse")
+                           + " (" + str(item.get("license") or "?").upper() + ")").strip(),
+                "src": "openverse",
+            })
+        return results
+    except Exception as exc:
+        _log(f"Openverse search failed: {type(exc).__name__}")
+        return []
 
 
 async def _commons_category_images(name, count=15):
@@ -2185,9 +2290,13 @@ async def search_images(query, count=5, keywords=None, use_wiki=True):
     if not kw_list:
         return []
     primary = kw_list[0]
+    # Resolve the subject once: its Wikidata item proves which files really show it.
+    qid, _category = await _wikidata_entity(str(kw_source))
     tasks = [
+        _commons_depicts_images(qid, count=20),
+        _commons_category_images(str(kw_source), count=20),
         _commons_images(str(kw_source), count=20),
-        _commons_category_images(str(kw_source), count=15),
+        _openverse_images(str(kw_source), count=20),
         _pixabay_images(str(kw_source)),
         _pexels_images(str(kw_source)),
         _unsplash_images(str(kw_source)),
@@ -2209,16 +2318,16 @@ async def search_images(query, count=5, keywords=None, use_wiki=True):
                       if word in set(re.findall(r"[^\W_]+", tags)) or word in tags)
         return tags, title, title_words, matches
 
-    def _category_photo_ok(candidate):
-        _, _, title_words, matches = _describe(candidate)
-        return primary in title_words if len(kw_list) == 1 else matches >= 2
-
-    # Count only the category photos that would actually pass the checks below.
-    category_hits = sum(1 for group in results if isinstance(group, list)
-                        for item in group if isinstance(item, dict)
-                        and item.get("src") == "commons_category"
-                        and _category_photo_ok(item))
-    category_fills = category_hits >= max(1, int(count))
+    VERIFIED_SOURCES = ("wikipedia", "commons_depicts", "commons_category")
+    # When the verified sources can fill the deck, unverified free-text hits are
+    # left out entirely: they are what produced basketball hoops and dolphins on a
+    # slide about a poet.
+    verified_pool = 0
+    for group in results:
+        if isinstance(group, list):
+            verified_pool += sum(1 for item in group if isinstance(item, dict)
+                                 and item.get("src") in VERIFIED_SOURCES)
+    verified_only = verified_pool >= max(1, int(count))
 
     candidates, seen = [], set()
     for group in results:
@@ -2228,26 +2337,31 @@ async def search_images(query, count=5, keywords=None, use_wiki=True):
             if not isinstance(candidate, dict):
                 continue
             url = candidate.get("url")
-            if not url or url in seen:
+            key = _image_key(url)
+            if not url or key in seen:
                 continue
             src = candidate.get("src")
-            if src == "commons" and category_fills:
+            verified = src in VERIFIED_SOURCES
+            if verified_only and not verified:
                 continue
             tags, title, title_words, matches = _describe(candidate)
             width = int(candidate.get("width") or 0)
             height = int(candidate.get("height") or 0)
             if src == "wikipedia":
                 # The article's own lead image is the most reliable topical match.
-                score = 100 + matches
+                score = 110
+            elif src == "commons_depicts":
+                # Wikidata says the file depicts this exact item.
+                score = 100
             elif src == "commons_category":
-                if len(kw_list) == 1:
-                    # "Timur" is also Indonesian for "east": a one-word topic must be
-                    # in the file name itself.
-                    if primary not in title_words:
-                        continue
-                elif matches < 2:
+                # Curated folder of the subject; no wording gate, because the
+                # category name is often a different spelling/transliteration.
+                score = 85
+            elif src == "openverse":
+                if not matches or primary not in title_words:
                     continue
-                score = 60 + matches * 4 + (6 if primary in tags else 0)
+                score = 35
+                verified = False
             elif src == "commons":
                 # Tags are the file title, description and categories, so the photo
                 # has to mention the slide's own words, not just one of them.
@@ -2259,11 +2373,6 @@ async def search_images(query, count=5, keywords=None, use_wiki=True):
                     # "cell" alone also appears in "grape cells" and "prison cell".
                     continue
                 score = 20 + matches * 6 + (10 if primary in tags else 0)
-            else:
-                if matches < 1:
-                    continue
-                score = 10 + matches * 3
-            if src in ("commons", "commons_category"):
                 # A file named almost exactly like the slide beats one that only
                 # mentions the subject in passing, and a street, school or venue
                 # named after the subject is not the subject itself.
@@ -2274,12 +2383,24 @@ async def search_images(query, count=5, keywords=None, use_wiki=True):
                         "school", "maktab", "district", "tuman", "village", "qishloq",
                         "binosi", "building", "metre", "station")):
                     score -= 8
-                if str(kw_source).casefold().strip() and title.startswith(str(kw_source).casefold().strip()):
-                    score += 12
+            else:
+                if matches < 1:
+                    continue
+                score = 10 + matches * 3
+                verified = False
+            if str(kw_source).casefold().strip() and title.startswith(str(kw_source).casefold().strip()):
+                score += 12
+            if verified:
+                # Among verified photos, prefer the one whose file name is closest to
+                # the subject ("Cell structure") over a tangentially related file
+                # ("Cryptomonas curvata anterior view").
+                extra = max(0, len([w for w in title_words if w not in STOP_WORDS]) - matches)
+                score += max(0, 6 - extra)
             if width and height and width >= height:
                 # Landscape photos fill the slide photo slot without cropping.
                 score += 3
-            seen.add(url)
+            seen.add(key)
+            _IMAGE_VERIFIED[url] = bool(verified)
             if candidate.get("credit"):
                 _IMAGE_CREDITS[url] = str(candidate["credit"])
             candidates.append((score, url))
