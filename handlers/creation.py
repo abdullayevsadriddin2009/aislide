@@ -12,7 +12,7 @@ from keyboards import (option_kb_for, confirm_kb, main_kb, option_label,
 from designs import (subject_name, detect_subject_key, lang_full_name, SLIDE_COUNTS,
                      design_name, DESIGNS, DESIGN_KEYS)
 from ai_api import (generate, generate_slides_structured, get_last_error, search_images, download_image,
-                    generate_insho_plan, image_grade)
+                    generate_insho_plan, image_grade, related_keywords)
 from pptx_generator import generate_pptx
 from docx_generator import generate_docx
 
@@ -68,14 +68,28 @@ async def _collect_images(topic, slides_content, total=5, lang="uz"):
     repeated. The returned list starts with the cover photo, then one photo per
     body slide in slide order; ``generate_pptx`` maps it by position.
     """
-    import tempfile, os, textwrap, asyncio
+    import tempfile, os, textwrap, asyncio, re
     from PIL import Image, ImageDraw, ImageFont
+    from urllib.parse import unquote
 
     tmpdir = tempfile.mkdtemp(prefix="pptx_imgs_")
     topic_text = str(topic or "").strip()
     titles = [str(item.get("title") or "").strip()
               for item in (slides_content or []) if isinstance(item, dict)]
     titles = [title for title in titles if len(title) >= 3]
+    # Section headings carry no subject of their own: "Xulosa" or "Tahlil" is where
+    # a search engine returns logic diagrams and stock charts, which is how
+    # unrelated pictures used to reach a slide.
+    headings = {
+        "xulosa", "kirish", "mundarija", "reja", "tahlil", "natijalar", "adabiyotlar",
+        "mavzu", "asosiy qism", "savol", "savollar", "test", "amaliyot", "zhulosa",
+        "conclusion", "introduction", "contents", "summary", "analysis", "results",
+        "введение", "заключение", "содержание", "анализ", "выводы", "итоги",
+        "giriş", "sonuç", "içindekiler", "einleitung", "fazit", "inhalt",
+        "sommaire", "conclusion", "résumé",
+    }
+    titles = [title for title in titles
+              if title.casefold().strip(" .,:;!?") not in headings]
     slide_slots = max(1, len(titles))
 
     queries = [query for query in ([topic_text] + titles) if len(query) >= 3][:12]
@@ -86,6 +100,17 @@ async def _collect_images(topic, slides_content, total=5, lang="uz"):
     # the slide titles as they are written, never a translation or an AI paraphrase.
     keywords = list(queries)
 
+    # Same-language words for the subject itself: the phrase's own words plus the
+    # article titles this Wikipedia suggests for them. They are the second wave,
+    # used only where the topic as written has no pictures.
+    topic_terms = [topic_text or str(lang)]
+    try:
+        for extra in await related_keywords(topic_text, lang):
+            if extra and extra.casefold() not in {term.casefold() for term in topic_terms}:
+                topic_terms.append(extra)
+    except Exception as exc:
+        print(f"[creation] keyword expansion failed: {exc}", flush=True)
+
     async def search(query, keyword, count, use_wiki=False):
         try:
             return await search_images(query, count=count, keywords=keyword,
@@ -94,13 +119,20 @@ async def _collect_images(topic, slides_content, total=5, lang="uz"):
             print(f"[creation] search_images failed for {query!r}: {exc}", flush=True)
             return []
 
-    # Cover photo (the article's own lead image first), a wider topic pool for the
-    # slots whose own title finds little, and one search per slide title.
-    cover_urls, topic_pool, *groups = await asyncio.gather(
+    def grade_rank(url):
+        grade = image_grade(url)
+        return 0 if grade == "A" else (1 if grade == "B" else 2)
+
+    # The subject first: the article's own lead image and a pool of its pictures,
+    # then one group of pictures per slide title.
+    cover_urls, *pool_groups = await asyncio.gather(
         search(topic_text, keywords[0], 5, use_wiki=True),
-        search(topic_text, keywords[0], 10),
-        *(search(queries[index], keywords[index], 6) for index in range(1, len(queries))),
+        *(search(term, term, 10) for term in topic_terms[:4]),
     )
+    topic_pool = sorted(dict.fromkeys(url for group in pool_groups for url in (group or [])),
+                        key=grade_rank)
+    groups = await asyncio.gather(
+        *(search(queries[index], keywords[index], 6) for index in range(1, len(queries))))
 
     used, slot_urls = set(), []
 
@@ -116,7 +148,11 @@ async def _collect_images(topic, slides_content, total=5, lang="uz"):
     cover_url = (take(cover_urls, ("A",)) or take(topic_pool, ("A",))
                  or take(cover_urls) or take(topic_pool))
     for group in groups:
-        slot_urls.append(take(group) or take(topic_pool))
+        # The deck's own subject first: a picture found through a heading such as
+        # "Tahlil va natijalar" is what put unrelated photos into slides. A
+        # heading's picture is used when it is verified for that subject ("A"),
+        # otherwise the topic pool supplies the photo.
+        slot_urls.append(take(topic_pool) or take(group, ("A",)) or take(group))
 
     # Slides that found nothing borrow a different photo from the topic pool or
     # from the leftovers of the other slides, so photos repeat only when the topic
@@ -140,14 +176,35 @@ async def _collect_images(topic, slides_content, total=5, lang="uz"):
 
     distinct = len({url for url in ([cover_url] + slot_urls) if url})
     if distinct < min(5, 1 + slide_slots):
-        # One more, wider pass is cheaper than a deck that repeats one picture.
-        leftovers.extend(url for url in await search(topic_text, None, 12)
-                         if image_grade(url) in ("A", "B"))
-        leftovers = sorted(dict.fromkeys(leftovers),
-                           key=lambda url: 0 if image_grade(url) == "A" else 1)
+        # The topic as written does not have enough pictures: search its
+        # same-language keywords and synonyms before any slide goes without a
+        # photo. The words are the user's own or the ones Wikipedia itself offers,
+        # never a translation.
+        topic_words = [word for word in re.findall(r"[^\W\d_]{4,}", topic_text.casefold())]
+
+        def on_subject(url):
+            """A related-title photo must still name the deck's own subject.
+
+            A suggestion such as "Vatan urushi ordeni" is a real subject in the
+            same language, but its medal is not a picture of "vatan"; the word in
+            the file name is the cheap proof that the photo belongs to the deck.
+            """
+            name = unquote(str(url)).casefold()
+            return not topic_words or any(word in name for word in topic_words)
+
+        for term in topic_terms[1:6]:
+            leftovers.extend(url for url in await search(term, term, 10)
+                             if image_grade(url) in ("A", "B") and on_subject(url))
+        if not leftovers:
+            for term in topic_terms[:4]:
+                leftovers.extend(url for url in await search(term, term, 12)
+                                 if on_subject(url))
+        leftovers = sorted(dict.fromkeys(leftovers), key=grade_rank)
         for index in range(len(slot_urls)):
             if not slot_urls[index]:
                 slot_urls[index] = take(leftovers)
+        if not cover_url:
+            cover_url = take(leftovers)
 
     ordered_urls = []
     for url in [cover_url] + slot_urls:

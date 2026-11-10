@@ -314,6 +314,62 @@ async def localize_topic(topic, lang="uz"):
         _log(f"Topic localization failed: {exc}")
     return original
 
+async def _wiki_page(lang, title, max_chars=4000, full=False):
+    """Extract of one known article title, in that language."""
+    exintro = "" if full else "&exintro"
+    lc = str(lang or "uz").lower()
+    url = (f"https://{lc}.wikipedia.org/w/api.php?action=query&prop=extracts{exintro}"
+           f"&explaintext&titles={aiohttp.helpers.quote(str(title))}&format=json&redirects=1")
+    try:
+        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=20),
+                                         headers={"User-Agent": USER_AGENT}) as session:
+            async with session.get(url) as resp:
+                if resp.status != 200:
+                    return {}
+                pages = (await resp.json()).get("query", {}).get("pages", {})
+                page = next(iter(pages.values()), {})
+                extract = page.get("extract", "")
+                if not extract or len(extract) <= 100:
+                    return {}
+                real_title = str(page.get("title") or title)
+                return {"found": True, "lang": lc, "title": real_title,
+                        "text": extract[:max_chars], "image": "",
+                        "url": f"https://{lc}.wikipedia.org/wiki/{real_title.replace(' ', '_')}"}
+    except Exception as exc:
+        _log(f"[WIKI {lc}] '{title}' xato: {exc}")
+    return {}
+
+
+async def _wikipedia_related(topic, lang, max_chars=4000, full=False):
+    """Closest same-language article when the topic as written has none.
+
+    "vatan ostonadan boshlanadi" is not an article title, but the Uzbek Wikipedia
+    knows that "vatan" is a subject, so the deck gets real reference material
+    instead of falling back to generic sentences. A suggestion only counts when it
+    shares one of the topic's own words: an alphabetical neighbour is not a source.
+    """
+    lc = str(lang or "uz").lower()
+    if lc not in ALL_LANGS:
+        return {}
+    words = set(_keyword_words(topic))
+    if not words:
+        return {}
+    ranked = []
+    for index, name in enumerate(await related_keywords(topic, lc)):
+        cue = set(re.findall(r"[^\W\d_]{4,}", str(name).casefold()))
+        shared = len(cue & words)
+        if not shared:
+            continue
+        ranked.append((-shared, len(str(name).split()), index, str(name)))
+    for *_, name in sorted(ranked)[:3]:
+        page = await _wiki_page(lc, name, max_chars=max_chars, full=full)
+        if page.get("found"):
+            page["related"] = True
+            _log(f"[WIKI {lc}] '{topic}' uchun bog'liq maqola: '{page.get('title')}'")
+            return page
+    return {}
+
+
 async def wikipedia_fetch(topic, max_chars=4000, full=False, gen_lang="uz"):
     langs = wiki_langs_for_topic(topic, gen_lang)
     _log(f"🔍 Wikipedia qidiruv: {langs} (mavzu: '{topic}')")
@@ -343,6 +399,11 @@ async def wikipedia_fetch(topic, max_chars=4000, full=False, gen_lang="uz"):
                         return {"found": True, "lang": lang, "title": title, "text": extract[:max_chars], "image": image, "url": f"https://{lang}.wikipedia.org/wiki/{title.replace(' ', '_')}"}
             except Exception as e:
                 _log(f"[WIKI {lang}] xato: {e}"); continue
+    # No article for this exact phrase: use the closest same-language subject, so
+    # the facts still come from an encyclopedia instead of from the model alone.
+    related = await _wikipedia_related(topic, gen_lang, max_chars=max_chars, full=full)
+    if related.get("found"):
+        return related
     return {"found": False, "text": "", "image": "", "url": "", "title": "", "lang": ""}
 
 def wiki_block(wiki, lang="uz"):
@@ -1767,6 +1828,9 @@ async def generate_slides_structured(topic, subject, lang, count):
     if has_source:
         source_line = (f"\nVerified source: {wiki.get('title')} ({wiki.get('url')}). "
                        "Copy its dates, names and figures exactly and never contradict it.")
+        if wiki.get("related"):
+            source_line += (f" This article covers the closest subject to the requested topic "
+                            f"\"{topic}\"; keep the deck on that topic.")
 
     system = (_pure_language_system(lc) +
               f" You are a professional presentation writer. Write ONLY in {ln}. "
@@ -1803,6 +1867,8 @@ ACCURACY RULES:
 1. Use verifiable facts from the reference below: dates, numbers, names, places, definitions and their meaning.
 2. Never invent statistics, quotations, sources or dates. If a fact is unknown, describe it generally instead of inventing a figure.
 3. Every slide must carry a different, topic-specific point; no generic filler and no repeated wording.
+4. Start from the newest information available: lead with the most recent development, figure or date, and always give the year of a figure that changes over time.
+5. Never present an outdated number or situation as current; if newer data exists, use it and say which year it belongs to.
 {source_note}
 
 STRUCTURE RULES:
@@ -1973,6 +2039,78 @@ def _keyword_words(value):
     # reduced to an empty keyword list.
     return [w for w in re.findall(r"[^\W\d_]{4,}", str(value or "").casefold())
             if w not in STOP_WORDS and w not in _GENERIC_IMAGE_WORDS]
+
+
+_RELATED_CACHE = {}
+
+
+async def related_keywords(text, lang="uz", limit=10):
+    """Same-language synonyms and keywords for a topic, in the user's language.
+
+    Nothing is translated and nothing is invented: the candidates are the words
+    the user already wrote plus the article titles the Wikipedia of the deck's
+    language offers for that phrase and for each of its words. A slogan such as
+    "vatan ostonadan boshlanadi" therefore still reaches "vatan" and
+    "vatanparvarlik", which is where the photos and the facts are.
+    """
+    phrase = re.sub(r"\s+", " ", str(text or "")).strip()
+    lc = str(lang or "uz").lower()
+    if not phrase:
+        return []
+    cache_key = (lc, phrase.casefold())
+    if cache_key in _RELATED_CACHE:
+        return list(_RELATED_CACHE[cache_key])
+
+    out, seen = [], {phrase.casefold()}
+
+    def add(value):
+        item = re.sub(r"\s+", " ", str(value or "")).strip(" .,:;!?\"'")
+        # "Vatanparvar (film)" is a real title; "Vatanparvar (film" is a mangled one.
+        if item.count("(") != item.count(")"):
+            item = item.split("(")[0].strip()
+        low = item.casefold()
+        if len(item) < 3 or len(item.split()) > 4 or low in seen:
+            return
+        seen.add(low)
+        out.append(item)
+
+    words = [w for w in _keyword_words(phrase) if w not in (lc,)]
+
+    async def suggest(query):
+        """Article titles the same-language Wikipedia suggests for ``query``."""
+        if lc not in ALL_LANGS or not str(query or "").strip():
+            return []
+        try:
+            url = (f"https://{lc}.wikipedia.org/w/api.php?action=opensearch&format=json"
+                   f"&namespace=0&limit=6&search={aiohttp.helpers.quote(str(query))}")
+            async with aiohttp.ClientSession(
+                    timeout=aiohttp.ClientTimeout(total=10),
+                    headers={"User-Agent": USER_AGENT}) as session:
+                async with session.get(url) as resp:
+                    if resp.status != 200:
+                        return []
+                    data = await resp.json(content_type=None)
+                    return list(data[1] or []) if isinstance(data, list) and len(data) > 1 else []
+        except Exception as exc:
+            _log(f"[WIKI {lc}] bog'liq kalit so'zlar xato: {exc}")
+            return []
+
+    # One request for the whole phrase and one per leading word, all at once.
+    asked = [phrase] + words[:2]
+    answers = await asyncio.gather(*(suggest(query) for query in asked), return_exceptions=True)
+
+    # The topic's own words come first: they are exactly what the user wrote and
+    # they are what the subject is usually called in that language.
+    for word in words:
+        add(word)
+    for group in answers:
+        if isinstance(group, Exception) or not group:
+            continue
+        for title in group:
+            add(title)
+
+    _RELATED_CACHE[cache_key] = out[:max(1, int(limit))]
+    return list(_RELATED_CACHE[cache_key])
 
 
 _EN_PHRASE_CACHE = {}
@@ -2440,6 +2578,98 @@ async def _commons_category_search(phrase, count=20):
     return out
 
 
+_ABSTRACT_CACHE = {}
+# Items that are ideas, not things: a concept has no photograph of itself, so the
+# pictures volunteers filed under it show whatever they were thinking of.
+_CONCEPT_CLASSES = {"Q151885", "Q1969448", "Q9415"}  # concept, term, emotion
+
+
+async def _item_is_abstract(qid):
+    """Whether a Wikidata item is a concept rather than a photographable subject."""
+    qid = str(qid or "").strip()
+    if not qid.startswith("Q"):
+        return False
+    if qid in _ABSTRACT_CACHE:
+        return _ABSTRACT_CACHE[qid]
+    abstract = False
+    try:
+        params = {"action": "wbgetentities", "ids": qid, "props": "claims|descriptions",
+                  "languages": "en", "format": "json"}
+        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=12),
+                                         headers={"User-Agent": USER_AGENT}) as session:
+            async with session.get("https://www.wikidata.org/w/api.php", params=params) as resp:
+                if resp.status == 200:
+                    entity = ((await resp.json(content_type=None)).get("entities") or {}).get(qid) or {}
+                    claims = (entity.get("claims") or {}).get("P31") or []
+                    classes = set()
+                    for claim in claims:
+                        value = (claim.get("mainsnak", {}).get("datavalue") or {}).get("value") or {}
+                        if isinstance(value, dict) and value.get("id"):
+                            classes.add(str(value["id"]))
+                    abstract = bool(classes & _CONCEPT_CLASSES)
+                    if not abstract:
+                        description = str(((entity.get("descriptions") or {}).get("en") or {})
+                                          .get("value") or "").lower()
+                        abstract = any(word in description for word in (
+                            "concept", " notion", "idea", "feeling", "term for", "value ",
+                            "phenomenon", "attitude"))
+    except Exception as exc:
+        _log(f"Wikidata type lookup failed ({qid}): {type(exc).__name__}")
+    _ABSTRACT_CACHE[qid] = abstract
+    return abstract
+
+
+async def _wiki_page_images(title, lang="uz", count=20):
+    """Bitmap images used inside the article itself.
+
+    Editors chose them for this exact subject in this exact language, so they are
+    the safest pictures for a topic whose Wikidata item has no curated folder.
+    """
+    lc = str(lang or "uz").lower()
+    raw_title = str(title or "").strip()
+    if lc not in ALL_LANGS or not raw_title:
+        return []
+    api = f"https://{lc}.wikipedia.org/w/api.php"
+    try:
+        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=15),
+                                         headers={"User-Agent": USER_AGENT}) as session:
+            params = {"action": "query", "titles": raw_title, "prop": "images",
+                      "imlimit": max(10, min(50, int(count))), "format": "json",
+                      "formatversion": 2, "redirects": 1}
+            async with session.get(api, params=params) as resp:
+                if resp.status != 200:
+                    return []
+                data = await resp.json(content_type=None)
+            pages = (data.get("query") or {}).get("pages") or []
+            page = pages[0] if pages else {}
+            names = [str(item.get("title") or "") for item in (page.get("images") or [])]
+            names = [name for name in names
+                     if name.lower().startswith("file:") and _image_title_usable(name)][:count]
+            if not names:
+                return []
+            params = {"action": "query", "titles": "|".join(names[:20]),
+                      "prop": "imageinfo", "iiprop": "url|mime|size", "iiurlwidth": 1600,
+                      "format": "json", "formatversion": 2}
+            async with session.get(api, params=params) as resp:
+                if resp.status != 200:
+                    return []
+                data = await resp.json(content_type=None)
+    except Exception as exc:
+        _log(f"[WIKI {lc}] maqola rasmlari xato: {type(exc).__name__}")
+        return []
+    out = []
+    for page in (data.get("query") or {}).get("pages") or []:
+        info = (page.get("imageinfo") or [{}])[0]
+        url = str(info.get("thumburl") or info.get("url") or "")
+        mime = str(info.get("mime") or "")
+        if not url or not mime.startswith("image/") or mime == "image/svg+xml":
+            continue
+        out.append({"url": url, "title": str(page.get("title") or ""),
+                    "width": info.get("width") or 0, "height": info.get("height") or 0,
+                    "tags": "", "src": "wikipedia_article"})
+    return out
+
+
 async def _commons_depicts_images(qid, count=20):
     """Commons files whose structured data says they depict this exact item.
 
@@ -2607,18 +2837,32 @@ async def search_images(query, count=5, keywords=None, use_wiki=True, lang="en")
     qid, category = await _wikidata_entity(q, wiki_lang=speaker)
     if not qid and speaker != "en":
         qid, category = await _wikidata_entity(q, wiki_lang="en")
-    tasks = [
-        _commons_depicts_images(qid, count=20),
-        _commons_category_images(category or phrase, count=20),
-        _commons_category_search(phrase, count=20),
-        _commons_images(phrase, count=20),
-        _openverse_images(phrase, count=20),
-        _pixabay_images(phrase),
-        _pexels_images(phrase),
-        _unsplash_images(phrase),
-    ]
+    article_title = _ENTITY_TITLE.get(_entity_key(q)) or ""
+    abstract = await _item_is_abstract(qid)
+    tasks = []
     if use_wiki:
-        tasks.insert(0, _wiki_image(q, speaker))
+        tasks.append(_wiki_image(q, speaker))
+    if article_title:
+        tasks.append(_wiki_page_images(article_title, speaker, count=20))
+    if not abstract:
+        tasks.extend([
+            _commons_depicts_images(qid, count=20),
+            _commons_category_images(category or phrase, count=20),
+            _commons_category_search(phrase, count=20),
+            _commons_images(phrase, count=20),
+            _openverse_images(phrase, count=20),
+            _pixabay_images(phrase),
+            _pexels_images(phrase),
+            _unsplash_images(phrase),
+        ])
+    else:
+        # A concept has no picture of itself. Searching its name only reaches
+        # homonyms — the French village called "Vatan", a museum called
+        # "Patriotism" — so only the article's own images are used here; the
+        # caller falls back to the related subjects of the phrase.
+        _log(f"[IMG] '{q}' — tushuncha, faqat maqola rasmlari")
+    if not tasks:
+        return []
     results = await asyncio.gather(*tasks, return_exceptions=True)
 
     # Photos filed under the topic's own Commons category are curated by subject,
@@ -2634,7 +2878,7 @@ async def search_images(query, count=5, keywords=None, use_wiki=True, lang="en")
                       if word in set(re.findall(r"[^\W_]+", tags)) or word in tags)
         return tags, title, title_words, matches
 
-    VERIFIED_SOURCES = ("wikipedia", "commons_depicts", "commons_category")
+    VERIFIED_SOURCES = ("wikipedia", "wikipedia_article", "commons_depicts", "commons_category")
     # When the verified sources can fill the deck, unverified free-text hits are
     # left out entirely: they are what produced basketball hoops and dolphins on a
     # slide about a poet.
@@ -2666,6 +2910,9 @@ async def search_images(query, count=5, keywords=None, use_wiki=True, lang="en")
             if src == "wikipedia":
                 # The article's own lead image is the most reliable topical match.
                 score = 110
+            elif src == "wikipedia_article":
+                # Chosen by the article's editors for this exact subject.
+                score = 90
             elif src == "commons_depicts":
                 # Wikidata says the file depicts this exact item.
                 score = 100
