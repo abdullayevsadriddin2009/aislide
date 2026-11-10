@@ -1757,6 +1757,8 @@ _IMAGE_BLOCKED_TITLE_WORDS = (
     "wikimedia", "commons-logo", "disambig", "stub", "screenshot", "chart", "diagram",
     "graph", "poster", "book cover", "album cover", "stamp", "banknote", "coin",
     "plaque", "letterhead", "formula", "equation", "banner", ".svg", ".pdf",
+    " map", "map of", "montage", "collage", "clipart", "sketch", "scan of",
+    "wikidata", "wikisource", "template", "category:",
 )
 
 
@@ -1848,43 +1850,75 @@ async def _wiki_image(topic):
     return []
 
 
-async def _commons_images(query, count=12):
-    """Search Wikimedia Commons without requiring a third-party API key."""
-    query = str(query or "").strip()
+COMMONS_API = "https://commons.wikimedia.org/w/api.php"
+
+
+def _commons_search_tags(page, info):
+    """Title, description and categories of a Commons file, lowercased."""
+    title = re.sub(r"^file:", "", str(page.get("title", "")).casefold())
+    title = re.sub(r"\.(jpe?g|png|webp|gif|tiff?|bmp)$", "", title)
+    parts = [title]
+    meta = info.get("extmetadata") or {}
+    for key in ("ImageDescription", "Categories", "ObjectName", "Artist"):
+        entry = meta.get(key)
+        value = entry.get("value") if isinstance(entry, dict) else None
+        if value:
+            parts.append(re.sub(r"<[^>]+>", " ", str(value)))
+    return re.sub(r"\s+", " ", " ".join(parts)).strip().casefold()
+
+
+async def _commons_images(query, count=20):
+    """Search Wikimedia Commons (free, no API key) for a real photo of the subject.
+
+    Returns file titles, descriptions and categories so the caller can score how
+    well a photo actually matches the slide instead of trusting the search order.
+    """
+    query = re.sub(r"\s+", " ", str(query or "")).strip()
     if len(query) < 3:
         return []
-    api_url = "https://commons.wikimedia.org/w/api.php"
     params = {
         "action": "query", "generator": "search",
         # filetype:bitmap keeps SVG icons, logos and PDF documents out of the pool.
         "gsrsearch": f"{query} filetype:bitmap", "gsrnamespace": 6,
-        "gsrlimit": max(10, min(20, int(count))),
-        "prop": "imageinfo", "iiprop": "url|mime|size", "iiurlwidth": 2000,
-        "format": "json",
+        "gsrlimit": max(20, min(40, int(count) * 2)),
+        "prop": "imageinfo",
+        "iiprop": "url|mime|size|extmetadata",
+        "iiurlwidth": 1600,
+        "format": "json", "formatversion": 2,
     }
     try:
-        headers = {"User-Agent": USER_AGENT}
-        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=12), headers=headers) as session:
-            async with session.get(api_url, params=params) as resp:
+        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=15),
+                                         headers={"User-Agent": USER_AGENT}) as session:
+            async with session.get(COMMONS_API, params=params) as resp:
                 if resp.status != 200:
+                    _log(f"Commons search HTTP {resp.status}")
                     return []
                 data = await resp.json(content_type=None)
-        pages = data.get("query", {}).get("pages", {})
+        pages = data.get("query", {}).get("pages", [])
+        if isinstance(pages, dict):
+            pages = list(pages.values())
         results = []
-        for page in pages.values():
+        for page in pages:
             title = str(page.get("title", ""))
             if not _image_title_usable(title):
                 continue
-            for info in page.get("imageinfo", [])[:1]:
+            for info in (page.get("imageinfo") or [])[:1]:
                 mime = str(info.get("mime", ""))
                 url = info.get("thumburl") or info.get("url")
                 width = int(info.get("thumbwidth", info.get("width", 0)) or 0)
                 height = int(info.get("thumbheight", info.get("height", 0)) or 0)
                 if not url or mime not in ("image/jpeg", "image/png", "image/webp"):
                     continue
-                if width and height and (width < 640 or height < 360):
+                if width and height and (width < 800 or height < 450):
                     continue
-                results.append({"url": url, "tags": title.lower(), "src": "commons"})
+                results.append({
+                    "url": url,
+                    "tags": _commons_search_tags(page, info),
+                    "title": title,
+                    "width": width,
+                    "height": height,
+                    "src": "commons",
+                })
         return results
     except Exception as exc:
         _log(f"Wikimedia Commons image search failed: {exc}")
@@ -1968,10 +2002,37 @@ async def search_images(query, count=5, keywords=None, use_wiki=True):
                 # The article's own lead image is the most reliable topical match.
                 score = 100 + matches
             elif src == "commons":
-                # Commons "tags" are the file title, so require the main keyword.
-                if primary not in tags:
+                # Commons tags are the file title, description and categories, so
+                # the photo has to mention the slide's own words, not just one of
+                # them: a single weak hit is what used to put unrelated pictures in.
+                if not matches:
                     continue
-                score = 20 + matches * 4
+                if len(kw_list) >= 2 and matches < 2 and primary not in tags:
+                    continue
+                score = 20 + matches * 6 + (10 if primary in tags else 0)
+                # A file whose title is close to the slide's own phrase ("Alisher
+                # Navoiy portrait") beats one that only mentions the name in
+                # passing ("Alisher Navoiy Secondary School, Isfana").
+                title = str(candidate.get("title") or "").casefold()
+                title = re.sub(r"^file:", "", title)
+                title = re.sub(r"\.(jpe?g|png|webp|gif|tiff?|bmp)$", "", title)
+                title_words = [w for w in re.findall(r"[a-z0-9]{3,}", title) if w not in STOP_WORDS]
+                if title_words:
+                    extra = max(0, len(title_words) - matches)
+                    score += max(0, 8 - extra)
+                    # Photos of a street or school named after the subject are not
+                    # the subject itself; keep them behind real portraits/monuments.
+                    if any(word in title for word in (
+                            "street", "ko'chasi", "kochesi", "avenue", "prospekt",
+                            "school", "maktab", "district", "tuman", "village", "qishloq")):
+                        score -= 8
+                    if str(kw_source).casefold().strip() and title.startswith(str(kw_source).casefold().strip()):
+                        score += 12
+                width = int(candidate.get("width") or 0)
+                height = int(candidate.get("height") or 0)
+                if width and height and width >= height:
+                    # Landscape photos fill the slide photo slot without cropping.
+                    score += 3
             else:
                 if matches < 1:
                     continue

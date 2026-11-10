@@ -29,9 +29,10 @@ AI_TIMEOUT = int(os.getenv("AI_TIMEOUT", "120"))
 # Bitta hujjat uchun umumiy chegara: undan oshsa xato xabari yuboriladi, jim qolmaydi.
 GEN_TIMEOUT = int(os.getenv("GEN_TIMEOUT", "900"))
 
-# Taqdimotlarga rasm qo'shish. Standart holatda o'chirilgan: stock rasm qidiruvi
-# mavzuga mos bo'lmagan rasmlarni qo'shib yuborishi mumkin. Yoqish: SLIDE_IMAGES=1
-SLIDE_IMAGES = os.getenv("SLIDE_IMAGES", "0").strip().lower() in ("1", "true", "yes", "on")
+# Taqdimotlarga rasm qo'shish. Standart holatda yoqilgan: rasmlar Wikimedia
+# Commons'dan (bepul, API kalitsiz) slayd sarlavhasiga mosligi tekshirilib olinadi.
+# Butunlay o'chirish uchun: SLIDE_IMAGES=0
+SLIDE_IMAGES = os.getenv("SLIDE_IMAGES", "1").strip().lower() in ("1", "true", "yes", "on")
 
 # ===== Proxy =====
 PROXY_URL = os.getenv("PROXY_URL", "")

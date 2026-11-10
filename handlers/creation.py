@@ -96,7 +96,14 @@ async def _collect_images(topic, slides_content, total=5, lang="uz"):
             keyword = (batch_keywords[index]
                        if index < len(batch_keywords) and batch_keywords[index] else query)
             # Only the cover asks Wikipedia for the article's own lead image.
-            return await search_images(query, count=3, keywords=keyword, use_wiki=(index == 0))
+            urls = await search_images(query, count=3, keywords=keyword, use_wiki=(index == 0))
+            if not urls and index > 0 and topic_text:
+                # A slide title that finds nothing still gets a topic photo rather
+                # than repeating the cover picture on every slide.
+                urls = await search_images(topic_text, count=5,
+                                           keywords=(batch_keywords[0] if batch_keywords else topic_text),
+                                           use_wiki=False)
+            return urls
         except Exception as exc:
             print(f"[creation] search_images failed for {query!r}: {exc}", flush=True)
             return []
