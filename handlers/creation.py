@@ -12,7 +12,7 @@ from keyboards import (option_kb_for, confirm_kb, main_kb, option_label,
 from designs import (subject_name, detect_subject_key, lang_full_name, SLIDE_COUNTS,
                      design_name, DESIGNS, DESIGN_KEYS)
 from ai_api import (generate, generate_slides_structured, get_last_error, search_images, download_image,
-                    generate_insho_plan, image_keywords_batch, english_phrase, image_verified)
+                    generate_insho_plan, image_keywords_batch, english_phrase, image_grade)
 from pptx_generator import generate_pptx
 from docx_generator import generate_docx
 
@@ -122,29 +122,35 @@ async def _collect_images(topic, slides_content, total=5, lang="uz"):
 
     used, slot_urls = set(), []
 
-    def take(candidates):
+    def take(candidates, grades=("A", "B")):
         for url in candidates or []:
-            if url and url not in used:
+            if url and url not in used and image_grade(url) in grades:
                 used.add(url)
                 return url
         return None
 
-    cover_url = take(cover_urls) or take(topic_pool)
+    # A photo confirmed to show the subject gets the cover; one that carries the
+    # topic in its file name is the second choice, themed artwork the last.
+    cover_url = (take(cover_urls, ("A",)) or take(topic_pool, ("A",))
+                 or take(cover_urls) or take(topic_pool))
     for group in groups:
         slot_urls.append(take(group) or take(topic_pool))
 
     # Slides that found nothing borrow a different photo from the topic pool or
     # from the leftovers of the other slides, so photos repeat only when the topic
     # really has fewer pictures than the deck has slides.
-    # Only photos whose subject was confirmed may be placed: a free-text hit that
-    # happens to contain the word is exactly what put unrelated pictures on slides.
     leftovers = []
     for group in list(groups) + [topic_pool, cover_urls]:
-        leftovers.extend(url for url in (group or []) if url and image_verified(url))
-    if cover_url and not image_verified(cover_url):
+        leftovers.extend(url for url in (group or []) if url)
+    # Confirmed photos come first, topic-named ones after them: requiring a
+    # Wikidata "depicts" statement for every slide left whole decks without any
+    # photo, which is worse than a looser but still on-topic picture.
+    leftovers = sorted(dict.fromkeys(leftovers),
+                       key=lambda url: 0 if image_grade(url) == "A" else 1)
+    if cover_url and image_grade(cover_url) not in ("A", "B"):
         cover_url = take(leftovers)
     for index, url in enumerate(slot_urls):
-        if url and not image_verified(url):
+        if url and image_grade(url) not in ("A", "B"):
             slot_urls[index] = None
     for index in range(len(slot_urls)):
         if not slot_urls[index]:
@@ -153,7 +159,10 @@ async def _collect_images(topic, slides_content, total=5, lang="uz"):
     distinct = len({url for url in ([cover_url] + slot_urls) if url})
     if distinct < min(5, 1 + slide_slots):
         # One more, wider pass is cheaper than a deck that repeats one picture.
-        leftovers.extend(url for url in await search(topic_text, None, 12) if image_verified(url))
+        leftovers.extend(url for url in await search(topic_text, None, 12)
+                         if image_grade(url) in ("A", "B"))
+        leftovers = sorted(dict.fromkeys(leftovers),
+                           key=lambda url: 0 if image_grade(url) == "A" else 1)
         for index in range(len(slot_urls)):
             if not slot_urls[index]:
                 slot_urls[index] = take(leftovers)

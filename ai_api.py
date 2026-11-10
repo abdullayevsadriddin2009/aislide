@@ -1834,6 +1834,12 @@ async def english_phrase(text):
                     title = str(hits[0].get("title") or "")
                     if not title:
                         continue
+                    # A Latin-script topic must still look like itself in the hit:
+                    # the Uzbek search for "Kimyo" ranked an anime article first,
+                    # and its English name then became the whole deck's subject.
+                    if (re.fullmatch(r"[A-Za-z\s'\u2019\-\.]+", raw)
+                            and not _looks_like_same_name(raw, title)):
+                        continue
                     if lang == "en":
                         phrase = title
                         break
@@ -1964,6 +1970,9 @@ _IMAGE_CREDITS: dict[str, str] = {}
 # "depicts", or the topic's curated Commons category). Free-text search hits stay
 # False, so a slide never shows an unverified picture.
 _IMAGE_VERIFIED: dict[str, bool] = {}
+# "A" = the file is confirmed to show the subject (article image, "depicts"
+# statement, curated category); "B" = the topic word is in the file name.
+_IMAGE_GRADE: dict[str, str] = {}
 
 
 def image_credit(url):
@@ -1981,6 +1990,11 @@ def _image_key(url):
 def image_verified(url):
     """Whether this photo was confirmed to show the requested subject."""
     return bool(_IMAGE_VERIFIED.get(str(url or "")))
+
+
+def image_grade(url):
+    """"A" for a confirmed subject photo, "B" for a named topic match, else ""."""
+    return _IMAGE_GRADE.get(str(url or ""), "")
 
 
 def _commons_search_tags(page, info):
@@ -2081,6 +2095,44 @@ def _commons_results(data):
 
 
 _ENTITY_CACHE: dict[str, tuple[str, str]] = {}
+# The English article title that the item actually carries, so a keyword
+# phrase like "Alisher Navoi portrait poet" still searches a real subject.
+_ENTITY_TITLE: dict[str, str] = {}
+
+
+def _entity_key(name):
+    return re.sub(r"\s+", " ", str(name or "")).strip().casefold()
+
+
+def _looks_like_same_name(phrase, title):
+    """Whether a Wikipedia search hit really is the searched subject.
+
+    "history ancient civilization" used to resolve to the article "Civilization",
+    and every photo then came from that generic topic. A hit is accepted only when
+    one name contains the other, or when the two share at least four leading
+    letters — enough for transliterations such as "Alisher Navoiy" vs "Ali-Shir
+    Nava'i".
+    """
+    def squeeze(text):
+        import unicodedata
+        text = str(text or "")
+        # "Oʻzbekiston" (modifier letter) and "O'zbekiston" are the same word.
+        for mark in ("\u02bb", "\u02bc", "\u2018", "\u2019", "`", "\u00b4"):
+            text = text.replace(mark, "'")
+        text = unicodedata.normalize("NFKD", text)
+        text = "".join(char for char in text if not unicodedata.combining(char))
+        return re.sub(r"[^\w']", "", text.casefold())
+    left, right = squeeze(phrase), squeeze(title)
+    if not left or not right:
+        return False
+    if left in right or right in left:
+        return True
+    common = 0
+    for first, second in zip(left, right):
+        if first != second:
+            break
+        common += 1
+    return common >= 4
 
 
 async def _wikidata_entity(name):
@@ -2090,12 +2142,12 @@ async def _wikidata_entity(name):
     types another ("Alisher Navoiy"); the item id is the bridge that lets a photo
     be verified against the real subject instead of against a spelling.
     """
-    key = re.sub(r"\s+", " ", str(name or "")).strip().casefold()
+    key = _entity_key(name)
     if len(key) < 3:
         return "", ""
     if key in _ENTITY_CACHE:
         return _ENTITY_CACHE[key]
-    qid, category = "", ""
+    qid, category, title = "", "", ""
     try:
         async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=12),
                                          headers={"User-Agent": USER_AGENT}) as session:
@@ -2106,6 +2158,24 @@ async def _wikidata_entity(name):
                     pages = (await resp.json(content_type=None)).get("query", {}).get("pages", {})
                     page = next(iter(pages.values()), {}) if isinstance(pages, dict) else {}
                     qid = str((page.get("pageprops") or {}).get("wikibase_item") or "")
+                    if qid:
+                        title = str(page.get("title") or "")
+            if not qid:
+                # The keyword usually carries describing words ("Alisher Navoi
+                # portrait poet"), so the exact title misses; Wikipedia search
+                # still lands on the right article, and its item is the proof.
+                params = {"action": "query", "generator": "search", "gsrsearch": name,
+                          "gsrlimit": 1, "gsrnamespace": 0, "prop": "pageprops",
+                          "ppprop": "wikibase_item", "format": "json"}
+                async with session.get("https://en.wikipedia.org/w/api.php", params=params) as resp:
+                    if resp.status == 200:
+                        pages = (await resp.json(content_type=None)).get("query", {}).get("pages", {})
+                        page = next(iter(pages.values()), {}) if isinstance(pages, dict) else {}
+                        found = str(page.get("title") or "")
+                        if _looks_like_same_name(name, found):
+                            qid = str((page.get("pageprops") or {}).get("wikibase_item") or "")
+                            if qid:
+                                title = found
             if qid:
                 params = {"action": "wbgetclaims", "entity": qid,
                           "property": "P373", "format": "json"}
@@ -2120,6 +2190,8 @@ async def _wikidata_entity(name):
                                 break
     except Exception as exc:
         _log(f"Wikidata entity lookup failed for {name!r}: {type(exc).__name__}")
+    if title:
+        _ENTITY_TITLE[key] = title
     _ENTITY_CACHE[key] = (qid, category)
     return qid, category
 
@@ -2127,6 +2199,64 @@ async def _wikidata_entity(name):
 async def _commons_category_name(name):
     """The Commons category Wikidata files a topic's pictures under."""
     return (await _wikidata_entity(name))[1]
+
+
+async def _commons_category_search(phrase, count=20):
+    """Photos from a Commons category whose own name matches the subject.
+
+    Many topics (Uzbek districts, local schools, regional products) have enough
+    photos on Commons but no Wikidata link, so the curated folder has to be found
+    by name instead. Category names containing the subject word are kept; that
+    keeps "Category:Samarkand" from answering a question about a person.
+    """
+    raw = re.sub(r"\s+", " ", str(phrase or "")).strip()
+    words = [word for word in re.findall(r"[^\W\d_]{3,}", raw.casefold())
+             if word not in STOP_WORDS]
+    if len(raw) < 3 or not words:
+        return []
+    params = {
+        "action": "query", "list": "search", "srsearch": raw,
+        "srnamespace": 14, "srlimit": 10, "format": "json", "formatversion": 2,
+    }
+    try:
+        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=15),
+                                         headers={"User-Agent": USER_AGENT}) as session:
+            async with session.get(COMMONS_API, params=params) as resp:
+                if resp.status != 200:
+                    return []
+                data = await resp.json(content_type=None)
+        titles = [str(item.get("title") or "") for item in (data.get("query", {}).get("search") or [])]
+    except Exception as exc:
+        _log(f"Commons category search failed ({raw}): {type(exc).__name__}")
+        return []
+    names = []
+    for title in titles:
+        if not title.startswith("Category:"):
+            continue
+        name = title.split(":", 1)[1]
+        folded = name.casefold()
+        # Every word of the subject has to appear: matching only "history" pulled
+        # in "Category:History of Hungary" for a question about Uzbekistan.
+        if not all(word in folded for word in words):
+            continue
+        names.append((len(name), name))
+    names = [name for _, name in sorted(names, key=lambda pair: pair[0])][:2]
+    if not names:
+        return []
+    groups = await asyncio.gather(
+        *(_commons_category_images(name, count=max(10, min(30, int(count)))) for name in names),
+        return_exceptions=True)
+    out, seen = [], set()
+    for group in groups:
+        if isinstance(group, Exception) or not group:
+            continue
+        for item in group:
+            key = _image_key(item.get("url"))
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append(dict(item, src="commons_category"))
+    return out
 
 
 async def _commons_depicts_images(qid, count=20):
@@ -2286,20 +2416,40 @@ async def search_images(query, count=5, keywords=None, use_wiki=True):
     if len(q) < 3:
         return []
     kw_source = keywords if keywords is not None else await topic_to_english_keywords(q)
-    kw_list = _keyword_words(kw_source)
+    # Resolve the subject once: its Wikidata item proves which files really show it.
+    # The article name translated by Wikipedia comes first, because an AI keyword
+    # phrase ("history ancient civilization") can resolve to a neighbouring, much
+    # broader article and every photo then belongs to that instead.
+    try:
+        english_name = str(await english_phrase(q) or "").strip()
+    except Exception:
+        english_name = ""
+    qid = ""
+    for name in (english_name, str(kw_source), q):
+        if not name:
+            continue
+        found_qid, _found_category = await _wikidata_entity(name)
+        if found_qid:
+            qid = found_qid
+            break
+    phrase = (_ENTITY_TITLE.get(_entity_key(english_name))
+              or _ENTITY_TITLE.get(_entity_key(str(kw_source)))
+              or _ENTITY_TITLE.get(_entity_key(q))
+              or english_name
+              or str(kw_source)).strip()
+    kw_list = _keyword_words(phrase)
     if not kw_list:
         return []
     primary = kw_list[0]
-    # Resolve the subject once: its Wikidata item proves which files really show it.
-    qid, _category = await _wikidata_entity(str(kw_source))
     tasks = [
         _commons_depicts_images(qid, count=20),
-        _commons_category_images(str(kw_source), count=20),
-        _commons_images(str(kw_source), count=20),
-        _openverse_images(str(kw_source), count=20),
-        _pixabay_images(str(kw_source)),
-        _pexels_images(str(kw_source)),
-        _unsplash_images(str(kw_source)),
+        _commons_category_images(phrase, count=20),
+        _commons_category_search(phrase, count=20),
+        _commons_images(phrase, count=20),
+        _openverse_images(phrase, count=20),
+        _pixabay_images(phrase),
+        _pexels_images(phrase),
+        _unsplash_images(phrase),
     ]
     if use_wiki:
         tasks.insert(0, _wiki_image(q))
@@ -2388,7 +2538,7 @@ async def search_images(query, count=5, keywords=None, use_wiki=True):
                     continue
                 score = 10 + matches * 3
                 verified = False
-            if str(kw_source).casefold().strip() and title.startswith(str(kw_source).casefold().strip()):
+            if phrase.casefold() and title.startswith(phrase.casefold()):
                 score += 12
             if verified:
                 # Among verified photos, prefer the one whose file name is closest to
@@ -2401,6 +2551,10 @@ async def search_images(query, count=5, keywords=None, use_wiki=True):
                 score += 3
             seen.add(key)
             _IMAGE_VERIFIED[url] = bool(verified)
+            # A free-text hit is only kept one step lower when the subject word is
+            # in the file name itself ("Dolphin jumping.jpg" for a dolphin topic),
+            # so a deck can still be illustrated when Commons has no curated folder.
+            _IMAGE_GRADE[url] = "A" if verified else ("B" if primary in title_words else "")
             if candidate.get("credit"):
                 _IMAGE_CREDITS[url] = str(candidate["credit"])
             candidates.append((score, url))
