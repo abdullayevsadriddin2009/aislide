@@ -24,7 +24,9 @@ LAST_ERROR = "hali sinanmadi"
 PIXABAY_KEY  = os.getenv("PIXABAY_KEY", "")
 PEXELS_KEY   = os.getenv("PEXELS_KEY", "")
 UNSPLASH_KEY = os.getenv("UNSPLASH_KEY", "")
-USER_AGENT = "TalabaAISlideBot/1.0 (educational presentation image retrieval)"
+USER_AGENT = ("TalabaAISlideBot/1.0 (educational presentation image retrieval; "
+               "https://github.com/abdullayevsadriddin2009/aislide)")
+_BROWSER_UA = "Mozilla/5.0 (compatible; TalabaAISlideBot/1.0)"
 
 _KEYWORD_CACHE = {}
 CHARS_PER_PAGE = 1650
@@ -1852,6 +1854,15 @@ async def _wiki_image(topic):
 
 COMMONS_API = "https://commons.wikimedia.org/w/api.php"
 
+# Credit line per chosen Commons photo, filled while scoring and read when the
+# file is saved, so the deck can attribute the photographer and the licence.
+_IMAGE_CREDITS: dict[str, str] = {}
+
+
+def image_credit(url):
+    """Attribution for a Commons image URL ("Artist / Wikimedia Commons (CC BY-SA 4.0)")."""
+    return _IMAGE_CREDITS.get(str(url or ""), "")
+
 
 def _commons_search_tags(page, info):
     """Title, description and categories of a Commons file, lowercased."""
@@ -1865,6 +1876,25 @@ def _commons_search_tags(page, info):
         if value:
             parts.append(re.sub(r"<[^>]+>", " ", str(value)))
     return re.sub(r"\s+", " ", " ".join(parts)).strip().casefold()
+
+
+def _commons_credit(info):
+    """Short attribution line for one Commons file: author and licence."""
+    meta = info.get("extmetadata") or {}
+
+    def field(key):
+        entry = meta.get(key)
+        value = entry.get("value") if isinstance(entry, dict) else None
+        if not value:
+            return ""
+        text = re.sub(r"<[^>]+>", " ", str(value)).replace("&amp;", "&")
+        return re.sub(r"\s+", " ", text).strip()
+
+    artist, licence = field("Artist"), field("LicenseShortName")
+    if not licence:
+        return ""
+    credit = f"{artist} / Wikimedia Commons ({licence})" if artist else f"Wikimedia Commons ({licence})"
+    return credit[:160]
 
 
 async def _commons_images(query, count=20):
@@ -1917,6 +1947,7 @@ async def _commons_images(query, count=20):
                     "title": title,
                     "width": width,
                     "height": height,
+                    "credit": _commons_credit(info),
                     "src": "commons",
                 })
         return results
@@ -2038,6 +2069,8 @@ async def search_images(query, count=5, keywords=None, use_wiki=True):
                     continue
                 score = 10 + matches * 3
             seen.add(url)
+            if candidate.get("credit"):
+                _IMAGE_CREDITS[url] = str(candidate["credit"])
             candidates.append((score, url))
     candidates.sort(key=lambda pair: -pair[0])
     return [url for _, url in candidates][:max(1, int(count))]
@@ -2066,6 +2099,14 @@ async def download_image(url, save_path):
             if image.width < 240 or image.height < 160:
                 return False
             image.save(save_path, format="JPEG", quality=88, optimize=True)
+        # Keep the attribution next to the file so the deck can print it.
+        credit = image_credit(url)
+        if credit:
+            try:
+                with open(str(save_path) + ".credit", "w", encoding="utf-8") as handle:
+                    handle.write(credit)
+            except OSError:
+                pass
         return True
     except Exception as exc:
         _log(f"Image download/validation failed: {type(exc).__name__}: {exc}")

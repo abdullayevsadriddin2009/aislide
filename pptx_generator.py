@@ -1246,7 +1246,7 @@ CLOSING_LAYOUTS = {"arc": _c_modern, "bubbles": _c_neon, "hex": _c_amber,
                    "shapes": _c_pop, "leaf": _c_nature, "frame": _c_elegant}
 
 
-def _closing_slide(prs, theme, lang, topic, subject, entries, total):
+def _closing_slide(prs, theme, lang, topic, subject, entries, total, credits=None):
     slide = prs.slides.add_slide(prs.slide_layouts[6])
     recap = []
     if entries and isinstance(entries[-1], dict):
@@ -1254,7 +1254,42 @@ def _closing_slide(prs, theme, lang, topic, subject, entries, total):
     recap = [value if len(value) <= 110 else value[:107].rstrip() + "…" for value in recap] or [UI[lang]["empty_body"]]
     builder = CLOSING_LAYOUTS.get(theme.get("decorate"), _c_modern)
     builder(slide, theme, lang, str(topic), str(subject), recap, total)
+    _credit_line(slide, lang, credits)
     return slide
+
+
+def _image_credits(images):
+    """Author/licence lines for the downloaded photos, written beside each file."""
+    credits = []
+    for source in images or []:
+        try:
+            text = Path(str(source) + ".credit").read_text(encoding="utf-8").strip()
+        except (OSError, UnicodeError):
+            continue
+        text = " ".join(text.split())
+        if text and text not in credits:
+            credits.append(text)
+    return credits
+
+
+def _credit_line(slide, lang, credits):
+    """Wikimedia Commons requires the photographer and licence be shown."""
+    if not credits:
+        return
+    label = {"uz": "Rasmlar", "ru": "Изображения", "en": "Images", "tr": "Görseller",
+             "de": "Bilder", "fr": "Images"}.get(str(lang).lower(), "Images")
+    text = f"{label}: " + "; ".join(credits)
+    if len(text) > 240:
+        text = text[:237].rstrip() + "…"
+    box = slide.shapes.add_textbox(Inches(0.55), Inches(6.9), Inches(12.2), Inches(0.42))
+    frame = box.text_frame
+    frame.word_wrap = True
+    frame.margin_left = frame.margin_right = 0
+    frame.margin_top = frame.margin_bottom = 0
+    run = frame.paragraphs[0].add_run()
+    run.text = text
+    run.font.size = Pt(8)
+    run.font.color.rgb = RGBColor(130, 140, 155)
 
 
 def _new_presentation():
@@ -1323,7 +1358,8 @@ def generate_pptx(topic: str, subject: str, lang: str, design_key: str, slide_co
         item = item if isinstance(item, dict) else {}
         actual_slide_number = i + 3
         _content_slide(prs, th, lc, item, actual_slide_number, total, key, image_sources, str(topic), str(subject))
-    _closing_slide(prs, th, lc, str(topic), str(subject), entries, total)
+    _closing_slide(prs, th, lc, str(topic), str(subject), entries, total,
+                   credits=_image_credits(image_sources))
     for slide in prs.slides:
         _watermark(slide)
 
