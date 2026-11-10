@@ -613,8 +613,15 @@ async def _generate(job_id):
         path = os.path.join(OUTPUT_DIR, f"{job_id}.{ext}")
         with open(path, "wb") as handle:
             handle.write(content)
+        note = ""
+        if not real:
+            try:
+                from ai_api import get_last_error
+                note = str(get_last_error() or "").strip()[:300]
+            except Exception:
+                note = ""
         job.update(status="done", stage="done", file=path, filename=filename,
-                   size=len(content), real=bool(real))
+                   size=len(content), real=bool(real), note=note)
         job["order_id"] = _save_order(job["user_id"], service, topic, options)
         if job["order_id"]:
             job["stored"] = _store_file(job["order_id"], content, ext, filename)
@@ -741,6 +748,7 @@ def api_job():
         "size": job.get("size"),
         "error": job.get("error"),
         "real": job.get("real"),
+        "note": job.get("note"),
         "elapsed": int(time.time() - float(job.get("created") or time.time())),
     }
     return jsonify(response)

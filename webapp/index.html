@@ -665,7 +665,7 @@ function renderDone(data){
     <div class="card center" style="padding:26px 18px">
       <div style="font-size:46px">🎉</div>
       <h3 style="margin:8px 0 4px">${esc(data.filename || "document")}</h3>
-      <p class="muted">${esc(t("size"))}: ${fmtSize(data.size)}${data.real === false ? " · ⚠️ " + esc(t("error")) : ""}</p>
+      <p class="muted">${esc(t("size"))}: ${fmtSize(data.size)}${data.real === false ? " · ⚠️ " + esc(data.note || t("error")) : ""}</p>
     </div>
     <div class="stack">
       <a class="btn" href="${href}" target="_blank" rel="noopener">⬇️ ${esc(t("download"))}</a>
