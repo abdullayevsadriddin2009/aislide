@@ -184,6 +184,9 @@ def _body_size(value, base=16):
         return 12
     if length > 750:
         return 13
+    if length > 450:
+        # Six full sentences already fill the card at the base size.
+        return max(12, base - 1)
     return base
 
 
