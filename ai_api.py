@@ -1665,7 +1665,7 @@ ACCURACY RULES:
 
 STRUCTURE RULES:
 1. Return only a valid JSON array with exactly {n} objects.
-2. Each object has "title" and "content". "title" is a specific heading of 3-9 words. "content" is an array of 5-6 COMPLETE sentences of 14-25 words each, enough real information to fill the whole slide.
+2. Each object has "title" and "content". "title" is a specific heading of 3-9 words. "content" is an array of 6-7 COMPLETE sentences of 12-22 words each, enough real information to fill the whole slide: a definition, a date or figure, a cause, an example and a result.
 3. Every sentence must add a fact, a date, a name, a figure, an example, a cause or a clear explanation. Never write empty filler such as "this is very important", "many aspects are studied" or "it plays a big role" without saying exactly what.
 4. Never repeat a sentence, a title or a point anywhere in the deck. Do not write one-word bullets or placeholders.
 5. Cover background, key concepts, evidence, comparison, practical application and implications across the deck.
@@ -1744,7 +1744,7 @@ JSON example (translate the sample wording into {ln} in the actual response):
     out = []
     for i, item in enumerate(all_slides):
         content = list(item["content"])
-        while len(content) < 3:
+        while len(content) < 5:
             _, body_fallback = _localized_slide_fallback(topic, lc, i + 1)
             content.append(body_fallback[len(content) % len(body_fallback)])
         out.append({
@@ -1795,7 +1795,9 @@ def _image_title_usable(title):
 
 
 def _keyword_words(value):
-    return [w for w in re.findall(r"[a-z0-9]{4,}", str(value or "").casefold())
+    # \w keeps Cyrillic and Turkish letters, so a Russian topic is not silently
+    # reduced to an empty keyword list.
+    return [w for w in re.findall(r"[^\W\d_]{4,}", str(value or "").casefold())
             if w not in STOP_WORDS and w not in _GENERIC_IMAGE_WORDS]
 
 
@@ -1885,6 +1887,10 @@ async def topic_to_english_keywords(topic):
         txt = await _chat_complete(
             prompt, system="You generate precise English image search phrases. Output the phrase only, no quotes, no explanation.",
             max_tokens=60, temperature=0.2)
+        # A failed request answers with the warning line, and stripping it into a
+        # "keyword" used to send every photo search after nonsense words.
+        if not txt or str(txt).lstrip().startswith("⚠️"):
+            raise ValueError("AI javob bermadi")
         kw = re.sub(r"[^A-Za-z\s-]", " ", str(txt or "")).strip()
         kw = re.sub(r"\s+", " ", kw)
         if 3 < len(kw) <= 80 and _keyword_words(kw):
@@ -2198,9 +2204,9 @@ async def search_images(query, count=5, keywords=None, use_wiki=True):
         title = str(candidate.get("title") or "").casefold()
         title = re.sub(r"^file:", "", title)
         title = re.sub(r"\.(jpe?g|png|webp|gif|tiff?|bmp)$", "", title)
-        title_words = set(re.findall(r"[a-z0-9]{3,}", title))
+        title_words = set(re.findall(r"[^\W\d_]{3,}", title))
         matches = sum(1 for word in kw_list
-                      if word in set(re.findall(r"[a-z0-9]+", tags)) or word in tags)
+                      if word in set(re.findall(r"[^\W_]+", tags)) or word in tags)
         return tags, title, title_words, matches
 
     def _category_photo_ok(candidate):
@@ -2285,19 +2291,29 @@ async def download_image(url, save_path):
     """Download and validate an image; re-encode it to a safe JPEG for PPTX."""
     try:
         from PIL import Image, ImageOps
-        async with aiohttp.ClientSession(
-            timeout=aiohttp.ClientTimeout(total=20),
-            headers={"User-Agent": USER_AGENT},
-        ) as session:
-            async with session.get(url) as resp:
-                if resp.status != 200:
-                    return False
-                content_type = str(resp.headers.get("Content-Type", "")).lower()
-                raw = await resp.read()
-                if not raw or len(raw) > 20 * 1024 * 1024:
-                    return False
-                if content_type and not content_type.startswith("image/"):
-                    return False
+        raw, content_type = b"", ""
+        # Wikimedia's thumbnail servers answer 429 when a deck requests ten photos
+        # at once; one short pause turns that into a successful download.
+        for attempt in range(3):
+            async with aiohttp.ClientSession(
+                timeout=aiohttp.ClientTimeout(total=20),
+                headers={"User-Agent": USER_AGENT},
+            ) as session:
+                async with session.get(url) as resp:
+                    if resp.status in (429, 500, 502, 503, 504):
+                        await asyncio.sleep(0.8 * (attempt + 1))
+                        continue
+                    if resp.status != 200:
+                        return False
+                    content_type = str(resp.headers.get("Content-Type", "")).lower()
+                    raw = await resp.read()
+                    break
+        if not raw:
+            return False
+        if len(raw) > 20 * 1024 * 1024:
+            return False
+        if content_type and not content_type.startswith("image/"):
+            return False
         with Image.open(io.BytesIO(raw)) as source:
             source.load()
             image = ImageOps.exif_transpose(source).convert("RGB")

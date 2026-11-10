@@ -176,8 +176,12 @@ def _text(slide, x, y, w, h, value, size=18, color=(35, 46, 65), bold=False,
 def _body_size(value, base=16):
     """Keep long AI paragraphs inside their card instead of overflowing it."""
     length = len(str(value or ""))
+    if length > 1400:
+        return 10
     if length > 1150:
         return 11
+    if length > 900:
+        return 12
     if length > 750:
         return 13
     return base
@@ -1129,7 +1133,9 @@ def _content_slide(prs, th, lang, item, index, total, design_key, images, topic,
     variants = CONTENT_LAYOUTS.get(design_key) or CONTENT_LAYOUTS["modern"]
     n = max(0, index - 3)
     gallery = [src for src in (images or []) if _valid_image_source(src)]
-    image = gallery[n % len(gallery)] if gallery else None
+    # images[0] is the cover photo, so body slides start one place later; otherwise
+    # the cover picture reappears on the first content slide.
+    image = gallery[(n + 1) % len(gallery)] if gallery else None
     variants[n % len(variants)](slide, th, lang, item or {}, index, total, image, gallery,
                                 str(topic), str(subject))
     return slide

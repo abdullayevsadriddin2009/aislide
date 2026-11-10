@@ -61,11 +61,12 @@ def _slide_design_prompt(lang):
     return prompts.get(lang, prompts["en"])
 
 async def _collect_images(topic, slides_content, total=5, lang="uz"):
-    """Download one topic-matched photo per slide and keep the slide order.
+    """Download one distinct topic-matched photo per slide, cover included.
 
-    Every slide is searched with its own title, so the deck never shows a random
-    unrelated photo. ``generate_pptx`` maps this list to body slides by position,
-    so the returned list has exactly one entry per body slide.
+    Each slide title is searched on its own and the topic is searched as a wider
+    pool, so a deck of six slides gets six different photos instead of the same two
+    repeated. The returned list starts with the cover photo, then one photo per
+    body slide in slide order; ``generate_pptx`` maps it by position.
     """
     import tempfile, os, textwrap, asyncio
     from PIL import Image, ImageDraw, ImageFont
@@ -77,13 +78,12 @@ async def _collect_images(topic, slides_content, total=5, lang="uz"):
     titles = [title for title in titles if len(title) >= 3]
     slide_slots = max(1, len(titles))
 
-    # Slot 0 is the cover (the topic itself); every other slot is one slide title.
-    queries = [topic_text] + titles
-    queries = [query for query in queries if len(query) >= 3][:12]
+    queries = [query for query in ([topic_text] + titles) if len(query) >= 3][:12]
     if not queries:
         queries = [topic_text or str(lang)]
 
-    # One AI request produces a precise English search phrase per slot.
+    # One AI request produces a precise English search phrase per slot; when the AI
+    # is down Wikipedia supplies the English term instead.
     try:
         batch_keywords = await image_keywords_batch(
             topic_text, titles, max_items=max(1, len(queries) - 1))
@@ -91,37 +91,78 @@ async def _collect_images(topic, slides_content, total=5, lang="uz"):
         print(f"[creation] image keyword batch failed: {exc}", flush=True)
         batch_keywords = []
 
-    async def urls_for(index, query):
+    keywords = [str(value or "") for value in (list(batch_keywords) + [""] * len(queries))[:len(queries)]]
+
+    async def english(text):
         try:
-            keyword = (batch_keywords[index]
-                       if index < len(batch_keywords) and batch_keywords[index]
-                       else (await english_phrase(query) or query))
-            # Only the cover asks Wikipedia for the article's own lead image.
-            urls = await search_images(query, count=3, keywords=keyword, use_wiki=(index == 0))
-            if not urls and index > 0 and topic_text:
-                # A slide title that finds nothing still gets a topic photo rather
-                # than repeating the cover picture on every slide.
-                urls = await search_images(topic_text, count=5,
-                                           keywords=(batch_keywords[0] if batch_keywords else topic_text),
-                                           use_wiki=False)
-            return urls
+            return await english_phrase(text) or text
+        except Exception:
+            return text
+
+    missing = [index for index, keyword in enumerate(keywords) if not keyword]
+    if missing:
+        resolved = await asyncio.gather(*(english(queries[index]) for index in missing))
+        for index, value in zip(missing, resolved):
+            keywords[index] = value or queries[index]
+
+    async def search(query, keyword, count, use_wiki=False):
+        try:
+            return await search_images(query, count=count, keywords=keyword, use_wiki=use_wiki) or []
         except Exception as exc:
             print(f"[creation] search_images failed for {query!r}: {exc}", flush=True)
             return []
 
-    groups = await asyncio.gather(*(urls_for(i, q) for i, q in enumerate(queries)))
+    # Cover photo (the article's own lead image first), a wider topic pool for the
+    # slots whose own title finds little, and one search per slide title.
+    cover_urls, topic_pool, *groups = await asyncio.gather(
+        search(topic_text, keywords[0], 5, use_wiki=True),
+        search(topic_text, keywords[0], 10),
+        *(search(queries[index], keywords[index], 6) for index in range(1, len(queries))),
+    )
 
     used, slot_urls = set(), []
+
+    def take(candidates):
+        for url in candidates or []:
+            if url and url not in used:
+                used.add(url)
+                return url
+        return None
+
+    cover_url = take(cover_urls) or take(topic_pool)
     for group in groups:
-        chosen = next((url for url in group or [] if url and url not in used), None)
-        if chosen:
-            used.add(chosen)
-        slot_urls.append(chosen)
+        slot_urls.append(take(group) or take(topic_pool))
+
+    # Slides that found nothing borrow a different photo from the topic pool or
+    # from the leftovers of the other slides, so photos repeat only when the topic
+    # really has fewer pictures than the deck has slides.
+    leftovers = []
+    for group in list(groups) + [topic_pool, cover_urls]:
+        leftovers.extend(url for url in (group or []) if url)
+    for index in range(len(slot_urls)):
+        if not slot_urls[index]:
+            slot_urls[index] = take(leftovers)
+
+    distinct = len({url for url in ([cover_url] + slot_urls) if url})
+    if distinct < min(5, 1 + slide_slots):
+        # One more, wider pass is cheaper than a deck that repeats one picture.
+        leftovers.extend(await search(topic_text, None, 10))
+        for index in range(len(slot_urls)):
+            if not slot_urls[index]:
+                slot_urls[index] = take(leftovers)
+
+    ordered_urls = []
+    for url in [cover_url] + slot_urls:
+        if url:
+            ordered_urls.append(url)
+
+    gate = asyncio.Semaphore(4)
 
     async def download_one(index, url):
         path = os.path.join(tmpdir, f"img_{index}.jpg")
         try:
-            ok = await download_image(url, path)
+            async with gate:
+                ok = await download_image(url, path)
             if not ok or not os.path.isfile(path) or os.path.getsize(path) < 1000:
                 return None
             # HTTP 200 responses can still contain HTML/error pages instead of an
@@ -135,11 +176,23 @@ async def _collect_images(topic, slides_content, total=5, lang="uz"):
             print(f"[creation] image download failed/invalid: {exc}", flush=True)
             return None
 
-    pending = [(index, url) for index, url in enumerate(slot_urls) if url]
-    downloads = await asyncio.gather(*(download_one(i, u) for i, u in pending)) if pending else []
-    downloaded = {index: path for (index, _), path in zip(pending, downloads) if path}
+    downloads = await asyncio.gather(*(download_one(i, u) for i, u in enumerate(ordered_urls)))
+    downloaded = {index: path for index, path in enumerate(downloads) if path}
 
-    cover_path = downloaded.get(0)
+    # A photo that failed to download (rate limit, broken file) is replaced by the
+    # next unused photo of the topic instead of turning that slide into artwork.
+    spare = []
+    for url in leftovers:
+        if url and url not in ordered_urls and url not in spare:
+            spare.append(url)
+    for index in range(len(ordered_urls)):
+        if index in downloaded:
+            continue
+        while spare:
+            path = await download_one(index, spare.pop(0))
+            if path:
+                downloaded[index] = path
+                break
     fallback_path = None
 
     def fallback_visual():
@@ -178,11 +231,10 @@ async def _collect_images(topic, slides_content, total=5, lang="uz"):
             print(f"[creation] fallback image generation failed: {exc}", flush=True)
         return fallback_path
 
-    # One entry per body slide, in slide order, so the template picker places
-    # each photo next to the slide it was searched for.
+    # Cover first, then one entry per body slide so each layout gets its own photo.
     paths = []
-    for slot in range(slide_slots):
-        path = downloaded.get(slot + 1) or cover_path or fallback_visual()
+    for index in range(1 + slide_slots):
+        path = downloaded.get(index) or fallback_visual()
         if path:
             paths.append(path)
     return paths
