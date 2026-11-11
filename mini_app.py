@@ -722,10 +722,13 @@ def api_generate():
     extra = _extra_data(service, data, options)
     subject_key = ""
     if service == "slide":
-        # Botdagi kabi fan yo'nalishi mavzudan aniqlanadi, foydalanuvchidan so'ralmaydi.
+        # Foydalanuvchi fan yo'nalishini o'zi tanlaydi; belgilanmasa slaydlar
+        # mavzuning o'zi bo'yicha yoziladi.
+        requested = str(data.get("subject_key") or "").strip()
         try:
-            from designs import detect_subject_key
-            subject_key = detect_subject_key(topic)
+            from designs import SUBJECT_KEYS
+            if requested in SUBJECT_KEYS:
+                subject_key = requested
         except Exception:
             subject_key = ""
     payload = {

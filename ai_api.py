@@ -1861,6 +1861,18 @@ async def generate_slides_structured(topic, subject, lang, count):
             "every sentence instead."
         )
 
+    subject_text = str(subject or "").strip()
+    general_subjects = {"umumiy mavzu", "general topic", "общая тема", "genel konu",
+                        "allgemeines thema", "sujet général"}
+    # Tanlangan fan mazmunga ta'sir qiladi: atamalar, misollar va yondashuv shu
+    # fanga mos bo'ladi. Fan belgilanmasa faqat mavzuning o'zi asos bo'ladi.
+    if subject_text and subject_text.casefold() not in general_subjects:
+        subject_rule = (f"Present the topic from the {subject_text} perspective: use that "
+                        "field's terminology, typical examples, methods and problems.")
+    else:
+        subject_rule = ("No school subject is specified: build the slides from the topic "
+                        "itself and do not assume a particular field.")
+
     def build_prompt(n, skip_titles=()):
         skip_line = ""
         if skip_titles:
@@ -1873,6 +1885,9 @@ STRICT LANGUAGE RULES:
 2. Translate headings into {ln}; keep proper names, official product names and standard technical terms that should not be translated.
 3. Never insert Uzbek, English, Russian or any other language as decoration, filler or a repeated label.
 4. Titles must be short, specific and natural in {ln}.
+
+SUBJECT RULES:
+{subject_rule}
 
 ACCURACY RULES:
 1. Use verifiable facts from the reference below: dates, numbers, names, places, definitions and their meaning.

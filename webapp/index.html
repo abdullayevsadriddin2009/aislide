@@ -270,12 +270,18 @@ const T = {
 const LANGS = [["uz","O‘zbekcha"],["ru","Русский"],["en","English"],["tr","Türkçe"],["de","Deutsch"],["fr","Français"]];
 const FILES = {slide:"📊",referat:"📄",mustaqil:"📝",kurs:"📘",diplom:"🎓",insho:"✍️",esse:"🖊️",test:"✅",maqola:"📰",tezis:"🎓"};
 
+// Taqdimot uchun fan yo'nalishi: tanlanmasa ma'lumot mavzuning o'zidan olinadi.
+const SUBJ_LABEL = {uz:"Fan yo‘nalishi", ru:"Предмет", en:"Subject", tr:"Ders", de:"Fach", fr:"Matière"};
+const SUBJ_AUTO = {uz:"❓ Belgilanmasin — mavzu bo‘yicha", ru:"❓ Не указывать — по теме",
+  en:"❓ Skip — follow the topic", tr:"❓ Belirtmeyeyim — konuya göre",
+  de:"❓ Nicht angeben — nach dem Thema", fr:"❓ Ne pas préciser — selon le sujet"};
+
 const state = {
   lang:"uz", token:"", user:null, services:[], designs:[], subjects:[], history:[],
   freeMode:true, tab:"home", service:null, job:null, plan:"", busy:false,
   form:{ topic:"", pages:"", words:"", questions:"", count:10, lang:"uz", format:"docx",
          author:"", institution:"", faculty:"", dept:"", subject:"", checker:"", email:"",
-         design_key:"modern" },
+         design_key:"modern", subject_key:"" },
   orderDetail:null, chat:[], chatBusy:false, confirming:false
 };
 const app = document.getElementById("app");
@@ -440,6 +446,7 @@ function openService(code){
   state.service = item;
   state.job = null; state.plan = "";
   state.form.pages = String(item.options[0]);
+  state.form.subject_key = "";
   state.form.words = String(item.options[0]);
   state.form.questions = String(item.options[0]);
   state.form.count = item.options && item.options.length ? item.options[0] : 10;
@@ -515,6 +522,10 @@ function renderForm(){
       data-opt="${value}">${value} ${esc(unit)}</div>`).join("");
   const langChips = LANGS.map(([code, name]) =>
     `<div class="chip ${state.form.lang === code ? "sel" : ""}" data-lang="${code}">${esc(name)}</div>`).join("");
+  const subjChips = isSlide ? `<label>${esc(SUBJ_LABEL[state.lang] || SUBJ_LABEL.en)}</label>
+      <div class="chips" id="subjs">${[["", SUBJ_AUTO[state.lang] || SUBJ_AUTO.en]].concat(
+        state.subjects.map(sub => [sub.key, sub.name])).map(([key, name]) =>
+        `<div class="chip ${(state.form.subject_key || "") === key ? "sel" : ""}" data-subj="${esc(key)}">${esc(name)}</div>`).join("")}</div>` : "";
 
   app.innerHTML = `<div class="wrap">
     <div class="head"><button class="back" id="back">‹</button><h1>${FILES[item.code]||""} ${esc(item.name)}</h1></div>
@@ -528,6 +539,7 @@ function renderForm(){
       <div class="chips" id="opts">${chips}</div>
       <label>${esc(t("lang"))}</label>
       <div class="chips" id="langs">${langChips}</div>
+      ${subjChips}
       ${isSlide ? `<label>${esc(t("design"))}</label><select id="designKey">${state.designs.map(d =>
           `<option value="${esc(d.key)}" ${state.form.design_key===d.key?"selected":""}>${esc(d.name)}</option>`).join("")}</select>`
         : `<label>${esc(t("format"))}</label><div class="chips" id="formats">
@@ -565,6 +577,9 @@ function renderForm(){
   const bind = (id, key) => { const el = document.getElementById(id); if (el){ el.value = state.form[key] || ""; el.oninput = () => { state.form[key] = el.value; }; } };
   ["author","institution","faculty","dept","subject","checker","email"].forEach(key => bind(key, key));
   const designKey = document.getElementById("designKey"); if (designKey) designKey.onchange = () => state.form.design_key = designKey.value;
+  document.getElementById("subjs")?.querySelectorAll("[data-subj]").forEach(node => node.onclick = () => {
+    state.form.subject_key = node.dataset.subj; renderForm();
+  });
 
   document.getElementById("opts")?.querySelectorAll("[data-opt]").forEach(node => node.onclick = () => {
     state.form[selKey] = node.dataset.opt;
@@ -634,6 +649,7 @@ async function startGeneration(){
       institution: state.form.institution, faculty: state.form.faculty,
       dept: state.form.dept, subject: state.form.subject, checker: state.form.checker,
       email: state.form.email, design_key: state.form.design_key,
+      subject_key: state.form.subject_key || "",
       plan: state.plan
     };
     const data = await api("/api/mini/generate", {method:"POST", body: JSON.stringify(payload)});

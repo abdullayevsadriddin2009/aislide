@@ -132,26 +132,32 @@ class MiniAppTests(unittest.TestCase):
         self.assertEqual(mini_app._payload_options("slide", {"options": {"count": 4}}), {"count": 10})
         self.assertEqual(mini_app._payload_options("slide", {"options": {"count": 20}}), {"count": 20})
 
-    def test_slide_subject_is_detected_from_topic(self):
-        from designs import detect_subject_key
-
+    def test_slide_subject_follows_the_choice(self):
+        """Mini App'da tanlangan fan qabul qilinadi, tanlanmasa mavzu bo'yicha qoladi."""
         token = self._token_for(560)
-        captured = {}
-        original = mini_app._start_job
-        def fake_start(uid, payload):
-            captured.update(payload)
-            return "job-test"
 
-        mini_app._start_job = fake_start
-        try:
-            response = self.client.post("/api/mini/generate", json={
-                "token": token, "service": "slide", "topic": "Biologiya hujayra tuzilishi",
-                "options": {"count": 10}, "subject_key": "tarix",
-            })
-        finally:
-            mini_app._start_job = original
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(captured["subject_key"], detect_subject_key("Biologiya hujayra tuzilishi"))
+        def generate(payload_extra):
+            captured = {}
+            original = mini_app._start_job
+            def fake_start(uid, payload):
+                captured.update(payload)
+                return "job-test"
+            mini_app._start_job = fake_start
+            try:
+                body = {"token": token, "service": "slide",
+                        "topic": "Biologiya hujayra tuzilishi", "options": {"count": 10}}
+                body.update(payload_extra)
+                response = self.client.post("/api/mini/generate", json=body)
+            finally:
+                mini_app._start_job = original
+            self.assertEqual(response.status_code, 200)
+            return captured
+
+        self.assertEqual(generate({"subject_key": "biologiya"})["subject_key"], "biologiya")
+        # Fan belgilanmasa slaydlar mavzuning o'zi bo'yicha yoziladi.
+        self.assertEqual(generate({})["subject_key"], "")
+        # Noma'lum qiymat ham umumiy mavzuga tushadi.
+        self.assertEqual(generate({"subject_key": "nomalum"})["subject_key"], "")
 
     def test_order_detail_is_private(self):
         con = sqlite3.connect(config.DB_PATH)
