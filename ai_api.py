@@ -1206,23 +1206,34 @@ async def _fill_section(service, topic, sec_title, sec_pages, sec_desc, lang, wi
     text = str(text or "").strip()
     if len(text) >= target * 0.92:
         return text
-    missing = target - len(text)
-    extra_pages = max(1, min(3, math.ceil(missing / max(1, int(chars_per_page)))))
-    continuation = (
-        "Continue the same section with NEW material only. Do not repeat or paraphrase "
-        "anything already written. Add concrete details, examples, mechanisms, comparisons "
-        "and analysis that develop the section further, and finish with a complete paragraph."
-    )
-    extra = await _generate_section(
-        service, topic, sec_title, extra_pages,
-        f"{sec_desc} {continuation}", lang, wiki, text[-800:],
-        chars_per_page=section_capacity,
-    )
-    extra = str(extra or "").strip()
-    if extra and len(extra) >= 250:
-        blocks = _dedupe_blocks(text) + _dedupe_blocks(extra)
-        text = "\n\n".join(blocks)
-    return text
+    # Sahifada bo'sh joy qolmasligi uchun matn byudjetga yetguncha davom ettiriladi.
+    # Bitta urinish ko'pincha yarim sahifani bo'sh qoldirardi: model qisqa javob
+    # berganda sahifalar teng bo'lib, har birida katta bo'sh joy qolardi.
+    blocks = _dedupe_blocks(text)
+    for _attempt in range(3):
+        current = "\n\n".join(blocks)
+        missing = target - len(current)
+        if missing <= max(180, int(target * 0.05)):
+            break
+        need_paragraphs = max(2, math.ceil(missing / 620))
+        continuation = (
+            f"Continue the same section with NEW material only. Do not repeat or paraphrase "
+            f"anything already written. Add about {missing} characters: at least {need_paragraphs} "
+            "new paragraphs of 4-7 sentences each, with concrete details, dates, figures, examples, "
+            "mechanisms, comparisons and analysis that develop the section further. "
+            "Finish with a complete paragraph and never stop mid-sentence."
+        )
+        extra = await _generate_section(
+            service, topic, sec_title,
+            max(1, min(3, math.ceil(missing / max(1, int(chars_per_page))))),
+            f"{sec_desc} {continuation}", lang, wiki, current[-900:],
+            chars_per_page=section_capacity,
+        )
+        fresh = [block for block in _dedupe_blocks(str(extra or "").strip()) if block not in blocks]
+        if not fresh:
+            break
+        blocks.extend(fresh)
+    return "\n\n".join(blocks)
 
 
 def _plan_lines(service, lang, plan, found=None):

@@ -338,4 +338,7 @@ def fixed_pages(service, pages):
 
 def chars_per_page(service):
     """Bir sahifaga sig'adigan taxminiy belgi soni (12 pt, 1.15 interval uchun ko'proq)."""
-    return 2900 if service in COMPACT_SERVICES else 1650
+    # 1 bet (A4, TNR 14, 1.5 interval, 3/1/2/2 sm) ≈ 1800 belgi — shu standart
+    # bo'yicha hisoblanadi; 1650 da har bir betning pastida sezilarli bo'sh joy
+    # qolardi. 12 pt, 1.15 intervalli maqola/tezis betiga ~3200 belgi sig'adi.
+    return 3200 if service in COMPACT_SERVICES else 1800

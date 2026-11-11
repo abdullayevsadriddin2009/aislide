@@ -870,7 +870,7 @@ def _split_into_page_chunks(content_text, count, topic, lang):
     surplus beyond the selected page budget is intentionally omitted.
     """
     count = max(1, int(count or 1))
-    max_page_chars = 1650
+    max_page_chars = 1800
     text = _clean_text(content_text or "")
     text = re.sub(r"\[\[(?:ESSAY_)?(?:INTRO|BODY|CONCLUSION)\]\]", "", text, flags=re.I)
     text = re.sub(r"(?m)^\s*#{1,6}\s*", "", text)
@@ -925,10 +925,16 @@ def _split_into_page_chunks(content_text, count, topic, lang):
 
     # Keep each physical body page within 1650 chars, with around 3–4 paragraphs.
     remaining_chars = sum(len(x) for x in paragraph_units)
+    # Qisqa matn teng bo'lib tashlansa, har bir sahifada katta bo'sh joy qoladi.
+    # Shuning uchun matn yetarli bo'lmasa sahifalar ketma-ket to'ldiriladi.
+    balanced = remaining_chars > count * max_page_chars
     chunks, cursor = [], 0
     for page_index in range(count):
         pages_left = count - page_index
-        target = min(max_page_chars, max(260, math.ceil(remaining_chars / max(1, pages_left))))
+        if balanced:
+            target = min(max_page_chars, max(260, math.ceil(remaining_chars / max(1, pages_left))))
+        else:
+            target = max_page_chars
         page_parts, page_chars = [], 0
         while cursor < len(paragraph_units):
             unit = paragraph_units[cursor]
@@ -1379,7 +1385,7 @@ def _mq_split_blocks(text):
     return blocks
 
 
-def _mq_paginate(blocks, count, fallback=(), capacity=1620):
+def _mq_paginate(blocks, count, fallback=(), capacity=1800):
     """Abzaslarni buzmasdan `count` ta sahifaga teng taqsimlaydi (mundarija raqamlari aniq bo'lishi uchun)."""
     count = max(1, int(count))
     capacity = max(300, int(capacity))
@@ -1387,7 +1393,10 @@ def _mq_paginate(blocks, count, fallback=(), capacity=1620):
     pages = [[] for _ in range(count)]
     if items:
         total = sum(len(block) + 2 for block in items)
-        per_page = max(250, min(capacity, math.ceil(total / count)))
+        # Matn sahifa byudjetidan qisqa bo'lsa, u barcha sahifalarga teng
+        # bo'lib tashlanmaydi: oldingi (to'liq) sahifalar to'ldiriladi va faqat
+        # oxirgi sahifada biroz bo'sh joy qoladi.
+        per_page = max(250, min(capacity, math.ceil(total / count))) if total > count * capacity else capacity
         page, used = 0, 0
         for block in items:
             if used and used + len(block) + 2 > per_page and page < count - 1:
