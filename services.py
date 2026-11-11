@@ -1,7 +1,7 @@
 # ===== Xizmatlar (10 ta) — 6 tilda nomlar bilan =====
 # name_uz / name_ru / name_en / name_tr / name_de / name_fr
 SERVICES = {
-    "slide":    {"emoji": "📊", "option_type": "slides",    "price": 0,
+    "slide":    {"emoji": "📊", "option_type": "slides", "options": (10, 15, 20), "price": 0,
                  "name_uz": "Taqdimot (Slayd)", "name_ru": "Презентация", "name_en": "Presentation",
                  "name_tr": "Sunum (Slayt)", "name_de": "Präsentation", "name_fr": "Présentation"},
     "referat":  {"emoji": "📄", "option_type": "pages",     "options": (7, 8, 9, 10), "price": 0,

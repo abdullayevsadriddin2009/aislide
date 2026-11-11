@@ -8,9 +8,9 @@ from texts import t
 from states import Creation
 from services import SERVICES, service_name, ALL_LANGS
 from keyboards import (option_kb_for, confirm_kb, main_kb, option_label,
-                       languages_kb, format_kb, template_kb, slide_count_kb)
+                       languages_kb, format_kb, template_kb, slide_count_kb, subjects_kb)
 from designs import (subject_name, detect_subject_key, lang_full_name, SLIDE_COUNTS,
-                     design_name, DESIGNS, DESIGN_KEYS)
+                     design_name, DESIGNS, DESIGN_KEYS, SUBJECT_KEYS)
 from ai_api import (generate, generate_slides_structured, get_last_error, search_images, download_image,
                     generate_insho_plan, image_grade, related_keywords)
 from pptx_generator import generate_pptx
@@ -370,12 +370,15 @@ async def topic_received(message: Message, state: FSMContext):
     await state.update_data(topic=topic)
     
     if service == "slide":
-        # The subject is detected from the topic itself; asking the user for it was
-        # an unnecessary extra step and often got the wrong answer.
+        # Foydalanuvchi qaysi fandan tayyorlanishini o'zi tasdiqlaydi: taxmin
+        # belgilanadi, kerak bo'lsa boshqasi tanlanadi yoki umuman tanlanmaydi.
         detected_key = detect_subject_key(topic)
         await state.update_data(subject=detected_key)
-        await state.set_state(Creation.language)
-        await message.answer(t("choose_language", lang), reply_markup=languages_kb(lang))
+        await state.set_state(Creation.subject)
+        await message.answer(
+            t("subject_question", lang, subject=subject_name(detected_key, lang)),
+            reply_markup=subjects_kb(detected_key, lang),
+        )
         return
         
     s = SERVICES.get(service, {})
@@ -392,6 +395,12 @@ async def cb_subject(call: CallbackQuery, state: FSMContext):
     user_id, msg = _eid(call)
     lang = await _lang(user_id)
     subject_key = call.data.split(":", 1)[1]
+    if subject_key == "auto":
+        # Fan ko'rsatilmasa slaydlar mavzu bo'yicha yoziladi.
+        subject_key = "umumiy"
+    if subject_key not in SUBJECT_KEYS:
+        await call.answer("—")
+        return
     await state.update_data(subject=subject_key)
     await state.set_state(Creation.language)
     await msg.edit_text(t("choose_language", lang), reply_markup=languages_kb(lang))
@@ -620,7 +629,7 @@ async def _show_confirm(event, state):
     price = await db.get_price(service)
     
     if service == "slide":
-        subject_key = data.get("subject", "tarix")
+        subject_key = data.get("subject") or "umumiy"
         language_code = data.get("language", lang)
         language_name = data.get("language_name", lang_full_name(language_code, lang))
         slide_count = data.get("slide_count", 10)
@@ -720,7 +729,7 @@ async def cb_confirm(call: CallbackQuery, state: FSMContext):
     safe_topic = "".join(c for c in topic[:25] if c.isalnum() or c in " _-").strip() or "document"
     
     if service == "slide":
-        subject_key = data.get("subject", "tarix")
+        subject_key = data.get("subject") or "umumiy"
         language_code = data.get("language", "uz")
         slide_count = data.get("slide_count", 10)
         subj_display = subject_name(subject_key, language_code)

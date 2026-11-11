@@ -131,6 +131,8 @@ def subjects_kb(detected_key, lang="uz"):
             rows.append(row); row = []
     if row:
         rows.append(row)
+    # Fan noma'lum bo'lsa foydalanuvchi tanlamaydi: mavzu bo'yicha o'zi yoziladi.
+    rows.append([InlineKeyboardButton(text=t("subject_auto", lang), callback_data="subj:auto")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 # ===== Taqdimot slaydlar soni =====

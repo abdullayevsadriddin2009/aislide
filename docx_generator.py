@@ -1934,7 +1934,14 @@ def _generate_standard_docx(doc, topic, service, service_name, pages, content_te
         entries = _acad_references(found.get("ADABIYOTLAR", ""))
         if not entries:
             entries = list(mq["sources"])
+        # Bibliografiya uchun ajratilgan sahifa byudjeti to'liq ishlatiladi:
+        # diplomda u 2 sahifa, lekin 7 manba bitta sahifaga sig'ib, ilova va
+        # mundarija sahifalari bir pog'ona siljib ketardi.
+        ref_pages = max(1, int(fixed.get("refs") or 1))
+        per_page = max(1, math.ceil(len(entries) / ref_pages))
         for number, item in enumerate(entries, 1):
+            if ref_pages > 1 and number > 1 and (number - 1) % per_page == 0:
+                doc.add_page_break()
             _mq_para(doc, f"{number}. {item}", indent=0, size=size)
 
     # --- Ilovalar (diplom) ---
@@ -2631,7 +2638,9 @@ def _parse_test_questions(content_text, n_q, topic, lang):
         i = len(questions) + 1
         fb_q = fb_list[(i-1) % len(fb_list)]
         questions.append({
-            "text": f"{i}. {fb_q[0]} ({topic})",
+            # The heading already prints the number; repeating it here rendered
+            # "17. SAVOL" followed by "17. ..." in the finished quiz.
+            "text": f"{fb_q[0]} ({topic})",
             "options": [("A", fb_q[1][0]), ("B", fb_q[1][1]), ("C", fb_q[1][2]), ("D", fb_q[1][3])],
             "correct": fb_q[2] if len(fb_q) > 2 else "A", "rationale": default_rat,
         })

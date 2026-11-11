@@ -599,7 +599,15 @@ async def _generate(job_id):
             generation_topic = topic
             text, real = await generate_content(service, generation_topic, options, lang)
             job["stage"] = "building"
-            pages = int(options.get("pages") or options.get("count") or 10)
+            # Har bir xizmat o'z hajmini ishlatadi: test — savollar soni, esse —
+            # so'z hajmi. Ilgari testda 15 savol tanlansa ham 10 tasi chiqardi.
+            if service == "test":
+                pages = int(options.get("questions") or 10)
+            elif service == "esse":
+                words = int(options.get("words") or 250)
+                pages = max(2, (words + 299) // 300)
+            else:
+                pages = int(options.get("pages") or options.get("count") or 10)
             buffer = generate_docx(
                 generation_topic, service_name(service, lang), service, lang, pages, text,
                 author=author, extra_data=data,
