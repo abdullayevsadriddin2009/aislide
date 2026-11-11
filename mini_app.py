@@ -559,13 +559,15 @@ async def _generate(job_id):
             from ai_api import generate_slides_structured
             from designs import subject_name
 
+            from services import slide_body_count, slide_image_total
+
             count = int(options.get("count") or 10)
             subject_key = payload.get("subject_key") or "umumiy"
             subject = subject_name(subject_key, lang)
             # Bot bilan bir xil: mavzu o'zgartirilmaydi (tarjima qilinmaydi).
             generation_topic = topic
             slides_content, real = await generate_slides_structured(
-                generation_topic, subject, lang, max(2, count - 3))
+                generation_topic, subject, lang, slide_body_count(count))
             job["stage"] = "images"
             images = []
             if config.SLIDE_IMAGES:
@@ -573,7 +575,7 @@ async def _generate(job_id):
                     from handlers.creation import _collect_images
                     images = await _collect_images(
                         generation_topic, slides_content,
-                        total=min(12, max(5, len(slides_content))), lang=lang)
+                        total=slide_image_total(len(slides_content)), lang=lang)
                 except Exception:
                     images = []
             job["stage"] = "building"
@@ -599,15 +601,10 @@ async def _generate(job_id):
             generation_topic = topic
             text, real = await generate_content(service, generation_topic, options, lang)
             job["stage"] = "building"
-            # Har bir xizmat o'z hajmini ishlatadi: test — savollar soni, esse —
-            # so'z hajmi. Ilgari testda 15 savol tanlansa ham 10 tasi chiqardi.
-            if service == "test":
-                pages = int(options.get("questions") or 10)
-            elif service == "esse":
-                words = int(options.get("words") or 250)
-                pages = max(2, (words + 299) // 300)
-            else:
-                pages = int(options.get("pages") or options.get("count") or 10)
+            # Hajm bot bilan bir xil funksiyada hisoblanadi: test — savollar
+            # soni, esse — so'z hajmi, qolganlari sahifa.
+            from services import document_pages
+            pages = document_pages(service, options)
             buffer = generate_docx(
                 generation_topic, service_name(service, lang), service, lang, pages, text,
                 author=author, extra_data=data,
@@ -721,16 +718,22 @@ def api_generate():
     options = _payload_options(service, data)
     extra = _extra_data(service, data, options)
     subject_key = ""
-    if service == "slide":
-        # Foydalanuvchi fan yo'nalishini o'zi tanlaydi; belgilanmasa slaydlar
-        # mavzuning o'zi bo'yicha yoziladi.
-        requested = str(data.get("subject_key") or "").strip()
-        try:
-            from designs import SUBJECT_KEYS
-            if requested in SUBJECT_KEYS:
-                subject_key = requested
-        except Exception:
-            subject_key = ""
+    # Fan yo'nalishi barcha xizmatlarda tanlanadi; belgilanmasa material
+    # mavzuning o'zi bo'yicha yoziladi.
+    requested = str(data.get("subject_key") or "").strip()
+    try:
+        from designs import SUBJECT_KEYS, subject_name as subject_display_name
+        if requested in SUBJECT_KEYS:
+            subject_key = requested
+            if (service != "slide" and requested != "umumiy"
+                    and not str(extra.get("ref_subject") or "").strip()):
+                # Titul varaqda tanlangan fan ko'rsatiladi.
+                extra["ref_subject"] = subject_display_name(requested, lang)
+    except Exception:
+        subject_key = ""
+    if service != "slide":
+        # Hujjat mazmuni ham tanlangan fanga mos yoziladi.
+        options["subject"] = str(extra.get("ref_subject") or "").strip()
     payload = {
         "service": service,
         "topic": topic,

@@ -522,10 +522,11 @@ function renderForm(){
       data-opt="${value}">${value} ${esc(unit)}</div>`).join("");
   const langChips = LANGS.map(([code, name]) =>
     `<div class="chip ${state.form.lang === code ? "sel" : ""}" data-lang="${code}">${esc(name)}</div>`).join("");
-  const subjChips = isSlide ? `<label>${esc(SUBJ_LABEL[state.lang] || SUBJ_LABEL.en)}</label>
-      <div class="chips" id="subjs">${[["", SUBJ_AUTO[state.lang] || SUBJ_AUTO.en]].concat(
-        state.subjects.map(sub => [sub.key, sub.name])).map(([key, name]) =>
-        `<div class="chip ${(state.form.subject_key || "") === key ? "sel" : ""}" data-subj="${esc(key)}">${esc(name)}</div>`).join("")}</div>` : "";
+  // Fan yo'nalishi har bir xizmatda tanlanadi: tanlanmasa material mavzu bo'yicha.
+  const subjChips = `<label>${esc(SUBJ_LABEL[state.lang] || SUBJ_LABEL.en)}</label>
+      <div class="chips" id="subjs">${[["", SUBJ_AUTO[state.lang] || SUBJ_AUTO.en, ""]].concat(
+        state.subjects.map(sub => [sub.key, sub.name, sub.name])).map(([key, name, subjName]) =>
+        `<div class="chip ${(state.form.subject_key || "") === key ? "sel" : ""}" data-subj="${esc(key)}" data-subj-name="${esc(subjName)}">${esc(name)}</div>`).join("")}</div>`;
 
   app.innerHTML = `<div class="wrap">
     <div class="head"><button class="back" id="back">‹</button><h1>${FILES[item.code]||""} ${esc(item.name)}</h1></div>
@@ -578,7 +579,10 @@ function renderForm(){
   ["author","institution","faculty","dept","subject","checker","email"].forEach(key => bind(key, key));
   const designKey = document.getElementById("designKey"); if (designKey) designKey.onchange = () => state.form.design_key = designKey.value;
   document.getElementById("subjs")?.querySelectorAll("[data-subj]").forEach(node => node.onclick = () => {
-    state.form.subject_key = node.dataset.subj; renderForm();
+    state.form.subject_key = node.dataset.subj;
+    // Titul varaqda ham tanlangan fan ko'rinadi.
+    state.form.subject = node.dataset.subjName || "";
+    renderForm();
   });
 
   document.getElementById("opts")?.querySelectorAll("[data-opt]").forEach(node => node.onclick = () => {

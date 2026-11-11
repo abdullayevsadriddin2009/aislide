@@ -997,7 +997,7 @@ async def _generate_mustaqil_sources(topic, lang, wiki):
     return "\n".join(f"{index}. {item}" for index, item in enumerate(entries[:10], 1))
 
 
-async def _generate_mustaqil(topic, pages, lang):
+async def _generate_mustaqil(topic, pages, lang, subject=""):
     """Mustaqil ish: to'liq tuzilma (kirish, 4 kichik bo'lim, xulosa, adabiyotlar)."""
     lc = str(lang or "uz").lower()
     plan = _MQ_PLAN.get(lc, _MQ_PLAN["en"])
@@ -1008,7 +1008,7 @@ async def _generate_mustaqil(topic, pages, lang):
     parts, previous, solid = [], "", 0
     for marker, title, desc in plan:
         text = await _generate_section("mustaqil", topic, title, section_pages.get(marker, 1),
-                                       desc, lc, wiki, previous)
+                                       f"{desc}{_subject_hint(subject)}", lc, wiki, previous)
         text = str(text or "").strip()
         if len(text) >= 400:
             solid += 1
@@ -1127,7 +1127,7 @@ async def generate_insho_plan(topic, lang, pages=3):
     return "\n".join(lines)
 
 
-async def _generate_insho(topic, pages, lang, plan=""):
+async def _generate_insho(topic, pages, lang, plan="", subject=""):
     """Insho matni: kirish → asosiy qism (a, b) → xulosa (adabiy uslub, reja asosida)."""
     lc = str(lang or "uz").lower()
     intro_word, body_word, concl_word, style_desc, intro_desc, body_desc, concl_desc = _INSHO_WORDS.get(lc, _INSHO_WORDS["en"])
@@ -1161,7 +1161,8 @@ async def _generate_insho(topic, pages, lang, plan=""):
         ("INSHO_BODY_B", f"{body_word}, b): {plan_b}", second_pages, f"{body_desc} {style_desc}"),
         ("INSHO_CONCLUSION", f"{concl_word}: {plan_concl}", 1, f"{concl_desc} {style_desc}"),
     ):
-        text = await _generate_section("insho", topic, title, section_pages, desc, lc, wiki, previous)
+        text = await _generate_section("insho", topic, title, section_pages,
+                                       f"{desc}{_subject_hint(subject)}", lc, wiki, previous)
         text = str(text or "").strip()
         if len(text) >= 400:
             solid += 1
@@ -1174,6 +1175,15 @@ async def _generate_insho(topic, pages, lang, plan=""):
 # ===== STANDART AKADEMIK XIZMATLAR (referat, kurs, diplom, maqola, tezis) =====
 # Har bir bo'lim tanlangan sahifa hajmiga to'liq to'ldiriladi: matn yetarli
 # bo'lmasa, o'sha bo'lim uchun yangi mazmun bilan davom ettiriladi.
+def _subject_hint(subject):
+    """Tanlangan fan matn mazmuniga ham ta'sir qiladi; fan yo'q bo'lsa bo'sh satr."""
+    name = str(subject or "").strip()
+    if not name:
+        return ""
+    return (f" The material is prepared for the {name} subject: use its terminology, "
+            "typical examples, methods and problems, and keep the content inside that field.")
+
+
 def _dedupe_blocks(text):
     seen, out = set(), []
     for raw in re.split(r"\n\s*\n", str(text or "")):
@@ -1410,7 +1420,7 @@ async def _generate_table_rows(topic, lang, kind):
     return headers[kind], rows
 
 
-async def _generate_standard(service, topic, pages, lang):
+async def _generate_standard(service, topic, pages, lang, subject=""):
     """Referat, kurs, diplom, maqola va tezis: to'liq, sahifalab to'ldirilgan mazmun."""
     lc = str(lang or "uz").lower()
     plan = academic.plan(service, pages, lc)
@@ -1423,7 +1433,8 @@ async def _generate_standard(service, topic, pages, lang):
         # Kurs ishida 2.1 va 2.3 bo'limlaridan keyin jadval tushadi: o'sha
         # sahifada jadvalga joy qoldirish uchun matn 18% kam yoziladi.
         scale = 0.82 if (service == "kurs" and marker in ("2.1", "2.3")) else 1.0
-        text = await _fill_section(service, topic, title_text, sec_pages, desc, lc, wiki,
+        text = await _fill_section(service, topic, title_text, sec_pages,
+                                   f"{desc}{_subject_hint(subject)}", lc, wiki,
                                    previous, cpp, budget_scale=scale)
         text = str(text or "").strip()
         found_parts[marker] = text
@@ -1593,14 +1604,15 @@ Output only one paragraph, no heading, list, numbering, checklist, or writing ad
     if service == "mustaqil":
         # Mustaqil ish uchun alohida to'liq tuzilma: kirish, 2 bob (4 band),
         # raqamlangan xulosa va real havolali adabiyotlar ro'yxati.
-        return await _generate_mustaqil(topic, pages, lang)
+        return await _generate_mustaqil(topic, pages, lang, (options or {}).get("subject", ""))
     if service == "insho":
         # Insho — adabiy ish: REJA (reja alohida yoziladi) va 3-5 betlik matn.
-        return await _generate_insho(topic, pages, lang, (options or {}).get("plan", ""))
+        return await _generate_insho(topic, pages, lang, (options or {}).get("plan", ""),
+                                     (options or {}).get("subject", ""))
 
     if service in academic.ACADEMIC_SERVICES or service in academic.COMPACT_SERVICES:
         # Referat, kurs, diplom, maqola va tezis: bo'limma-bo'lim to'liq mazmun.
-        return await _generate_standard(service, topic, pages, lang)
+        return await _generate_standard(service, topic, pages, lang, (options or {}).get("subject", ""))
 
     page_overhead = 2 if service in ("maqola", "tezis") else 5
     content_pages = max(2, pages - page_overhead)
@@ -1664,6 +1676,7 @@ async def _generate_test(service, topic, options, lang):
     count = requested if requested in (10, 15, 20) else min((10, 15, 20), key=lambda n: abs(n - requested))
     wiki = await wikipedia_fetch(topic, max_chars=5000, gen_lang=lc)
     ln = _lang_name(lc)
+    subject_hint = _subject_hint((options or {}).get("subject"))
     all_questions, used_fallback = [], False
     chunk_size = 5
     for start in range(1, count + 1, chunk_size):
@@ -1674,6 +1687,7 @@ async def _generate_test(service, topic, options, lang):
             "Each question has four options A), B), C), D), with exactly one correct option marked (✓). "
             f"Output only the questions and options, entirely in {ln}. Do not add an answer-key section. "
             f"Use the following reference only for facts and translate its meaning into {ln}:\n{wiki_block(wiki, lc)}"
+            f"{subject_hint}"
         )
         txt = await _chat_complete(prompt, system=_pure_language_system(lc), max_tokens=3000)
 

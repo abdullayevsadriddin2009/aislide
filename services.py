@@ -37,6 +37,42 @@ SERVICES = {
 
 ALL_LANGS = ("uz", "ru", "en", "tr", "de", "fr")
 
+SLIDE_COUNT_OPTIONS = (10, 15, 20)
+
+
+def _as_int(value, fallback):
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return fallback
+
+
+def slide_body_count(slide_count):
+    """Taqdimotdagi kontent slaydlari: muqova, mundarija va yakuniy slayd ayiriladi."""
+    return max(2, _as_int(slide_count, SLIDE_COUNT_OPTIONS[0]) - 3)
+
+
+def slide_image_total(body_slides):
+    """Rasm yuklash byudjeti — bot ham, Mini App ham bir xil qiymat oladi."""
+    return min(12, max(5, _as_int(body_slides, 5)))
+
+
+def document_pages(service, options):
+    """Hujjat generatori uchun hajm: esse — so'z, test — savol, qolganlari sahifa.
+
+    Bot va Mini App shu funksiyani chaqiradi, aks holda bir xil so'rov ikki
+    joyda har xil hajmda hujjat beradi.
+    """
+    options = options or {}
+    if service == "test":
+        return _as_int(options.get("questions") or options.get("pages"), 20)
+    if service == "esse":
+        words = _as_int(options.get("words"), 250)
+        return max(2, (words + 299) // 300)
+    if service == "insho":
+        return _as_int(options.get("pages"), 3)
+    return _as_int(options.get("pages") or options.get("count"), 10)
+
 def service_name(code, lang="uz"):
     """Xizmat nomini tanlangan tilda qaytaradi (6 til, fallback: en → uz)."""
     s = SERVICES.get(code, {})

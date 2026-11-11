@@ -6,7 +6,8 @@ import config
 import database as db
 from texts import t
 from states import Creation
-from services import SERVICES, service_name, ALL_LANGS
+from services import (SERVICES, service_name, ALL_LANGS, document_pages,
+                      slide_body_count, slide_image_total)
 from keyboards import (option_kb_for, confirm_kb, main_kb, option_label,
                        languages_kb, format_kb, template_kb, slide_count_kb, subjects_kb)
 from designs import (subject_name, detect_subject_key, lang_full_name, SLIDE_COUNTS,
@@ -395,16 +396,54 @@ async def cb_subject(call: CallbackQuery, state: FSMContext):
     user_id, msg = _eid(call)
     lang = await _lang(user_id)
     subject_key = call.data.split(":", 1)[1]
+    data = await state.get_data()
+    service = data.get("service")
     if subject_key == "auto":
-        # Fan ko'rsatilmasa slaydlar mavzu bo'yicha yoziladi.
+        # Fan ko'rsatilmasa material mavzuning o'zi bo'yicha yoziladi.
         subject_key = "umumiy"
     if subject_key not in SUBJECT_KEYS:
         await call.answer("—")
         return
-    await state.update_data(subject=subject_key)
-    await state.set_state(Creation.language)
-    await msg.edit_text(t("choose_language", lang), reply_markup=languages_kb(lang))
+    target_lang = data.get("language") or lang
+    name = subject_name(subject_key, target_lang) if subject_key != "umumiy" else ""
+    await state.update_data(subject=subject_key, subject_custom="", ref_subject=name)
+
+    if service == "slide":
+        await state.set_state(Creation.language)
+        await msg.edit_text(t("choose_language", lang), reply_markup=languages_kb(lang))
+        await call.answer()
+        return
+    # Hujjatlar: fan tanlandi, titul ma'lumotlariga o'tamiz.
+    if service in FULL_TITLE_SERVICES:
+        await state.set_state(Creation.ref_institution)
+        await msg.edit_text(t(_academic_key(service, "ref_ask_institution", "academic_ask_institution"), lang))
+    else:
+        await state.set_state(Creation.ref_author)
+        await msg.edit_text(t(_academic_key(service, "ref_ask_author", "academic_ask_author"), lang))
     await call.answer()
+
+
+@router.message(Creation.subject)
+async def subject_text(message: Message, state: FSMContext):
+    """Ro'yxatdan tanlash o'rniga fan nomini yozib yuborish ham mumkin."""
+    lang = await _lang(message.from_user.id)
+    data = await state.get_data()
+    service = data.get("service")
+    value = (message.text or "").strip()
+    if len(value) < 2:
+        await message.answer(t("ask_doc_subject", lang), reply_markup=subjects_kb("", lang))
+        return
+    await state.update_data(subject="umumiy", subject_custom=value, ref_subject=value)
+    if service == "slide":
+        await state.set_state(Creation.language)
+        await message.answer(t("choose_language", lang), reply_markup=languages_kb(lang))
+        return
+    if service in FULL_TITLE_SERVICES:
+        await state.set_state(Creation.ref_institution)
+        await message.answer(t(_academic_key(service, "ref_ask_institution", "academic_ask_institution"), lang))
+    else:
+        await state.set_state(Creation.ref_author)
+        await message.answer(t(_academic_key(service, "ref_ask_author", "academic_ask_author"), lang))
 
 # ===== 4. Til (slayd + non-slayd) =====
 @router.callback_query(Creation.language, F.data.startswith("lng:"))
@@ -420,9 +459,9 @@ async def cb_language(call: CallbackQuery, state: FSMContext):
     # Barcha hujjat xizmatlari uchun titul/metadata ma'lumotlarini oldindan yig'amiz.
     # Referat uchun alohida matnlar saqlanadi; qolgan xizmatlar umumiy lokalizatsiyani ishlatadi.
     if service != "slide":
-        await state.set_state(Creation.ref_subject)
-        ask_key = "ref_ask_subject" if service == "referat" else "academic_ask_subject"
-        await msg.edit_text(t(ask_key, lang))
+        # Har bir hujjat xizmatida ham fan ro'yxatdan tanlanadi.
+        await state.set_state(Creation.subject)
+        await msg.edit_text(t("ask_doc_subject", lang), reply_markup=subjects_kb("", lang))
         await call.answer()
         return
 
@@ -634,7 +673,7 @@ async def _show_confirm(event, state):
         language_name = data.get("language_name", lang_full_name(language_code, lang))
         slide_count = data.get("slide_count", 10)
         template_name = data.get("template_name", design_name(data.get("design_key", DESIGN_KEYS[0]), lang))
-        subj_name = subject_name(subject_key, language_code)
+        subj_name = data.get("subject_custom") or subject_name(subject_key, language_code)
         param = f"{subj_name} • {language_name} • {template_name} • {t('slides_label', lang, n=slide_count)}"
         price = data.get("slide_price", await db.get_price(service))
     else:
@@ -732,16 +771,17 @@ async def cb_confirm(call: CallbackQuery, state: FSMContext):
         subject_key = data.get("subject") or "umumiy"
         language_code = data.get("language", "uz")
         slide_count = data.get("slide_count", 10)
-        subj_display = subject_name(subject_key, language_code)
+        subj_display = data.get("subject_custom") or subject_name(subject_key, language_code)
         
-        slides_content, real = await generate_slides_structured(generation_topic, subj_display, language_code, max(2, slide_count - 3))
+        slides_content, real = await generate_slides_structured(
+            generation_topic, subj_display, language_code, slide_body_count(slide_count))
         
         img_paths = []
         if config.SLIDE_IMAGES:
             try:
                 # One photo per body slide keeps every layout on-topic; the download
                 # budget is still capped so generation stays fast.
-                image_total = min(12, max(5, len(slides_content)))
+                image_total = slide_image_total(len(slides_content))
                 img_paths = await _collect_images(generation_topic, slides_content, total=image_total, lang=language_code)
             except Exception as e:
                 print(f"[creation] Image download error: {e}", flush=True)
@@ -780,23 +820,17 @@ async def cb_confirm(call: CallbackQuery, state: FSMContext):
         
     else:
         language_code = data.get("language", lang)
+        # Tanlangan fan hujjat mazmuniga ham ta'sir qiladi.
+        options["subject"] = data.get("ref_subject") or data.get("subject_custom") or ""
         text_content, real = await generate(service, generation_topic, options, language_code)
         
         if service == "esse":
-            try:
-                words = int(options.get("words", 250) or 250)
-            except (TypeError, ValueError):
-                words = 250
+            words = int(options.get("words", 250) or 250)
             words = words if words in (150, 250, 350) else min((150, 250, 350), key=lambda n: abs(n - words))
             options["words"] = words
             options["target_words"] = words
-            pages = max(2, math.ceil(words / 300))
-        elif service == "insho":
-            pages = int(options.get("pages", 3) or 3)
-        elif service == "test":
-            pages = int(options.get("questions", 20) or 20)
-        else:
-            pages = int(options.get("pages", 10) or 10)
+        # Hajm ikkala interfeysda bir xil hisoblanadi.
+        pages = document_pages(service, options)
             
         # Foydalanuvchi kiritgan titul ma'lumotlarini saqlaymiz; faqat fan nomi
         # tanlangan hujjat tiliga tarjima qilinadi. Ism va muassasa nomlari o'z holicha qoladi.
@@ -863,8 +897,9 @@ async def cb_essay_go(call: CallbackQuery, state: FSMContext):
     language_code = data.get("language", lang)
     plan = data.get("essay_outline", "")
     options["plan"] = plan
+    options["subject"] = data.get("ref_subject") or data.get("subject_custom") or ""
     text_content, real = await generate(service, generation_topic, options, language_code)
-    pages = int(options.get("pages", 3) or 3)
+    pages = document_pages(service, options)
     document_data = dict(data)
     document_data["insho_plan"] = plan
     # Titul maydonlari foydalanuvchi yozganidek qoladi.

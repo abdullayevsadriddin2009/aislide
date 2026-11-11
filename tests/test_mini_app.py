@@ -132,32 +132,48 @@ class MiniAppTests(unittest.TestCase):
         self.assertEqual(mini_app._payload_options("slide", {"options": {"count": 4}}), {"count": 10})
         self.assertEqual(mini_app._payload_options("slide", {"options": {"count": 20}}), {"count": 20})
 
+    def _generate_payload(self, token, service, options, payload_extra):
+        captured = {}
+        original = mini_app._start_job
+        def fake_start(uid, payload):
+            captured.update(payload)
+            return "job-test"
+        mini_app._start_job = fake_start
+        try:
+            body = {"token": token, "service": service,
+                    "topic": "Biologiya hujayra tuzilishi", "options": dict(options)}
+            body.update(payload_extra)
+            response = self.client.post("/api/mini/generate", json=body)
+        finally:
+            mini_app._start_job = original
+        self.assertEqual(response.status_code, 200)
+        return captured
+
     def test_slide_subject_follows_the_choice(self):
         """Mini App'da tanlangan fan qabul qilinadi, tanlanmasa mavzu bo'yicha qoladi."""
         token = self._token_for(560)
+        pick = lambda extra: self._generate_payload(token, "slide", {"count": 10}, extra)
 
-        def generate(payload_extra):
-            captured = {}
-            original = mini_app._start_job
-            def fake_start(uid, payload):
-                captured.update(payload)
-                return "job-test"
-            mini_app._start_job = fake_start
-            try:
-                body = {"token": token, "service": "slide",
-                        "topic": "Biologiya hujayra tuzilishi", "options": {"count": 10}}
-                body.update(payload_extra)
-                response = self.client.post("/api/mini/generate", json=body)
-            finally:
-                mini_app._start_job = original
-            self.assertEqual(response.status_code, 200)
-            return captured
-
-        self.assertEqual(generate({"subject_key": "biologiya"})["subject_key"], "biologiya")
+        self.assertEqual(pick({"subject_key": "biologiya"})["subject_key"], "biologiya")
         # Fan belgilanmasa slaydlar mavzuning o'zi bo'yicha yoziladi.
-        self.assertEqual(generate({})["subject_key"], "")
+        self.assertEqual(pick({})["subject_key"], "")
         # Noma'lum qiymat ham umumiy mavzuga tushadi.
-        self.assertEqual(generate({"subject_key": "nomalum"})["subject_key"], "")
+        self.assertEqual(pick({"subject_key": "nomalum"})["subject_key"], "")
+
+    def test_every_service_uses_the_chosen_subject(self):
+        """Fan tanlash slayddan tashqari hujjatlarda ham mazmunga uzatiladi."""
+        token = self._token_for(561)
+        for service, options in (("referat", {"pages": 9}), ("test", {"questions": 15}),
+                                 ("esse", {"words": 250}), ("insho", {"pages": 4})):
+            payload = self._generate_payload(token, service, options, {"subject_key": "biologiya"})
+            self.assertEqual(payload["options"]["subject"], "Biologiya",
+                             f"{service} fanini mazmunga uzatmadi")
+            self.assertEqual(payload["extra"]["ref_subject"], "Biologiya",
+                             f"{service} titulida fan ko'rinmadi")
+
+            skipped = self._generate_payload(token, service, options, {"subject_key": ""})
+            self.assertEqual(skipped["options"]["subject"], "")
+            self.assertEqual(skipped["extra"]["ref_subject"], "")
 
     def test_order_detail_is_private(self):
         con = sqlite3.connect(config.DB_PATH)
