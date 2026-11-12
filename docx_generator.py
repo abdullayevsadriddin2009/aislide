@@ -2615,7 +2615,9 @@ def _parse_test_questions(content_text, n_q, topic, lang):
     if content_text and len(str(content_text).strip()) > 50:
         lines = [ln.rstrip() for ln in str(content_text).split("\n")]
         cur = None
-        opt_re = re.compile(r'^\s*([A-Da-d1-4])[\.\)]\s*(.+)$')
+        # Variant faqat harf bilan belgilanadi: «1. Savol ...» qatori ham
+        # variant deb o'qilib, bir nechta savol yo'qolib ketardi.
+        opt_re = re.compile(r'^\s*([A-Da-d])[\.\)]\s*(.+)$')
         qhead_re = re.compile(r'^\s*(\d+)[\.\-\)]\s*(?:SAVOL|QUESTION|SORU|FRAGE|ВОПРОС|Вопрос|Question)?\s*[:\-]?\s*(.*)$', re.I)
         rat_re = re.compile(r'^\s*(?:💡\s*)?(?:Izoh|Rationale|Açıklama|Begründung|Explication|Обоснование|Explanation)\s*[:\-]?\s*(.*)$', re.I)
         for ln in lines:

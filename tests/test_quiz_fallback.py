@@ -42,6 +42,25 @@ class QuizFallbackTests(unittest.TestCase):
         self.assertEqual(len(keys), 15, "javoblar kaliti to'liq bo'lsin")
         self.assertGreaterEqual(len({letter for _, letter in keys}), 2,
                                 "javob kaliti harflari bir xil bo'lib qolmasin")
+        # Savollar tartibi va soni buzilmasdan o'tishi shart.
+        raw = ai_api._fallback_test_questions("Mexanika", 1, 15, "uz")
+        raw_stems = [line.split(". ", 1)[1] for line in raw.splitlines()
+                     if re.match(r"^\d+\. ", line)]
+        filled = Document(io.BytesIO(docx_generator.generate_docx(
+            "Mexanika", service_name("test", "uz"), "test", "uz", 15, raw,
+            author="Talaba", extra_data={},
+        ).read()))
+        docx_stems, expect = [], False
+        for paragraph in filled.paragraphs:
+            value = paragraph.text.strip()
+            if re.match(r"^\d+\.\s*SAVOL$", value):
+                expect = True
+                continue
+            if expect:
+                docx_stems.append(value)
+                expect = False
+        self.assertEqual(docx_stems, raw_stems,
+                         "savollar yo'qolmasligi yoki siljimasligi kerak")
 
 
 if __name__ == "__main__":
