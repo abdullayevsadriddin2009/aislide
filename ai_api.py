@@ -1636,30 +1636,105 @@ Output only one paragraph, no heading, list, numbering, checklist, or writing ad
 
 # ===== TEST GENERATSIYASI =====
 def _fallback_test_questions(topic, start, end, lang):
-    """Localized quiz fallback used only if AI produces broken language/content."""
-    bank = {
-        "uz": (["asosiy tushuncha", "tarixiy sharoit", "kelib chiqish sababi", "muhim xususiyat", "amaliy qo‘llanish", "ta’sir va oqibat", "asosiy muammo", "yechim yo‘li", "dalillar", "umumiy xulosa"], "{topic} mavzusida {focus}ni aniqlash uchun qaysi yondashuv eng asosli?", ["Ishonchli manba va dalillarni solishtirish", "Dalilsiz taxminni qabul qilish", "Faqat bitta fikrga tayanish", "Mavzuga aloqasiz ma’lumotni tanlash"]),
-        "ru": (["основное понятие", "исторический контекст", "причина возникновения", "важная особенность", "практическое применение", "влияние и последствия", "главная проблема", "способ решения", "доказательства", "общий вывод"], "Какой подход лучше всего помогает определить аспект «{focus}» в теме «{topic}»?", ["Сопоставить надёжные источники и доказательства", "Принять предположение без доказательств", "Опира́ться только на одно мнение", "Выбрать сведения, не связанные с темой"]),
-        "en": (["core concept", "historical context", "underlying cause", "key feature", "practical use", "impact and consequences", "main problem", "possible solution", "supporting evidence", "overall conclusion"], "Which approach best helps identify the {focus} related to {topic}?", ["Compare reliable sources and evidence", "Accept an unsupported guess", "Rely on only one opinion", "Choose information unrelated to the topic"]),
-        "tr": (["temel kavram", "tarihsel bağlam", "ortaya çıkış nedeni", "önemli özellik", "uygulama alanı", "etki ve sonuçlar", "temel sorun", "çözüm yolu", "kanıtlar", "genel sonuç"], "{topic} konusunda {focus} unsurunu belirlemek için hangi yaklaşım en sağlamdır?", ["Güvenilir kaynakları ve kanıtları karşılaştırmak", "Kanıtsız bir varsayımı kabul etmek", "Yalnızca tek bir görüşe dayanmak", "Konuyla ilgisiz bilgiyi seçmek"]),
-        "de": (["Grundbegriff", "historischer Kontext", "Ursache", "wichtiges Merkmal", "praktische Anwendung", "Auswirkungen und Folgen", "Hauptproblem", "Lösungsweg", "Belege", "Gesamtfazit"], "Welcher Ansatz hilft am besten, den Aspekt „{focus}“ zum Thema {topic} zu bestimmen?", ["Zuverlässige Quellen und Belege vergleichen", "Eine unbelegte Vermutung akzeptieren", "Nur eine Meinung berücksichtigen", "Themenfremde Informationen auswählen"]),
-        "fr": (["concept clé", "contexte historique", "cause principale", "caractéristique importante", "application pratique", "effets et conséquences", "problème central", "solution possible", "éléments de preuve", "conclusion générale"], "Quelle approche permet le mieux d’identifier l’aspect « {focus} » du sujet {topic} ?", ["Comparer des sources fiables et des preuves", "Accepter une supposition sans preuve", "S’appuyer sur un seul point de vue", "Choisir des informations sans rapport avec le sujet"]),
-    }
-    focuses, question, options = bank.get(str(lang).lower(), bank["en"])
+    """Localized quiz fallback used only if AI produces broken language/content.
+
+    Savollar bir xil bo'lib qolmasligi uchun har bir savolga alohida yo'naltiruvchi
+    so'z, alohida savol shakli va alohida variantlar to'plami beriladi; to'g'ri
+    javobning harfi ham savol bo'yicha almashtiriladi (avval hammasi «A» edi).
+    """
+    data = _QUIZ_FALLBACK.get(str(lang).lower(), _QUIZ_FALLBACK["en"])
+    focuses, stems = data["focuses"], data["stems"]
     lines = []
     for number in range(start, end + 1):
-        focus = focuses[(number - 1) % len(focuses)]
-        lines.extend([
-            f"{number}. {question.format(topic=topic, focus=focus)}",
-            f"A) {options[0]} (✓)", f"B) {options[1]}",
-            f"C) {options[2]}", f"D) {options[3]}", "",
-        ])
+        index = number - 1
+        focus = focuses[index % len(focuses)]
+        stem = stems[(index // len(focuses)) % len(stems)]
+        wrong = data["wrong"][index % len(data["wrong"])]
+        block = [(data["correct"], True)] + [(text, False) for text in wrong]
+        shift = index % 4
+        block = block[shift:] + block[:shift]
+        lines.append(f"{number}. {stem.format(topic=topic, focus=focus)}")
+        for letter, (text, correct) in zip("ABCD", block):
+            lines.append(f"{letter}) {text}" + (" (\u2713)" if correct else ""))
+        lines.append("")
     return "\n".join(lines).strip()
 
 
+_QUIZ_FALLBACK = {
+    "uz": {
+        "focuses": ["asosiy tushunchani", "tarixiy sharoitni", "kelib chiqish sababini", "muhim xususiyatni",
+                    "amaliy qo‘llanishni", "ta’sir va oqibatni", "asosiy muammoni", "yechim yo‘lini",
+                    "dalillarni", "umumiy xulosani"],
+        "stems": ["«{topic}» mavzusida {focus} aniqlashda qaysi yondashuv ishonchli?",
+                  "{topic} mavzusi bo‘yicha {focus} haqidagi to‘g‘ri fikr qaysi?",
+                  "{topic} bo‘yicha {focus} baholashda qaysi usul mos keladi?"],
+        "correct": "Ishonchli manbalar va dalillarni solishtirish",
+        "wrong": [["Dalilsiz taxminni qabul qilish", "Faqat bitta fikrga tayanish", "Mavzuga aloqasiz ma’lumotni tanlash"],
+                  ["Tekshirilmagan mish-mishga ishonish", "Qarama-qarshi dalillarni inkor etish", "Faqat hissiyotga tayanish"]],
+    },
+    "ru": {
+        "focuses": ["основное понятие", "исторический контекст", "причину возникновения", "важную особенность",
+                    "практическое применение", "влияние и последствия", "главную проблему", "способ решения",
+                    "доказательства", "общий вывод"],
+        "stems": ["Какой подход надёжен при определении «{focus}» в теме «{topic}»?",
+                  "Какое утверждение о «{focus}» по теме «{topic}» верно?",
+                  "Какой метод подходит для оценки «{focus}» по теме «{topic}»?"],
+        "correct": "Сопоставить надёжные источники и доказательства",
+        "wrong": [["Принять предположение без доказательств", "Опираться только на одно мнение", "Выбрать сведения, не связанные с темой"],
+                  ["Довериться непроверенным слухам", "Игнорировать противоречащие факты", "Руководствоваться только эмоциями"]],
+    },
+    "en": {
+        "focuses": ["the core concept", "the historical context", "the underlying cause", "the key feature",
+                    "the practical application", "the impact and consequences", "the main problem",
+                    "the possible solution", "the supporting evidence", "the overall conclusion"],
+        "stems": ["Which approach reliably identifies {focus} in {topic}?",
+                  "Which statement about {focus} in {topic} is correct?",
+                  "Which method is suitable for assessing {focus} in {topic}?"],
+        "correct": "Comparing reliable sources and evidence",
+        "wrong": [["Accepting an unsupported guess", "Relying on only one opinion", "Choosing information unrelated to the topic"],
+                  ["Trusting unchecked rumours", "Ignoring conflicting evidence", "Deciding on emotion alone"]],
+    },
+    "tr": {
+        "focuses": ["temel kavramı", "tarihsel bağlamı", "ortaya çıkış nedenini", "önemli özelliği",
+                    "uygulama alanını", "etki ve sonuçları", "temel sorunu", "çözüm yolunu",
+                    "kanıtları", "genel sonucu"],
+        "stems": ["«{topic}» konusunda {focus} belirlemede hangi yaklaşım güvenilirdir?",
+                  "{topic} konusunda {focus} ile ilgili doğru ifade hangisi?",
+                  "{topic} konusunda {focus} değerlendirmek için hangi yöntem uygundur?"],
+        "correct": "Güvenilir kaynakları ve kanıtları karşılaştırmak",
+        "wrong": [["Kanıtsız bir varsayımı kabul etmek", "Yalnızca tek bir görüşe dayanmak", "Konuyla ilgisiz bilgiyi seçmek"],
+                  ["Doğrulanmamış söylentilere güvenmek", "Çelişen kanıtları yok saymak", "Yalnızca duygularla karar vermek"]],
+    },
+    "de": {
+        "focuses": ["den Grundbegriff", "den historischen Kontext", "die Ursache", "das wichtige Merkmal",
+                    "die praktische Anwendung", "Auswirkungen und Folgen", "das Hauptproblem", "den Lösungsweg",
+                    "die Belege", "das Gesamtfazit"],
+        "stems": ["Welcher Ansatz bestimmt {focus} zum Thema {topic} zuverlässig?",
+                  "Welche Aussage zu {focus} im Thema {topic} ist richtig?",
+                  "Welche Methode eignet sich zur Bewertung von {focus} im Thema {topic}?"],
+        "correct": "Zuverlässige Quellen und Belege vergleichen",
+        "wrong": [["Eine unbelegte Vermutung akzeptieren", "Nur eine Meinung berücksichtigen", "Themenfremde Informationen auswählen"],
+                  ["Ungeprüften Gerüchten vertrauen", "Widersprüchliche Belege ignorieren", "Nur nach Gefühl entscheiden"]],
+    },
+    "fr": {
+        "focuses": ["le concept clé", "le contexte historique", "la cause principale", "la caractéristique importante",
+                    "l’application pratique", "les effets et conséquences", "le problème central", "la solution possible",
+                    "les éléments de preuve", "la conclusion générale"],
+        "stems": ["Quelle approche identifie de façon fiable {focus} dans le sujet {topic} ?",
+                  "Quelle affirmation sur {focus} dans le sujet {topic} est correcte ?",
+                  "Quelle méthode convient pour évaluer {focus} dans le sujet {topic} ?"],
+        "correct": "Comparer des sources fiables et des preuves",
+        "wrong": [["Accepter une supposition sans preuve", "S’appuyer sur un seul point de vue", "Choisir des informations sans rapport avec le sujet"],
+                  ["Faire confiance à des rumeurs non vérifiées", "Ignorer les éléments contraires", "Décider uniquement par émotion"]],
+    },
+}
+
+
 def _numbered_question_count(text):
+    """Savollar soni: markdown yulduzchalari va «1)» ko'rinishi ham hisobga olinadi."""
     cleaned = clean_ai_text(text or "")
-    return sum(bool(re.match(r"^\s*(?:(?:question|вопрос|soru|frage)\s*)?\d{1,2}[.)]\s+", line, flags=re.I))
+    cleaned = re.sub(r"[*_`#]+", "", cleaned)
+    return sum(bool(re.match(r"^\s*(?:(?:question|вопрос|soru|frage)\s*)?\d{1,2}\s*[.)]\s*\S", line, flags=re.I))
                for line in cleaned.splitlines())
 
 
@@ -1685,6 +1760,7 @@ async def _generate_test(service, topic, options, lang):
         prompt = (
             f"Topic: {topic}. Write exactly {required} multiple-choice questions in {ln}, numbered {start} through {end}. "
             "Each question has four options A), B), C), D), with exactly one correct option marked (✓). "
+            "Vary which letter is correct across the questions and never reuse the same option set twice. "
             f"Output only the questions and options, entirely in {ln}. Do not add an answer-key section. "
             f"Use the following reference only for facts and translate its meaning into {ln}:\n{wiki_block(wiki, lc)}"
             f"{subject_hint}"
@@ -1696,7 +1772,7 @@ async def _generate_test(service, topic, options, lang):
             return bool(cleaned and not cleaned.startswith("⚠️")
                         and not _is_lang_mixed(cleaned, lc)
                         and not _document_text_is_repetitive(cleaned)
-                        and _numbered_question_count(cleaned) == required)
+                        and _numbered_question_count(cleaned) >= required)
 
         if not valid_chunk(txt):
             retry_prompt = prompt + f"\nRewrite from scratch in {ln} only. Return exactly {required} numbered questions, no explanations, no repeated wording."

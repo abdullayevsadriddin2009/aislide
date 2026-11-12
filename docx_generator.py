@@ -2646,12 +2646,19 @@ def _parse_test_questions(content_text, n_q, topic, lang):
     while len(questions) < n_q:
         i = len(questions) + 1
         fb_q = fb_list[(i-1) % len(fb_list)]
+        # To'g'ri javob har doim «A» bo'lib qolmasligi uchun variantlar savol
+        # raqamiga qarab aylantiriladi.
+        correct_index = "ABCD".find(str(fb_q[2] or "A"))
+        if correct_index < 0:
+            correct_index = 0
+        shift = (i - 1) % 4
+        rotated = list(fb_q[1])[shift:] + list(fb_q[1])[:shift]
         questions.append({
             # The heading already prints the number; repeating it here rendered
             # "17. SAVOL" followed by "17. ..." in the finished quiz.
             "text": f"{fb_q[0]} ({topic})",
-            "options": [("A", fb_q[1][0]), ("B", fb_q[1][1]), ("C", fb_q[1][2]), ("D", fb_q[1][3])],
-            "correct": fb_q[2] if len(fb_q) > 2 else "A", "rationale": default_rat,
+            "options": [(letter, text) for letter, text in zip("ABCD", rotated)],
+            "correct": "ABCD"[(correct_index - shift) % 4], "rationale": default_rat,
         })
         
     out = []
