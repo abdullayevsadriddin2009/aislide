@@ -81,6 +81,14 @@ API_LIST = [
         ]
     },
     {
+        "name": "OpenRouter (zaxira)",
+        "base_url": "https://openrouter.ai/api/v1",
+        "api_key": os.getenv("OPENROUTER_KEY", ""),
+        "type": "openai",
+        "models": ["google/gemini-2.0-flash-001", "openai/gpt-4o-mini",
+                   "meta-llama/llama-3.3-70b-instruct"],
+    },
+    {
         "name": "Google AI 2",
         "base_url": "https://generativelanguage.googleapis.com/v1beta",
         "api_key": os.getenv("GOOGLE_KEY_2", ""),
@@ -91,6 +99,15 @@ API_LIST = [
             "gemini-3.5-flash-lite", "gemini-3.1-flash-lite",
             "gemini-3.1-flash-lite-preview", "gemma-4-26b-a4b-it",
             # gemma-4-31b-it answers far too slowly to be worth an attempt.
+        ]
+    },
+    {
+        "name": "Google AI 3",
+        "base_url": "https://generativelanguage.googleapis.com/v1beta",
+        "api_key": os.getenv("GOOGLE_KEY_2", ""),
+        "type": "google",
+        "models": [
+            "gemini-2.5-flash", "gemini-flash-lite-latest", "gemini-2.0-flash",
         ]
     }
 ]

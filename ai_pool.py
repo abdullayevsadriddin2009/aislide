@@ -88,21 +88,37 @@ def _exec(sql, args=()):
         con.close()
 
 
+_SYNCED_PATHS = set()
+
+
 def ensure():
-    """Jadvallarni yaratadi va bo'sh bo'lsa muhitdan kalitlarni ko'chiradi."""
+    """Jadvallarni yaratadi va muhitdagi (Render) kalitlarni bazaga qo'shadi.
+
+    Muhit kalitlari har ishga tushishda tekshiriladi: Renderda yangi kalit
+    qo'shilsa, u bazada hali yo'q bo'lsa avtomatik qo'shiladi. Admin panelda
+    qo'lda qo'shilgan kalitlar va o'chirilgan kalitlar tegilmaydi.
+    """
     with _LOCK:
         con = _connect()
         try:
             con.executescript(_SCHEMA)
-            empty = con.execute("SELECT COUNT(*) FROM ai_keys").fetchone()[0] == 0
-            if empty:
+            path = os.path.abspath(str(config.DB_PATH))
+            if path not in _SYNCED_PATHS:
+                existing = {row[0] for row in con.execute("SELECT api_key FROM ai_keys")}
+                added = 0
                 for row in _env_keys():
+                    if row["api_key"] in existing:
+                        continue
                     con.execute(
                         "INSERT INTO ai_keys(label,provider,api_key,base_url,models,created_at)"
                         " VALUES(?,?,?,?,?,?)",
                         (row["label"], row["provider"], row["api_key"], row["base_url"],
                          ",".join(row["models"]), time.strftime("%Y-%m-%d %H:%M:%S")),
                     )
+                    added += 1
+                if added:
+                    print(f"[ai_pool] muhitdan {added} ta AI kalit qo'shildi", flush=True)
+                _SYNCED_PATHS.add(path)
             for key, value in CHAT_DEFAULTS.items():
                 con.execute("INSERT OR IGNORE INTO ai_settings(k,v) VALUES(?,?)", (key, value))
             con.commit()
@@ -265,6 +281,17 @@ def runtime_apis():
         if not names:
             names = list(_PROVIDER_MODELS.get(provider, ()))
         if not names:
+            # AI_MODEL=auto bo'lgan OpenAI-mos provayder: model ro'yxati
+            # `/models` manzilidan jonli olinadi (`ai_api._models_for_api`).
+            if provider == "openai" and (row["base_url"] or ""):
+                apis.append({
+                    "key_id": row["id"],
+                    "name": row["label"] or provider,
+                    "base_url": row["base_url"],
+                    "api_key": row["api_key"],
+                    "type": "openai",
+                    "models": [],
+                })
             continue
         inside = [name for name in names]
         ordered = [name for name in defaults if name in inside]

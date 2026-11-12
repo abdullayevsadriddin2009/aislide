@@ -53,6 +53,25 @@ class AiPoolTests(unittest.TestCase):
         self.pool.set_default_model(model["id"])
         self.assertEqual(self.pool.runtime_apis()[0]["models"][0], "openai/gpt-oss-20b")
 
+    def test_render_environment_keys_are_imported_once(self):
+        import ai_api
+        fake = [{"name": "Google env", "type": "google",
+                 "base_url": "https://generativelanguage.googleapis.com/v1beta",
+                 "api_key": "env-key-999999", "models": ["gemini-2.5-flash"]}]
+        with mock.patch.object(ai_api, "API_LIST", fake):
+            self.pool._SYNCED_PATHS.clear()
+            self.pool.ensure()
+        keys = [key["api_key"] for key in self.pool.keys()]
+        self.assertIn("env-key-999999", keys)
+        env_key = [key for key in self.pool.keys() if key["api_key"] == "env-key-999999"][0]
+        self.pool.toggle_key(env_key["id"])  # admin o'chirgan kalit qayta yoqilmasin
+        with mock.patch.object(ai_api, "API_LIST", fake):
+            self.pool._SYNCED_PATHS.clear()
+            self.pool.ensure()
+        again = [key for key in self.pool.keys() if key["api_key"] == "env-key-999999"]
+        self.assertEqual(len(again), 1)
+        self.assertEqual(again[0]["active"], 0)
+
     def test_chat_settings_are_clamped(self):
         self.pool.set_setting("temperature", "9")
         self.pool.set_setting("history_limit", "500")
