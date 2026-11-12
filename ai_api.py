@@ -3788,7 +3788,12 @@ async def chat_answer(question, user_lang="uz", history=None, on_text=None):
         content = str(item.get("content") or "").strip()
         if role in ("user", "assistant") and content and not content.startswith("⚠️"):
             dialogue.append({"role": role, "content": content[:1500]})
-    dialogue = dialogue[-16:]
+    try:
+        import ai_pool as _chat_pool
+        _dialogue_limit = max(2, _chat_pool.chat_history_limit() * 2)
+    except Exception:
+        _dialogue_limit = 16
+    dialogue = dialogue[-_dialogue_limit:]
 
     def last_turn(role):
         for item in reversed(dialogue):

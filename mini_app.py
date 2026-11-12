@@ -419,10 +419,11 @@ def api_chat():
 
     try:
         import ai_pool
-        history_limit = ai_pool.chat_history_limit() or 16
+        history_pairs = ai_pool.chat_history_limit() or 8
     except Exception:
-        history_limit = 16
-    history = _chat_history(uid, history_limit)
+        history_pairs = 8
+    # "Juft xabar" — savol + javob, shuning uchun ikki barobar qator olinadi.
+    history = _chat_history(uid, max(2, history_pairs * 2))
     try:
         from ai_api import chat_answer
         answer = asyncio.run(chat_answer(message, user_lang=lang, history=history))

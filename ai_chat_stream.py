@@ -100,6 +100,15 @@ def _openai_messages(system, contents):
     return messages
 
 
+async def _emit(on_text, text):
+    """`on_text` sinxron ham, asinxron ham bo'lishi mumkin (botdagi draft)."""
+    if not on_text:
+        return
+    result = on_text(text)
+    if asyncio.iscoroutine(result):
+        await result
+
+
 async def _stream_google(session, key, model, body, on_text):
     """Gemini `streamGenerateContent?alt=sse` — PHP dagi bilan bir xil so'rov."""
     base = str(key.get("base_url") or "https://generativelanguage.googleapis.com/v1beta").rstrip("/")
@@ -130,8 +139,7 @@ async def _stream_google(session, key, model, body, on_text):
                     chunk += part.get("text") or ""
                 if chunk:
                     text += chunk
-                    if on_text:
-                        on_text(text)
+                    await _emit(on_text, text)
     if text.strip():
         return 200, text, None
     return 200, None, "bo'sh javob (xavfsizlik filtri bo'lishi mumkin)"
@@ -200,8 +208,8 @@ async def stream_reply(system, prompt, history=None, on_text=None,
                 else:
                     status, text, error = await _post_openai(
                         session, key, model, messages, temperature, max_tokens)
-                    if status == 200 and text and on_text:
-                        on_text(text)
+                    if status == 200 and text:
+                        await _emit(on_text, text)
             except Exception as exc:
                 status, text, error = None, None, f"{type(exc).__name__}: {exc}"
 

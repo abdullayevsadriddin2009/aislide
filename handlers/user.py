@@ -413,7 +413,13 @@ async def btn_chat(message: Message, state: FSMContext):
     await state.clear()
     await state.set_state(Chat.active)
     labels = chat_labels(lang)
-    await message.answer(labels["start"], reply_markup=chat_kb(lang))
+    # Admin panelda "Welcome text" yozilgan bo'lsa, u ko'rsatiladi.
+    try:
+        import ai_pool
+        greeting = ai_pool.chat_welcome()
+    except Exception:
+        greeting = ""
+    await message.answer(greeting or labels["start"], reply_markup=chat_kb(lang))
 
 
 @router.callback_query(F.data == "chat:clear")
@@ -474,7 +480,13 @@ async def chat_handle(message: Message, state: FSMContext):
     from ai_api import chat_answer
     user_id = message.from_user.id
     # Oldingi xabarlar AI kontekstiga beriladi — shu bilan suhbat davom etadi.
-    history = await db.get_chat_history(user_id, limit=16)
+    # Admin panelda "History pairs" necha juft xabar eslab qolinishini bildiradi.
+    try:
+        import ai_pool
+        history_pairs = ai_pool.chat_history_limit()
+    except Exception:
+        history_pairs = 8
+    history = await db.get_chat_history(user_id, limit=max(2, history_pairs * 2))
     thinking = await message.answer(t("chat_thinking", lang))
     try:
         answer = await chat_answer(txt, user_lang=lang, history=history,

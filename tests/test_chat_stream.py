@@ -69,6 +69,31 @@ class StreamReplyTests(unittest.IsolatedAsyncioTestCase):
         mark.assert_called_with(1, True)
         note.assert_called_with("")
 
+    async def test_async_on_text_is_awaited(self):
+        """Botdagi draft yuboruvchi callback asinxron: u albatta await bo'lsin."""
+        keys = [{"id": 1, "label": "a", "provider": "google", "api_key": "k",
+                 "base_url": "https://example", "models": "m1"}]
+        models = [{"name": "m1", "active": 1, "is_default": 1}]
+        seen = []
+
+        async def fake_google(session, key, model, body, on_text):
+            await ai_chat_stream._emit(on_text, "Salom")
+            return 200, "Salom", None
+
+        async def async_on_text(partial):
+            seen.append(partial)
+
+        with mock.patch.object(ai_chat_stream.ai_pool, "keys", return_value=keys), \
+                mock.patch.object(ai_chat_stream.ai_pool, "models", return_value=models), \
+                mock.patch.object(ai_chat_stream.ai_pool, "mark_result"), \
+                mock.patch.object(ai_chat_stream.ai_pool, "note_error"), \
+                mock.patch.object(ai_chat_stream, "_stream_google", fake_google), \
+                mock.patch.object(ai_chat_stream.aiohttp, "ClientSession", return_value=_DummySession()):
+            answer = await ai_chat_stream.stream_reply("sys", "savol", on_text=async_on_text)
+
+        self.assertEqual(answer, "Salom")
+        self.assertEqual(seen, ["Salom"])
+
     async def test_bad_key_moves_to_the_next_one(self):
         keys = [{"id": 1, "label": "a", "provider": "google", "api_key": "k",
                  "base_url": "https://example", "models": "m1"},
