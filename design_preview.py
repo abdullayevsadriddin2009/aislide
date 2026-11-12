@@ -42,6 +42,36 @@ _SAMPLE_CTA = {
 }
 
 
+# Foydalanuvchi yuborgan moodboard rasmlarini shu papkaga qo'ysa bo'ladi:
+# design_assets/modern.jpg, neon.jpg, amber.jpg, pop.jpg, nature.jpg, elegant.jpg.
+# Fayl topilsa, chizilgan rasm o'rniga o'sha rasmning o'zi ko'rsatiladi.
+ASSET_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "design_assets")
+_ASSET_EXTS = (".jpg", ".jpeg", ".png", ".webp")
+
+
+def asset_path(key):
+    """design_assets/<key>.(jpg|png|webp) bo'lsa yo'lini qaytaradi."""
+    for ext in _ASSET_EXTS:
+        candidate = os.path.join(ASSET_DIR, f"{key}{ext}")
+        if os.path.exists(candidate):
+            return candidate
+    return ""
+
+
+def _from_asset(path):
+    """Rasmni 1200x675 ga markazdan kesib (cover) PNG baytlariga aylantiradi."""
+    image = Image.open(path).convert("RGB")
+    ratio = max(WIDTH / image.width, HEIGHT / image.height)
+    size = (max(WIDTH, int(image.width * ratio)), max(HEIGHT, int(image.height * ratio)))
+    image = image.resize(size, Image.LANCZOS)
+    left = (image.width - WIDTH) // 2
+    top = (image.height - HEIGHT) // 2
+    image = image.crop((left, top, left + WIDTH, top + HEIGHT))
+    buffer = io.BytesIO()
+    image.save(buffer, format="PNG", optimize=True)
+    return buffer.getvalue()
+
+
 def _font(size, bold=False):
     for path in (_FONT_BOLD if bold else _FONT_REGULAR):
         if os.path.exists(path):
@@ -239,6 +269,13 @@ _BUILDERS = {
 @lru_cache(maxsize=64)
 def render_design_preview(key, lang="uz", topic=""):
     """Bitta dizayn uchun muqova slaydiga o'xshash PNG baytlarini qaytaradi."""
+    asset = asset_path(key)
+    if asset:
+        try:
+            return _from_asset(asset)
+        except Exception as exc:  # buzilgan rasm bo'lsa, chizilgan variant qoladi
+            print(f"[design_preview] {asset}: {exc}", flush=True)
+
     theme = THEMES.get(key) or THEMES[DESIGN_KEYS[0]]
     lc = str(lang or "uz").lower()
     if lc not in _SAMPLE_TITLE:

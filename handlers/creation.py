@@ -501,16 +501,13 @@ async def cb_slide_count(call: CallbackQuery, state: FSMContext):
     # Har bir dizayn alohida rasm ko'rinishida ko'rsatiladi (1..6), shundan
     # keyin tugmalar joylashgan xabar yuboriladi.
     try:
-        from aiogram.types import BufferedInputFile, InputMediaPhoto
+        from aiogram.types import BufferedInputFile
         from design_preview import render_design_preview
-        album = [
-            InputMediaPhoto(
-                media=BufferedInputFile(render_design_preview(key, lang),
-                                        filename=f"{index}.png"),
+        # Har bir rasm alohida yuboriladi: albomda Telegram ularni kesib tashlaydi.
+        for index, key in enumerate(DESIGN_KEYS, 1):
+            await msg.answer_photo(
+                BufferedInputFile(render_design_preview(key, lang), filename=f"{index}.png"),
                 caption=f"{index}. {design_name(key, lang)}")
-            for index, key in enumerate(DESIGN_KEYS, 1)
-        ]
-        await msg.answer_media_group(album)
         await msg.answer(_slide_design_prompt(lang), reply_markup=template_kb(lang))
         try:
             await msg.delete()
