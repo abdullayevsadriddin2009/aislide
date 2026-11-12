@@ -11,7 +11,7 @@ import os
 import unicodedata
 from functools import lru_cache
 
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFile, ImageFilter, ImageFont
 
 from designs import DESIGN_KEYS, design_name
 from pptx_generator import THEMES
@@ -77,9 +77,44 @@ def _load_photo(key):
     return photo
 
 
+def _trim_black(image):
+    """Yarim yuklangan rasmning pastidagi bo'sh (qora) qatorlarini kesib tashlaydi."""
+    gray = image.convert("L")
+    width, height = gray.size
+    pixels = gray.load()
+    for row in range(height - 1, int(height * 0.25), -1):
+        if any(pixels[col, row] > 6 for col in range(0, width, 6)):
+            if row < height - 4:
+                print(f"[design_preview] pastki {height - row - 1} qator bo'sh, kesildi", flush=True)
+                return image.crop((0, 0, width, row + 1))
+            return image
+    return image
+
+
 def _from_asset(path):
-    """Rasmni 1200x675 ga markazdan kesib (cover) PNG baytlariga aylantiradi."""
-    image = _cover(Image.open(path).convert("RGB"), (WIDTH, HEIGHT))
+    """Rasmni 1200x675 kartochkaga joylaydi.
+
+    16:9 rasm to'liq to'ldiriladi; baland (masalan, bir nechta slayd ko'rsatilgan
+    plakat) rasm esa kesilmaydi — xira fon ustiga to'liq sig'diriladi.
+    """
+    load_truncated = ImageFile.LOAD_TRUNCATED_IMAGES
+    ImageFile.LOAD_TRUNCATED_IMAGES = True  # yarim yuklangan PNG ham ochilsin
+    try:
+        source = _trim_black(Image.open(path).convert("RGB"))
+    finally:
+        ImageFile.LOAD_TRUNCATED_IMAGES = load_truncated
+
+    if abs(source.width / source.height - WIDTH / HEIGHT) < 0.08:
+        image = _cover(source, (WIDTH, HEIGHT))
+    else:
+        background = _cover(source, (WIDTH, HEIGHT)).filter(ImageFilter.GaussianBlur(26))
+        dim = Image.new("RGB", (WIDTH, HEIGHT), (18, 18, 22))
+        image = Image.blend(background, dim, 0.55)
+        scale = min(WIDTH * 0.94 / source.width, HEIGHT * 0.94 / source.height)
+        size = (max(1, int(source.width * scale)), max(1, int(source.height * scale)))
+        panel = source.resize(size, Image.LANCZOS)
+        image.paste(panel, ((WIDTH - size[0]) // 2, (HEIGHT - size[1]) // 2))
+
     buffer = io.BytesIO()
     image.save(buffer, format="PNG", optimize=True)
     return buffer.getvalue()
