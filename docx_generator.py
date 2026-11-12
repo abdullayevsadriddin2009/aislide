@@ -457,6 +457,85 @@ def _loc(key, lang, topic=""):
     lang = str(lang).lower()
     return _LOC.get(key, {}).get(lang, _LOC.get(key, {}).get("en", key)).replace("{t}", str(topic)[:40])
 
+# AI akademik matnni ingliz yorliqlari bilan boshlaydi («Relevance of the topic:»).
+# Hujjat boshqa tilda bo'lsa, yorliq o'sha tilga o'giriladi.
+_LABEL_ALIASES = {
+    "relevance": ("Relevance of the topic:", "Relevance:"),
+    "goal": ("Goal of the work:", "Goal:"),
+    "tasks": ("Tasks completed:", "Tasks:"),
+    "object": ("Object of the research:", "Research object:"),
+    "subject": ("Subject of the research:", "Research subject:"),
+}
+
+
+# Model ba'zan o'zbek matniga boshqa turkiy tildan so'z aralashtiradi
+# («Kültür antropologiyasi», «Nəşriyotu»); bunday so'zlar almashtiriladi.
+_FOREIGN_LEAKS = (
+    ("Kültür", "Madaniyat"), ("kültür", "madaniyat"),
+    ("Nəşriyyat", "nashriyot"), ("Nəşriyot", "nashriyot"),
+    ("Nəticə", "Xulosa"), ("Təhsil", "Ta’lim"), ("təhsil", "ta’lim"),
+)
+
+
+def _fix_foreign_leaks(text, lang):
+    value = str(text or "")
+    if str(lang or "").lower() != "uz":
+        return value
+    for wrong, right in _FOREIGN_LEAKS:
+        value = value.replace(wrong, right)
+    return value
+
+
+def _localize_label_paragraphs(text, lang):
+    lc = str(lang or "uz").lower()
+    value = str(text or "")
+    if not value or lc == "en":
+        return value
+    labels = _lbl(lc)
+    for key, aliases in _LABEL_ALIASES.items():
+        target = labels.get(key)
+        if not target:
+            continue
+        for alias in aliases:
+            value = re.sub(r"(?im)^([ \t]*)" + re.escape(alias),
+                           lambda match, target=target: match.group(1) + target, value)
+    return value
+
+
+# Insho REJASI AI promptidan qaytib qolgan satrlarni olib tashlaydi.
+_PLAN_JUNK_RE = re.compile(
+    r"(?im)^\s*(?:mavzu|vazifa|тема|задание|topic|task|konu|görev|thema|aufgabe|sujet|tâche)\s*[:：]"
+    r"|\baynan besh qator\b|\bровно пять строк\b|\bexactly five lines\b"
+    r"|\bfaqat shu reja\b|write only these plan lines|kirish mazmuni|<[^<>]{1,40}>"
+)
+
+_INSHO_PLAN_DEFAULT = {
+    "uz": ("1. Kirish. {t} mavzusining mazmuni va bugungi kundagi ahamiyati.",
+           "2. Asosiy qism:", "   a) {t} bo‘yicha asosiy tushunchalar va ilmiy qarashlar.",
+           "   b) Hayotiy misollar, badiiy tahlil va dalillar.",
+           "3. Xulosa. Asosiy fikrlarning umumlashmasi va ma’naviy xulosasi."),
+    "ru": ("1. Введение. Содержание темы «{t}» и её значение сегодня.",
+           "2. Основная часть:", "   а) Основные понятия и научные взгляды по теме «{t}».",
+           "   б) Жизненные примеры, литературный анализ и аргументы.",
+           "3. Заключение. Обобщение основных мыслей и духовный вывод."),
+    "en": ("1. Introduction. The meaning of {t} and its significance today.",
+           "2. Main part:", "   a) Key concepts and scholarly views on {t}.",
+           "   b) Real-life examples, literary analysis and evidence.",
+           "3. Conclusion. A summary of the main ideas and the final moral lesson."),
+    "tr": ("1. Giriş. {t} konusunun anlamı ve bugünkü önemi.",
+           "2. Ana bölüm:", "   a) {t} ile ilgili temel kavramlar ve bilimsel görüşler.",
+           "   b) Hayattan örnekler, edebî tahlil ve kanıtlar.",
+           "3. Sonuç. Ana fikirlerin özeti ve manevi sonuç."),
+    "de": ("1. Einleitung. Inhalt des Themas {t} und seine heutige Bedeutung.",
+           "2. Hauptteil:", "   a) Grundbegriffe und wissenschaftliche Ansichten zu {t}.",
+           "   b) Beispiele aus dem Leben, literarische Analyse und Belege.",
+           "3. Schluss. Zusammenfassung der Hauptgedanken und moralisches Fazit."),
+    "fr": ("1. Introduction. Le sens du sujet {t} et son importance aujourd’hui.",
+           "2. Partie principale :", "   a) Concepts clés et points de vue scientifiques sur {t}.",
+           "   b) Exemples de la vie, analyse littéraire et arguments.",
+           "3. Conclusion. Synthèse des idées principales et portée morale."),
+}
+
 # ===== Yordamchi funksiyalar =====
 def _clean_text(text):
     """AI qaytargan matndan JSON qoldiqlari va ortiqcha belgilarni tozalash."""
@@ -1457,6 +1536,10 @@ def _mq_reference_lines(text, mq):
 
     for raw in str(text or "").splitlines():
         line = re.sub(r"^\s*(?:[•▪●\-–—*]|\(?\d{1,2}[\.\)])\s*", "", raw).strip()
+        # Bibliografiyada «— 1‑sahifa» / «— 45‑bet» kabi ma'nosiz dumlar qolardi.
+        line = re.sub(r"[\s,;]*[–—]\s*\d+\s*(?:[‑-]\s*)?(?:sahifa|bet|стр\.?|page[s]?|s\.)\.?\s*$",
+                      "", line, flags=re.I).strip()
+        line = re.sub(r"[\s,;]+$", "", line)
         if not line or len(line) < 12 or line.startswith("⚠️"):
             continue
         if len(line) < 40 and line.endswith(":") and not line.lower().startswith("http"):
@@ -1517,6 +1600,10 @@ def _generate_mustaqil_docx(doc, topic, pages, content_text, author, lbl, extra_
     if len(concl_text) < 120:
         concl_text = "\n".join(_loc(key, lang, topic) for key in ("concl1", "concl2", "concl3", "concl4"))
     conclusion_items = _mq_conclusion_items(concl_text, lang, mq)
+    # «Mavzuni o‘rganib chiqib…» bosh jumlasi ba'zan 1-band bo'lib takrorlanadi.
+    lead_key = re.sub(r"\s+", " ", mq["lead"]).strip().casefold().rstrip(":")
+    conclusion_items = [item for item in conclusion_items
+                        if re.sub(r"\s+", " ", item).strip().casefold().rstrip(":") != lead_key]
     references = _mq_reference_lines(found.get("ADABIYOTLAR") or "", mq)
 
     section = _mq_setup_page(doc, mq)
@@ -1826,7 +1913,9 @@ def _generate_standard_docx(doc, topic, service, service_name, pages, content_te
         if len(lines) < 3:
             lines = [f"{index}. {item[1]}" for index, item in enumerate(plan, 1)]
         for line in lines:
-            _mq_para(doc, line, indent=0)
+            # «5. XULOSA — 1.» kabi tugallanmagan dum olib tashlanadi.
+            cleaned = re.sub(r"\s*[—–-]\s*\d{1,3}\s*\.?\s*$", "", line).strip()
+            _mq_para(doc, cleaned or line, indent=0)
 
     # --- Kurs / diplom: mundarija ---
     if fixed.get("toc"):
@@ -2079,6 +2168,9 @@ def _generate_paginated_academic(doc, topic, service_code, pages, content_text, 
 
 # ===== Asosiy funksiya =====
 def generate_docx(topic, service_name, service_code, lang, pages, content_text, author="", extra_data=None):
+    # AI matni ingliz yorliqlari bilan kelsa ham, hujjat tilida chiqadi.
+    content_text = _localize_label_paragraphs(content_text, lang)
+    content_text = _fix_foreign_leaks(content_text, lang)
     if service_code == "mustaqil":
         # Mustaqil ish eski namuna shablonidan butunlay mustaqil: qat'iy akademik
         # standart (TNR 14/16, 1.5 interval, 3/1/2/2 sm hoshiya, sahifa raqami).
@@ -2400,13 +2492,12 @@ def _insho_plan_for_doc(plan, topic, lang):
     lines = [re.sub(r"[ \t]+", " ", line).strip() for line in str(plan or "").splitlines() if line.strip()]
     lines = [line for line in lines if line.casefold().rstrip(":") not in
              ("reja", "план", "plan", "outline", "gliederung", "taslak")]
+    # AI ba'zan promptning o'zini qaytaradi: «Mavzu: …», «Vazifa: …»,
+    # «Kirish mazmuni: …» — bunday satrlar rejaga tushmasligi kerak.
+    lines = [line for line in lines if not _PLAN_JUNK_RE.search(line)]
     if len(lines) < 5:
-        lines = [f"1. {_loc('relevance', lc, topic)}",
-                 "2. " + {"uz": "Asosiy qism:", "ru": "Основная часть:", "en": "Main part:",
-                          "tr": "Ana bölüm:", "de": "Hauptteil:", "fr": "Partie principale :"}.get(lc, "Main part:"),
-                 "   a) " + _loc("goal", lc, topic),
-                 "   b) " + _loc("method", lc, topic),
-                 f"3. {_loc('concl1', lc, topic)}"]
+        template = _INSHO_PLAN_DEFAULT.get(lc, _INSHO_PLAN_DEFAULT["en"])
+        lines = [item.format(t=str(topic)[:80]) for item in template]
     return lines[:5]
 
 

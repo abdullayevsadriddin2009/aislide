@@ -1094,6 +1094,12 @@ def _insho_plan_lines(plan, topic, lang):
             continue
         if line.casefold().rstrip(":") in ("reja", "план", "plan", "outline", "gliederung"):
             continue
+        # Promptning o'zi qaytib kelsa («Mavzu:», «Vazifa:», «Aynan besh qator…»),
+        # bunday satr reja sifatida ishlatilmaydi.
+        if re.search(r"(?im)^\s*(?:mavzu|vazifa|тема|задание|topic|task)\s*[:：]"
+                     r"|\baynan besh qator\b|\bровно пять строк\b|\bexactly five lines\b"
+                     r"|kirish mazmuni|<[^<>]{1,40}>", line):
+            continue
         lines.append(line)
     if len(lines) < 5:
         template = _INSHO_PLAN_FALLBACK.get(lc, _INSHO_PLAN_FALLBACK["en"])
