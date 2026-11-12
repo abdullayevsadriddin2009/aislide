@@ -417,7 +417,12 @@ def api_chat():
     if lang not in ALL_LANGS:
         lang = "uz"
 
-    history = _chat_history(uid, 16)
+    try:
+        import ai_pool
+        history_limit = ai_pool.chat_history_limit() or 16
+    except Exception:
+        history_limit = 16
+    history = _chat_history(uid, history_limit)
     try:
         from ai_api import chat_answer
         answer = asyncio.run(chat_answer(message, user_lang=lang, history=history))

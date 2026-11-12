@@ -43,7 +43,7 @@ input,textarea{width:100%;padding:10px;margin:6px 0;border:1px solid #ddd;border
 .b-pending{background:#f39c12}.b-approved{background:#27ae60}.b-rejected{background:#e74c3c}
 </style></head><body>
 <h1>👑 AI Slide Bot — Admin Panel</h1>
-<div class="nav"><a href="/">Dashboard</a><a href="/users">Users</a><a href="/orders">Orders</a><a href="/checks">Receipts</a><a href="/settings">Settings</a><a href="/logout">Logout</a></div>
+<div class="nav"><a href="/">Dashboard</a><a href="/users">Users</a><a href="/orders">Orders</a><a href="/checks">Receipts</a><a href="/ai">AI chat</a><a href="/settings">Settings</a><a href="/logout">Logout</a></div>
 {{content|safe}}
 </body></html>
 """
@@ -161,6 +161,125 @@ def settings():
     <label>Mode (1=free, 0=paid):</label><input name="free_mode" value="{free_value}">
     <button class="btn green">Save</button></form></div>"""
     return PAGE.replace("{{content|safe}}", content)
+
+def _ai_page_content():
+    """AI kalitlari, modellari va chat sozlamalari sahifasi."""
+    import ai_pool
+    esc = lambda value: html.escape(str(value if value is not None else ""), quote=True)
+    keys = ai_pool.keys()
+    models = ai_pool.models()
+
+    key_rows = ""
+    for key in keys:
+        state = "active" if key["active"] else "off"
+        key_rows += (
+            f"<tr><td>{esc(key['label'] or '-')}</td><td>{esc(key['provider'])}</td>"
+            f"<td><code>{esc(ai_pool.mask(key['api_key']))}</code></td>"
+            f"<td>{int(key['fails'])}</td><td>{state}</td><td>"
+            f"<form method='post' style='display:inline'><input type='hidden' name='action' value='toggle_key'>"
+            f"<input type='hidden' name='id' value='{int(key['id'])}'>"
+            f"<button class='btn green'>{'Disable' if key['active'] else 'Enable'}</button></form> "
+            f"<form method='post' style='display:inline'><input type='hidden' name='action' value='del_key'>"
+            f"<input type='hidden' name='id' value='{int(key['id'])}'>"
+            f"<button class='btn'>Delete</button></form>"
+            f"</td></tr>"
+        )
+    if not key_rows:
+        key_rows = "<tr><td colspan='6'>No API keys yet.</td></tr>"
+
+    model_rows = ""
+    for model in models:
+        model_rows += (
+            f"<tr><td>{esc(model['name'])}</td><td>{'yes' if model['is_default'] else ''}</td>"
+            f"<td>{'active' if model['active'] else 'off'}</td><td>"
+            f"<form method='post' style='display:inline'><input type='hidden' name='action' value='default_model'>"
+            f"<input type='hidden' name='id' value='{int(model['id'])}'>"
+            f"<button class='btn green'>Make default</button></form> "
+            f"<form method='post' style='display:inline'><input type='hidden' name='action' value='toggle_model'>"
+            f"<input type='hidden' name='id' value='{int(model['id'])}'>"
+            f"<button class='btn green'>Toggle</button></form> "
+            f"<form method='post' style='display:inline'><input type='hidden' name='action' value='del_model'>"
+            f"<input type='hidden' name='id' value='{int(model['id'])}'>"
+            f"<button class='btn'>Delete</button></form>"
+            f"</td></tr>"
+        )
+    if not model_rows:
+        model_rows = "<tr><td colspan='4'>No models yet.</td></tr>"
+
+    provider_options = "".join(
+        f"<option value='{esc(name)}'>{esc(name)}</option>" for name in ai_pool.provider_choices())
+    last_error = ai_pool.last_error()
+
+    return f"""
+    <div class="card"><h3>AI chat</h3>
+      <p>Keys are tried in order; a key that fails moves down the list and the next one
+      answers. The same pool is used by the bot chat and the Mini App chat.</p>
+      {'<p style="color:#c0392b">Last AI error: ' + esc(last_error) + '</p>' if last_error else ''}
+      <table><tr><th>Label</th><th>Provider</th><th>Key</th><th>Fails</th><th>State</th><th></th></tr>{key_rows}</table>
+      <h4>Add key</h4>
+      <form method="post">
+        <input type="hidden" name="action" value="add_key">
+        <label>Label (optional)</label><input name="label">
+        <label>Provider</label><select name="provider">{provider_options}</select>
+        <label>API key</label><input name="api_key" autocomplete="off" required>
+        <label>Base URL (optional, for OpenAI-compatible providers)</label><input name="base_url">
+        <label>Models (comma separated, optional)</label><input name="models" placeholder="gemini-2.5-flash, gemini-flash-lite-latest">
+        <button class="btn green">Add key</button>
+      </form>
+    </div>
+    <div class="card"><h3>Models</h3>
+      <table><tr><th>Model</th><th>Default</th><th>State</th><th></th></tr>{model_rows}</table>
+      <form method="post"><input type="hidden" name="action" value="add_model">
+        <input name="name" placeholder="model name"><button class="btn green">Add model</button></form>
+    </div>
+    <div class="card"><h3>Chat settings</h3>
+      <form method="post"><input type="hidden" name="action" value="save_chat">
+        <label>System prompt</label>
+        <textarea name="system_prompt" rows="6">{esc(ai_pool.chat_system_prompt())}</textarea>
+        <label>Temperature (0–2)</label><input name="temperature" value="{esc(ai_pool.setting('temperature', '0.7'))}">
+        <label>Max answer tokens</label><input name="max_tokens" value="{esc(ai_pool.setting('max_tokens', '2600'))}">
+        <label>History pairs kept in context</label><input name="history_limit" value="{esc(ai_pool.setting('history_limit', '16'))}">
+        <label><input type="checkbox" name="markdown" value="1" {'checked' if ai_pool.chat_markdown() else ''}> Convert markdown to Telegram formatting</label>
+        <button class="btn green">Save</button>
+      </form>
+    </div>"""
+
+
+@app.route("/ai", methods=["GET", "POST"])
+def ai_settings():
+    if not login_required():
+        return redirect("/login")
+    import ai_pool
+    if request.method == "POST":
+        action = request.form.get("action", "")
+        try:
+            if action == "add_key":
+                ai_pool.add_key(request.form.get("label"), request.form.get("api_key"),
+                                request.form.get("provider"), request.form.get("base_url"),
+                                request.form.get("models"))
+            elif action == "toggle_key":
+                ai_pool.toggle_key(request.form.get("id") or 0)
+            elif action == "del_key":
+                ai_pool.delete_key(request.form.get("id") or 0)
+            elif action == "add_model":
+                ai_pool.add_model(request.form.get("name"))
+            elif action == "toggle_model":
+                ai_pool.toggle_model(request.form.get("id") or 0)
+            elif action == "default_model":
+                ai_pool.set_default_model(request.form.get("id") or 0)
+            elif action == "del_model":
+                ai_pool.delete_model(request.form.get("id") or 0)
+            elif action == "save_chat":
+                ai_pool.set_setting("system_prompt", request.form.get("system_prompt", ""))
+                ai_pool.set_setting("temperature", request.form.get("temperature", "0.7"))
+                ai_pool.set_setting("max_tokens", request.form.get("max_tokens", "2600"))
+                ai_pool.set_setting("history_limit", request.form.get("history_limit", "16"))
+                ai_pool.set_setting("markdown", "1" if request.form.get("markdown") else "0")
+        except Exception as exc:
+            print(f"[admin] AI sozlamasi: {exc}", flush=True)
+        return redirect("/ai")
+    return PAGE.replace("{{content|safe}}", _ai_page_content())
+
 
 def run_web():
     app.run(host=config.WEB_ADMIN_HOST, port=config.WEB_ADMIN_PORT, debug=False)

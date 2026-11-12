@@ -436,19 +436,40 @@ async def chat_handle(message: Message, state: FSMContext):
     # The bot runs with parse_mode=HTML, so "<" or "&" inside an AI answer would
     # otherwise make Telegram reject the message and leave the user with no reply.
     # Long answers are split instead of being cut off at Telegram's 4096 limit.
-    chunks = [html.escape(part, quote=False) for part in _split_message(answer)] or [answer]
+    # AI javobidagi markdown Telegram HTML'ga o'giriladi (qalin, kod, ro'yxat,
+    # havola). Formatlash rad etilsa, o'sha bo'lak oddiy matn bo'lib ketadi.
+    from chat_format import md_to_tg_html, split_text
     try:
-        await thinking.edit_text(chunks[0], reply_markup=chat_kb(lang) if len(chunks) == 1 else None)
+        import ai_pool
+        use_markdown = ai_pool.chat_markdown()
     except Exception:
+        use_markdown = True
+    parts = split_text(answer, 3500) or [answer]
+    chunks = [md_to_tg_html(part) if use_markdown else html.escape(part, quote=False)
+              for part in parts]
+
+    async def deliver(text, part, first=False):
+        markup = chat_kb(lang) if first and len(chunks) == 1 else None
+        if first:
+            try:
+                await thinking.edit_text(text, reply_markup=markup)
+                return
+            except Exception:
+                pass
         try:
-            await message.answer(chunks[0], reply_markup=chat_kb(lang) if len(chunks) == 1 else None)
-        except Exception as exc:
-            print(f"[chat] answer delivery failed: {type(exc).__name__}: {exc}", flush=True)
-    for extra_chunk in chunks[1:]:
-        try:
-            await message.answer(extra_chunk, reply_markup=chat_kb(lang))
-        except Exception as exc:
-            print(f"[chat] extra chunk delivery failed: {type(exc).__name__}: {exc}", flush=True)
+            await message.answer(text, reply_markup=markup if first else chat_kb(lang))
+        except Exception:
+            plain = html.escape(part, quote=False)
+            try:
+                if first:
+                    await thinking.edit_text(plain, reply_markup=markup)
+                else:
+                    await message.answer(plain, reply_markup=chat_kb(lang))
+            except Exception as exc:
+                print(f"[chat] answer delivery failed: {type(exc).__name__}: {exc}", flush=True)
+
+    for index, (chunk, part) in enumerate(zip(chunks, parts)):
+        await deliver(chunk, part, first=(index == 0))
 
 
 @router.message(F.text.func(lambda text: _menu_action_for(text) == "balance"))

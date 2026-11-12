@@ -3435,16 +3435,24 @@ async def _chat_complete(prompt, system=None, max_tokens=2500, temperature=0.5,
         "presence_penalty": presence_penalty,
     }
 
-    if not API_LIST:
-        LAST_ERROR = "API_LIST bo'sh — hech qanday AI provayder sozlanmagan"
+    # Kalitlar admin panelda saqlanadi (ai_pool); bo'sh bo'lsa muhitdagi ro'yxat.
+    try:
+        import ai_pool
+        pool_apis = ai_pool.runtime_apis()
+    except Exception as exc:
+        pool_apis = []
+        _log(f"AI kalitlari bazadan olinmadi: {exc}")
+    apis = pool_apis or API_LIST
+    if not apis:
+        LAST_ERROR = "AI kalitlari sozlanmagan (admin panel → AI)"
         return "⚠️ AI serverga ulanib bo'lmadi."
 
-    start_api = CURRENT_API_INDEX % len(API_LIST)
+    start_api = CURRENT_API_INDEX % len(apis)
     errors = []
     attempts = 0
-    for api_offset in range(len(API_LIST)):
-        api_index = (start_api + api_offset) % len(API_LIST)
-        api = API_LIST[api_index]
+    for api_offset in range(len(apis)):
+        api_index = (start_api + api_offset) % len(apis)
+        api = apis[api_index]
         if not api.get("api_key"):
             errors.append(f"{api.get('name', 'API')}: kalit sozlanmagan")
             continue
@@ -3464,6 +3472,11 @@ async def _chat_complete(prompt, system=None, max_tokens=2500, temperature=0.5,
                 CURRENT_API_INDEX = api_index
                 CURRENT_MODEL_INDEX = 0
                 _save_good_model(api, model)
+                try:
+                    ai_pool.mark_result(api.get("key_id"), True)
+                    ai_pool.note_error("")
+                except Exception:
+                    pass
                 LAST_ERROR = None
                 _log(f"✅ Ishladi: {api.get('name', 'API')} → {model}")
                 return clean_ai_text(answer).strip()
@@ -3480,6 +3493,10 @@ async def _chat_complete(prompt, system=None, max_tokens=2500, temperature=0.5,
             # Rejected credentials or an unpaid provider are key-level problems:
             # every other model on the same key would fail the same way.
             if status in (401, 402, 403):
+                try:
+                    ai_pool.mark_result(api.get("key_id"), False)
+                except Exception:
+                    pass
                 break
             if status == 429:
                 consecutive_rate_limits += 1
@@ -3489,10 +3506,14 @@ async def _chat_complete(prompt, system=None, max_tokens=2500, temperature=0.5,
                 continue
             consecutive_rate_limits = 0
         # brief pause between providers to avoid immediate rate-limit bursts
-        if api_offset < len(API_LIST) - 1:
+        if api_offset < len(apis) - 1:
             await asyncio.sleep(0.15)
 
     LAST_ERROR = f"Barcha AI urinishlari muvaffaqiyatsiz ({attempts} model). " + " | ".join(errors[-4:])
+    try:
+        ai_pool.note_error(LAST_ERROR)
+    except Exception:
+        pass
     _log("⚠️ Barcha sozlangan AI provayderlari sinab ko'rildi; natija olinmadi.")
     return "⚠️ AI serverga ulanib bo'lmadi."
 
@@ -3829,6 +3850,16 @@ async def chat_answer(question, user_lang="uz", history=None):
 
     best_answer = None  # AI qaytargan birinchi yaroqli (bo'sh emas) javob
 
+    # Admin panelda saqlangan chat sozlamalari.
+    chat_prompt, chat_limit, chat_temp = "", 2600, None
+    try:
+        import ai_pool
+        chat_prompt = ai_pool.chat_system_prompt()
+        chat_limit = ai_pool.chat_max_tokens()
+        chat_temp = ai_pool.chat_temperature()
+    except Exception:
+        pass
+
     # 3 ta urinish: har birida til talabi kuchayadi.
     for attempt in range(3):
         if attempt == 0:
@@ -3859,8 +3890,11 @@ async def chat_answer(question, user_lang="uz", history=None):
             prompt = question_prompt
             temp = 0.4
 
+        if chat_prompt:
+            system = chat_prompt + "\n" + system
         ans = await _chat_complete(
-            prompt, system=system, max_tokens=2600, temperature=temp,
+            prompt, system=system, max_tokens=chat_limit,
+            temperature=(chat_temp if (attempt == 0 and chat_temp is not None) else temp),
             frequency_penalty=0.35, presence_penalty=0.1, history=dialogue
         )
         if not ans or ans.startswith("⚠️"):
@@ -3901,7 +3935,12 @@ async def test_api(timeout=12, concurrency=6):
     saved_error = LAST_ERROR
 
     no_key, empty, jobs = [], [], []
-    for api in API_LIST:
+    try:
+        import ai_pool
+        probe_apis = ai_pool.runtime_apis() or API_LIST
+    except Exception:
+        probe_apis = API_LIST
+    for api in probe_apis:
         if not api.get("api_key"):
             no_key.append(api["name"])
             continue
