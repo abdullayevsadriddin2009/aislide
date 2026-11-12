@@ -258,6 +258,18 @@ def mini_page():
     return Response(html, mimetype="text/html")
 
 
+@mini.route("/design-preview/<key>.png")
+def design_preview_png(key):
+    """6 ta dizaynning rasm ko'rinishi (botdagidek bir xil render)."""
+    from design_preview import render_design_preview
+    from designs import normalize_design_key
+    lang = str(request.args.get("lang") or "uz").lower()
+    image = render_design_preview(normalize_design_key(key), lang)
+    response = Response(image, mimetype="image/png")
+    response.headers["Cache-Control"] = "public, max-age=86400"
+    return response
+
+
 @mini.route("/api/mini/init", methods=["POST"])
 def api_init():
     data = request.get_json(silent=True) or {}

@@ -21,7 +21,7 @@ SERVICES = {
                  "name_uz": "Insho", "name_ru": "Сочинение", "name_en": "Composition",
                  "name_tr": "Kompozisyon", "name_de": "Aufsatz", "name_fr": "Dissertation"},
     # Esse — argumentli qisqa yozma ish (rejasiz, 150-350 so'z).
-    "esse":     {"emoji": "🖊️", "option_type": "words", "options": (150, 250, 350), "price": 0,
+    "esse":     {"emoji": "🖊️", "option_type": "words", "options": (250, 400, 600), "price": 0,
                  "name_uz": "Esse", "name_ru": "Эссе", "name_en": "Essay",
                  "name_tr": "Deneme", "name_de": "Essay", "name_fr": "Essai"},
     "test":     {"emoji": "✅", "option_type": "questions", "price": 0,

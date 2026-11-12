@@ -5,6 +5,7 @@ import unittest
 
 from docx import Document
 
+import ai_api
 import docx_generator
 from services import service_name
 
@@ -71,3 +72,39 @@ class DocumentCleanupTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class EssayAndDesignPreviewTests(unittest.TestCase):
+    def test_writing_rules_are_rejected_as_essay_text(self):
+        rules = ("Esseni yozish qoidalari (uzbek tilida)\n\n1. Mavzu va maqsadni aniqlash\n"
+                 "   - Essening mavzusi aniq bo'lishi kerak.\n"
+                 "2. Struktura\n   - Kirish: mavzuni tanishtirish.\n"
+                 "3. Til va uslub\n   - Rasmiy, ilmiy uslubda yozish.\n"
+                 "Tahrir va tekshirish: grammatika xatolarini tekshiring.\n"
+                 "Manba ko'rsatish: manbalarni APA uslubida ko'rsating.")
+        self.assertTrue(ai_api._essay_text_is_suspicious(rules, "uz", 300))
+        essay = ("Yoshlikda berilgan tarbiya inson hayotining poydevorini yaratadi. "
+                 "Bu davrda oila va maktab bergan saboqlar keyingi qarorlarga ta'sir qiladi. "
+                 "Masalan, halollik haqidagi suhbatlar o'quvchining munosabatini o'zgartiradi. "
+                 "Shu sababli tarbiyaga vaqt ajratish kelajakka qo'yilgan sarmoyadir.")
+        self.assertFalse(ai_api._essay_text_is_suspicious(essay, "uz", 40))
+
+    def test_essay_document_starts_with_a_plan(self):
+        content = ("[[ESSAY_INTRO]]\nYoshlikda berilgan tarbiya muhim.\n\n"
+                   "[[ESSAY_BODY]]\nBirinchi dalil shu yerda.\n\nIkkinchi dalil ham shu yerda.\n\n"
+                   "[[ESSAY_CONCLUSION]]\nXulosa shu yerda.")
+        body = paragraphs(docx_generator.generate_docx(
+            "Yoshlikda berilgan tarbiyaning ahamiyati", service_name("esse", "uz"), "esse", "uz",
+            250, content, author="Talaba"))
+        plan_index = next(i for i, line in enumerate(body) if line.isupper() and "REJA" in line)
+        plan_lines = body[plan_index + 1:plan_index + 6]
+        self.assertEqual(len([line for line in plan_lines if re.match(r"^\d+\.", line)]), 5,
+                         body[plan_index:plan_index + 8])
+
+    def test_design_previews_are_distinct_images(self):
+        import design_preview
+        images = {key: design_preview.render_design_preview(key, "uz") for key in ("modern", "neon", "amber", "pop", "nature", "elegant")}
+        for key, data in images.items():
+            self.assertEqual(data[:8], b"\x89PNG\r\n\x1a\n", key)
+            self.assertGreater(len(data), 8000, key)
+        self.assertEqual(len(set(images.values())), 6)

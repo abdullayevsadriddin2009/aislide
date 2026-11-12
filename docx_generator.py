@@ -2607,7 +2607,8 @@ def _esse_setup(doc, lang):
 
 
 def _generate_esse_docx(doc, topic, lang, content_text, author, lbl, extra_data=None):
-    """Esse: sarlavha va 4 abzas (kirish, 2 asosiy, xulosa). REJA yozilmaydi."""
+    """Esse: mavzu, REJA va abzaslar (kirish, asosiy qism, xulosa)."""
+    extra_data = extra_data or {}
     lc = str(lang or "uz").lower()
     section = _esse_setup(doc, lc)
     _add_footer(section, lc)
@@ -2624,6 +2625,17 @@ def _generate_esse_docx(doc, topic, lang, content_text, author, lbl, extra_data=
         fmt = byline.paragraph_format
         fmt.first_line_indent = Cm(0); fmt.line_spacing = 1.15; fmt.space_after = Pt(10)
         _mq_font(byline.add_run(str(author).strip()), 12, italic=True)
+
+    # REJA hujjatning boshida (mavzudan keyin) turadi, xuddi inshodagi kabi.
+    plan_items = _essay_plan_items(extra_data.get("essay_outline", ""), topic, lc)
+    if plan_items:
+        _mq_heading(doc, ESSAY_PLAN_TITLES.get(lc, "OUTLINE"), size=14, center=True, after=6)
+        for index, item in enumerate(plan_items, 1):
+            plan_para = doc.add_paragraph()
+            fmt = plan_para.paragraph_format
+            fmt.first_line_indent = Cm(0); fmt.line_spacing = 1.15; fmt.space_after = Pt(2)
+            _mq_font(plan_para.add_run(f"{index}. {item}"), 12)
+        _mq_blank(doc, 1)
 
     intro, body, conclusion = _parse_essay_sections(content_text)
     intro = _remove_essay_section_headings(intro)

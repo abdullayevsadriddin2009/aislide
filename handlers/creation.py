@@ -498,7 +498,27 @@ async def cb_slide_count(call: CallbackQuery, state: FSMContext):
     selected_price = base_price if base_price > 0 else count_price
     await state.update_data(slide_count=count, slide_price=selected_price)
     await state.set_state(Creation.slide_design)
-    await msg.edit_text(_slide_design_prompt(lang), reply_markup=template_kb(lang))
+    # Har bir dizayn alohida rasm ko'rinishida ko'rsatiladi (1..6), shundan
+    # keyin tugmalar joylashgan xabar yuboriladi.
+    try:
+        from aiogram.types import BufferedInputFile, InputMediaPhoto
+        from design_preview import render_design_preview
+        album = [
+            InputMediaPhoto(
+                media=BufferedInputFile(render_design_preview(key, lang),
+                                        filename=f"{index}.png"),
+                caption=f"{index}. {design_name(key, lang)}")
+            for index, key in enumerate(DESIGN_KEYS, 1)
+        ]
+        await msg.answer_media_group(album)
+        await msg.answer(_slide_design_prompt(lang), reply_markup=template_kb(lang))
+        try:
+            await msg.delete()
+        except Exception:
+            pass
+    except Exception as exc:
+        print(f"[creation] Design preview error: {exc}", flush=True)
+        await msg.edit_text(_slide_design_prompt(lang), reply_markup=template_kb(lang))
     await call.answer()
 
 # ===== 7. Taqdimot dizayni =====

@@ -664,10 +664,26 @@ def _normalize_outline(text, topic, lang):
     return "\n".join(f"{i}. {line}" for i, line in enumerate(norm, 1))
 
 
+# Model esse o'rniga «esse yozish qoidalari»/maslahatlar ro'yxatini yozib yuborgan.
+_ADVICE_RE = re.compile(
+    r"(?i)(qoidalar|qoidalari|yozish qoidalari|tavsiya etiladi|maslahat|yozish uslubi|"
+    r"writing rules|how to write|guidelines|checklist|требования|рекомендуется)"
+)
+
+
 def _essay_text_is_suspicious(text, lang, expected_words):
-    """Reject malformed, repeated, very short, or clearly mixed-language AI output."""
+    """Reject malformed, repeated, very short, advice or mixed-language AI output."""
     cleaned = clean_ai_text(text or "")
     if not cleaned or cleaned.startswith("⚠️") or _is_lang_mixed(cleaned, lang):
+        return True
+    # Esse mazmuni bo'lishi kerak, «qanday yozish kerak» degan ko'rsatmalar emas.
+    if len(_ADVICE_RE.findall(cleaned)) >= 2:
+        return True
+    imperative = re.findall(
+        r"(?i)\b(?:yozing|yozinglar|foydalaning|tekshiring|ko['’]rsating|qo['’]llang|"
+        r"avoid|use only|write only|do not)\b", cleaned)
+    words_total = len(re.findall(r"[^\W_]+", cleaned))
+    if words_total and len(imperative) >= max(4, words_total // 40):
         return True
     words = re.findall(r"[^\W_]+(?:[’'’-][^\W_]+)*", cleaned.lower(), flags=re.UNICODE)
     if len(words) < max(8, int(expected_words * 0.48)):
@@ -1519,7 +1535,7 @@ async def _generate_impl(service, topic, options, lang="uz"):
         lc = str(lang or "uz").lower()
         ln = _lang_name(lc)
         try:
-            target_words = max(100, min(3000, int(options.get("words", 320) or 320)))
+            target_words = max(100, min(3000, int(options.get("words", 400) or 400)))
         except (TypeError, ValueError):
             target_words = 320
         target_words = max(100, min(3000, target_words))
@@ -1537,7 +1553,8 @@ async def _generate_impl(service, topic, options, lang="uz"):
         system = _pure_language_system(lc) + (
             f" You are a skilled essay writer. Write idiomatic, coherent {ln} only. "
             "Do not code-switch or imitate broken language. Never repeat a sentence or paragraph. "
-            "Do not invent precise statistics, quotations, or sources. Do not output section headings."
+            "Do not invent precise statistics, quotations, or sources. Do not output section headings. "
+            "Write the essay itself: never output rules, tips, checklists or advice about how an essay should be written."
         )
 
         async def generate_section(label, prompt, expected, max_tokens=1200):
