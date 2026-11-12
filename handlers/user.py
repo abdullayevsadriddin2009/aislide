@@ -1,5 +1,7 @@
 import html
+import random
 import re
+import time
 
 from aiogram import Router, F, types
 from aiogram.filters import Command, CommandStart, CommandObject
@@ -344,6 +346,63 @@ async def btn_create(message: Message, state: FSMContext):
     await message.answer(t("choose_service_msg", lang), reply_markup=services_all_kb(lang))
 
 # ===== 💬 AI CHAT =====
+async def _send_message_draft(chat_id, draft_id, text):
+    """Telegram `sendMessageDraft`: javob yozilayotgandek ko'rinadi (oqim).
+
+    CdxChatBot.php dagi `sendMessageDraft` chaqirig'i bilan bir xil; metod
+    mavjud bo'lmasa yoki xato qaytarsa (False, sabab) qaytadi va oddiy
+    yuborish davom etadi.
+    """
+    import aiohttp
+    token = config.BOT_TOKEN
+    if not token:
+        return False, "BOT_TOKEN kiritilmagan"
+    url = f"https://api.telegram.org/bot{token}/sendMessageDraft"
+    payload = {"chat_id": int(chat_id), "draft_id": int(draft_id), "text": str(text)[:4096]}
+    try:
+        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=10)) as session:
+            async with session.post(url, json=payload) as resp:
+                data = await resp.json(content_type=None)
+                if resp.status == 200 and isinstance(data, dict) and data.get("ok"):
+                    return True, ""
+                reason = (data or {}).get("description") if isinstance(data, dict) else ""
+                return False, str(reason or f"HTTP {resp.status}")
+    except Exception as exc:
+        return False, f"{type(exc).__name__}: {exc}"
+
+
+def _draft_callback(message):
+    """`on_text` — matn kelganda 0.8 soniyada bir marta draftni yangilaydi."""
+    try:
+        import ai_pool
+        enabled = ai_pool.chat_draft_stream()
+    except Exception:
+        enabled = True
+    draft_id = random.randint(1, 2000000000)
+    state = {"last": 0.0, "on": enabled}
+
+    async def on_text(partial):
+        if not state["on"]:
+            return
+        now = time.monotonic()
+        if now - state["last"] < 0.8:
+            return
+        state["last"] = now
+        ok, detail = await _send_message_draft(message.chat.id, draft_id, partial)
+        try:
+            import ai_pool
+            if ok:
+                ai_pool.note_draft_error("")
+            else:
+                state["on"] = False
+                ai_pool.note_draft_error(detail)
+                print(f"[chat] sendMessageDraft: {detail}", flush=True)
+        except Exception:
+            state["on"] = False
+
+    return on_text
+
+
 @router.message(Command("chat"))
 @router.message(F.text.func(lambda text: _menu_action_for(text) == "chat"))
 async def btn_chat(message: Message, state: FSMContext):
@@ -418,13 +477,21 @@ async def chat_handle(message: Message, state: FSMContext):
     history = await db.get_chat_history(user_id, limit=16)
     thinking = await message.answer(t("chat_thinking", lang))
     try:
-        answer = await chat_answer(txt, user_lang=lang, history=history)
+        answer = await chat_answer(txt, user_lang=lang, history=history,
+                                   on_text=_draft_callback(message))
     except Exception as exc:
         # Never leave the user stuck on "O'ylayapman...": log and answer clearly.
         print(f"[chat] chat_answer failed: {type(exc).__name__}: {exc}", flush=True)
         answer = None
     if not answer or not str(answer).strip():
-        answer = t("chat_failed", lang)
+        # Admin panelda belgilangan xato matni bo'lsa — o'sha ko'rsatiladi.
+        custom_error = ""
+        try:
+            import ai_pool
+            custom_error = ai_pool.chat_error()
+        except Exception:
+            pass
+        answer = custom_error or t("chat_failed", lang)
     answer = str(answer).strip()[:8000]
 
     try:

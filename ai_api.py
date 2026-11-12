@@ -3768,7 +3768,7 @@ def _chat_failure_message(lang):
     return messages.get(lang, messages["uz"])
 
 
-async def chat_answer(question, user_lang="uz", history=None):
+async def chat_answer(question, user_lang="uz", history=None, on_text=None):
     """Javobni savol tilida qaytaradi va oldingi suhbat kontekstini hisobga oladi.
 
     Filtrlardan o'tmasa ham eng yaxshi AI javobini ko'rsatadi.
@@ -3909,11 +3909,25 @@ async def chat_answer(question, user_lang="uz", history=None):
 
         if chat_prompt:
             system = chat_prompt + "\n" + system
-        ans = await _chat_complete(
-            prompt, system=system, max_tokens=chat_limit,
-            temperature=(chat_temp if (attempt == 0 and chat_temp is not None) else temp),
-            frequency_penalty=0.35, presence_penalty=0.1, history=dialogue
-        )
+        answer_temperature = chat_temp if (attempt == 0 and chat_temp is not None) else temp
+        ans = None
+        if attempt == 0 and on_text is not None:
+            # CdxChatBot.php kabi: javob oqim bilan keladi (matn yozilib boradi),
+            # kalit/modellar zanjiri `ai_chat_stream` ichida sinaladi.
+            try:
+                import ai_chat_stream
+                ans = await ai_chat_stream.stream_reply(
+                    system, question_prompt, history=dialogue, on_text=on_text,
+                    temperature=answer_temperature, max_tokens=chat_limit)
+            except Exception as exc:
+                _log(f"oqim xatosi: {type(exc).__name__}: {exc}")
+                ans = None
+        if ans is None:
+            ans = await _chat_complete(
+                prompt, system=system, max_tokens=chat_limit,
+                temperature=answer_temperature,
+                frequency_penalty=0.35, presence_penalty=0.1, history=dialogue
+            )
         if not ans or ans.startswith("⚠️"):
             # All providers already failed inside one call; repeating the same
             # expensive failover only leaves the user waiting on "O'ylayapman...".

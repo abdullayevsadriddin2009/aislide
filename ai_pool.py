@@ -54,13 +54,17 @@ _PROVIDER_MODELS = {
     "openai": (),
 }
 
+# CdxChatBot.php dagi settings jadvali bilan bir xil kalitlar.
 CHAT_DEFAULTS = {
     "system_prompt": ("Sen foydali AI yordamchisan. Foydalanuvchi qaysi tilda yozsa, "
                       "shu tilda aniq va qisqa javob ber."),
+    "welcome_text": "",
+    "error_text": "",
     "temperature": "0.7",
     "max_tokens": "2600",
     "history_limit": "16",
     "markdown": "1",
+    "draft_stream": "1",
 }
 
 
@@ -121,6 +125,10 @@ def ensure():
                 _SYNCED_PATHS.add(path)
             for key, value in CHAT_DEFAULTS.items():
                 con.execute("INSERT OR IGNORE INTO ai_settings(k,v) VALUES(?,?)", (key, value))
+            # PHP dagi kabi boshlang'ich model (admin panelda o'zgartiriladi).
+            if con.execute("SELECT COUNT(*) FROM ai_models").fetchone()[0] == 0:
+                con.execute("INSERT INTO ai_models(name,active,is_default) VALUES(?,1,1)",
+                            ("gemini-2.5-flash",))
             con.commit()
         finally:
             con.close()
@@ -269,6 +277,29 @@ def chat_markdown():
     return setting("markdown", "1") != "0"
 
 
+def chat_welcome():
+    """`/start` (AI chat) uchun matn; bo'sh bo'lsa bot o'z tarjima matnini ishlatadi."""
+    return setting("welcome_text", "").strip()
+
+
+def chat_error():
+    """AI javob bera olmaganda foydalanuvchiga ko'rinadigan matn."""
+    return setting("error_text", "").strip()
+
+
+def chat_draft_stream():
+    """Javobni yozilayotgandek ko'rsatish (sendMessageDraft) yoqilganmi."""
+    return setting("draft_stream", "1") != "0"
+
+
+def note_draft_error(text):
+    set_setting("draft_error", str(text or "")[:300])
+
+
+def draft_error():
+    return setting("draft_error", "")
+
+
 def runtime_apis():
     """Faol kalitlar → `ai_api` kutgan provayder ro'yxati (xatolar bo'yicha tartib)."""
     # Admin panelda belgilangan modellar tartibi (asosiy model eng oldinda).
@@ -306,6 +337,10 @@ def runtime_apis():
             "models": names,
         })
     return apis
+
+
+PROVIDER_BASE = _PROVIDER_BASE
+PROVIDER_MODELS = _PROVIDER_MODELS
 
 
 def provider_choices():

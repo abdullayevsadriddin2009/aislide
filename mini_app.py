@@ -429,8 +429,13 @@ def api_chat():
     except Exception as exc:
         return jsonify({"ok": False, "error": "chat", "message": str(exc)[:200]}), 502
     if not answer or not str(answer).strip():
+        try:
+            import ai_pool
+            custom_error = ai_pool.chat_error()
+        except Exception:
+            custom_error = ""
         return jsonify({"ok": False, "error": "chat",
-                        "message": "AI javob bermadi. Birozdan keyin urinib ko'ring."}), 502
+                        "message": custom_error or "AI javob bermadi. Birozdan keyin urinib ko'ring."}), 502
     answer = str(answer).strip()[:8000]
     _chat_save(uid, "user", message)
     _chat_save(uid, "assistant", answer)

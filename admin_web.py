@@ -236,10 +236,16 @@ def _ai_page_content():
       <form method="post"><input type="hidden" name="action" value="save_chat">
         <label>System prompt</label>
         <textarea name="system_prompt" rows="6">{esc(ai_pool.chat_system_prompt())}</textarea>
+        <label>Welcome text (/start, optional — empty uses the translated default)</label>
+        <textarea name="welcome_text" rows="2">{esc(ai_pool.chat_welcome())}</textarea>
+        <label>Text shown when the AI cannot answer (optional)</label>
+        <textarea name="error_text" rows="2">{esc(ai_pool.chat_error())}</textarea>
         <label>Temperature (0–2)</label><input name="temperature" value="{esc(ai_pool.setting('temperature', '0.7'))}">
         <label>Max answer tokens</label><input name="max_tokens" value="{esc(ai_pool.setting('max_tokens', '2600'))}">
         <label>History pairs kept in context</label><input name="history_limit" value="{esc(ai_pool.setting('history_limit', '16'))}">
         <label><input type="checkbox" name="markdown" value="1" {'checked' if ai_pool.chat_markdown() else ''}> Convert markdown to Telegram formatting</label>
+        <label><input type="checkbox" name="draft_stream" value="1" {'checked' if ai_pool.chat_draft_stream() else ''}> Show the answer while it is being written (sendMessageDraft)</label>
+        {'<p class="small">sendMessageDraft error: ' + esc(ai_pool.draft_error()) + '</p>' if ai_pool.draft_error() else ''}
         <button class="btn green">Save</button>
       </form>
     </div>"""
@@ -275,6 +281,9 @@ def ai_settings():
                 ai_pool.set_setting("max_tokens", request.form.get("max_tokens", "2600"))
                 ai_pool.set_setting("history_limit", request.form.get("history_limit", "16"))
                 ai_pool.set_setting("markdown", "1" if request.form.get("markdown") else "0")
+                ai_pool.set_setting("welcome_text", request.form.get("welcome_text", ""))
+                ai_pool.set_setting("error_text", request.form.get("error_text", ""))
+                ai_pool.set_setting("draft_stream", "1" if request.form.get("draft_stream") else "0")
         except Exception as exc:
             print(f"[admin] AI sozlamasi: {exc}", flush=True)
         return redirect("/ai")
