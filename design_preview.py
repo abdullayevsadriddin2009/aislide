@@ -58,15 +58,28 @@ def asset_path(key):
     return ""
 
 
+PHOTO_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "design_photos")
+_photo_cache = {}
+
+
+def _load_photo(key):
+    """design_photos/<key>.jpg — preview ichidagi rasm oynasi uchun surat."""
+    if key in _photo_cache:
+        return _photo_cache[key]
+    path = os.path.join(PHOTO_DIR, f"{key}.jpg")
+    photo = None
+    if os.path.exists(path):
+        try:
+            photo = Image.open(path).convert("RGB")
+        except Exception as exc:
+            print(f"[design_preview] {path}: {exc}", flush=True)
+    _photo_cache[key] = photo
+    return photo
+
+
 def _from_asset(path):
     """Rasmni 1200x675 ga markazdan kesib (cover) PNG baytlariga aylantiradi."""
-    image = Image.open(path).convert("RGB")
-    ratio = max(WIDTH / image.width, HEIGHT / image.height)
-    size = (max(WIDTH, int(image.width * ratio)), max(HEIGHT, int(image.height * ratio)))
-    image = image.resize(size, Image.LANCZOS)
-    left = (image.width - WIDTH) // 2
-    top = (image.height - HEIGHT) // 2
-    image = image.crop((left, top, left + WIDTH, top + HEIGHT))
+    image = _cover(Image.open(path).convert("RGB"), (WIDTH, HEIGHT))
     buffer = io.BytesIO()
     image.save(buffer, format="PNG", optimize=True)
     return buffer.getvalue()
@@ -108,10 +121,27 @@ def _shade(color, factor):
     return tuple(max(0, min(255, int(channel * factor))) for channel in color)
 
 
-def _photo_panel(image, box, base, accent, rounded=18):
-    """Rasm uchun joy: gradientli panel va kichik tog' belgisi."""
+def _cover(image, size):
+    """Rasmni berilgan o'lchamga markazdan kesib to'ldiradi."""
+    width, height = size
+    ratio = max(width / image.width, height / image.height)
+    resized = image.resize((max(width, int(image.width * ratio)),
+                            max(height, int(image.height * ratio))), Image.LANCZOS)
+    left = (resized.width - width) // 2
+    top = (resized.height - height) // 2
+    return resized.crop((left, top, left + width, top + height))
+
+
+def _photo_panel(image, box, base, accent, rounded=18, photo=None):
+    """Rasm joyi: foto bo'lsa o'sha surat, aks holda gradientli panel."""
     x0, y0, x1, y1 = box
     width, height = max(1, x1 - x0), max(1, y1 - y0)
+    if photo is not None:
+        mask = Image.new("L", (width, height), 0)
+        ImageDraw.Draw(mask).rounded_rectangle([0, 0, width - 1, height - 1],
+                                               radius=rounded, fill=255)
+        image.paste(_cover(photo, (width, height)), (x0, y0), mask)
+        return
     panel = Image.new("RGB", (width, height), base)
     draw = ImageDraw.Draw(panel)
     for row in range(height):
@@ -163,7 +193,7 @@ def _draw_modern(image, draw, theme, lc):
     # Ingichka oltin chiziq va yulduzcha bezaklari.
     draw.line([(90, 96), (200, 96)], fill=accent, width=3)
     draw.line([(90, 120), (150, 120)], fill=theme["line"], width=2)
-    _photo_panel(image, (770, 40, 1150, 600), theme["cover"], accent)
+    _photo_panel(image, (770, 40, 1150, 600), theme["cover"], accent, photo=theme.get("photo"))
     for radius in (250, 200, 150):
         draw.arc([600, 380, 600 + radius * 2, 380 + radius * 2], 200, 340, fill=accent, width=3)
     draw.line([(632, 120), (660, 90), (688, 120), (660, 150), (632, 120)], fill=accent, width=2)
@@ -232,7 +262,8 @@ def _draw_pop(image, draw, theme, lc):
 def _draw_nature(image, draw, theme, lc):
     draw.rectangle([0, 0, WIDTH, HEIGHT], fill=theme["bg"])
     green, accent, text = theme["primary"], theme["accent"], theme["text"]
-    _photo_panel(image, (760, 50, 1140, 590), theme["cover"], accent, rounded=26)
+    _photo_panel(image, (760, 50, 1140, 590), theme["cover"], accent, rounded=26,
+                 photo=theme.get("photo"))
     for cx, cy, rx, ry in ((690, 120, 120, 55), (1120, 620, 150, 60), (620, 520, 90, 40)):
         draw.ellipse([cx - rx, cy - ry, cx + rx, cy + ry], fill=accent + (70,))
     draw.line([(90, 150), (90, 360)], fill=green, width=4)
@@ -247,7 +278,8 @@ def _draw_elegant(image, draw, theme, lc):
     red, text = theme["accent"], theme["primary"] if theme["primary"] != (255, 255, 255) else (34, 34, 34)
     draw.rectangle([0, 0, 26, HEIGHT], fill=red)
     draw.rectangle([900, 70, 1140, 520], outline=red, width=3)
-    _photo_panel(image, (930, 100, 1110, 490), theme["soft"], red, rounded=10)
+    _photo_panel(image, (930, 100, 1110, 490), theme["soft"], red, rounded=10,
+                 photo=theme.get("photo"))
     draw.rectangle([1090, 470, 1150, 640], fill=_shade(red, 0.85))
     draw.line([(90, 150), (300, 150)], fill=red, width=3)
     _title_block(draw, _SAMPLE_TITLE[lc], 90, 210, 700, text, 76)
@@ -276,7 +308,8 @@ def render_design_preview(key, lang="uz", topic=""):
         except Exception as exc:  # buzilgan rasm bo'lsa, chizilgan variant qoladi
             print(f"[design_preview] {asset}: {exc}", flush=True)
 
-    theme = THEMES.get(key) or THEMES[DESIGN_KEYS[0]]
+    theme = dict(THEMES.get(key) or THEMES[DESIGN_KEYS[0]])
+    theme["photo"] = _load_photo(key)
     lc = str(lang or "uz").lower()
     if lc not in _SAMPLE_TITLE:
         lc = "en"
