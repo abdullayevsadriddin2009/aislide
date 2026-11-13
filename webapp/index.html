@@ -550,7 +550,7 @@ function renderForm(){
       ${isSlide ? `<label>${esc(t("design"))}</label>
         <div class="design-grid" id="designs">${state.designs.map((d, i) =>
           `<button type="button" class="design-card ${state.form.design_key===d.key?"sel":""}" data-design="${esc(d.key)}">
-            <img src="/design-preview/${esc(d.key)}.png?lang=${encodeURIComponent(state.lang)}" alt="${esc(d.name)}" loading="lazy">
+            <img src="/design-preview/${esc(d.key)}.jpg?lang=${encodeURIComponent(state.lang)}" alt="${esc(d.name)}" loading="lazy">
             <span>${i + 1}. ${esc(d.name)}</span>
           </button>`).join("")}</div>`
         : `<label>${esc(t("format"))}</label><div class="chips" id="formats">

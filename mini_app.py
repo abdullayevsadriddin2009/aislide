@@ -259,13 +259,18 @@ def mini_page():
 
 
 @mini.route("/design-preview/<key>.png")
+@mini.route("/design-preview/<key>.jpg")
 def design_preview_png(key):
-    """6 ta dizaynning rasm ko'rinishi (botdagidek bir xil render)."""
-    from design_preview import render_design_preview
+    """6 ta dizaynning rasm ko'rinishi (botdagidek bir xil render).
+
+    JPEG qaytariladi: PNG'dan 5-6 barobar kichik, shuning uchun Mini App'da
+    oltita karta bir zumda yuklanadi. `.png` manzili ham ishlayveradi.
+    """
+    from design_preview import render_design_preview_jpeg
     from designs import normalize_design_key
     lang = str(request.args.get("lang") or "uz").lower()
-    image = render_design_preview(normalize_design_key(key), lang)
-    response = Response(image, mimetype="image/png")
+    image = render_design_preview_jpeg(normalize_design_key(key), lang)
+    response = Response(image, mimetype="image/jpeg")
     response.headers["Cache-Control"] = "public, max-age=86400"
     return response
 

@@ -1,3 +1,4 @@
+import asyncio
 import math  # NAMEERROR XATOSI TUZATILDI
 from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery, BufferedInputFile, InlineKeyboardMarkup, InlineKeyboardButton
@@ -498,15 +499,22 @@ async def cb_slide_count(call: CallbackQuery, state: FSMContext):
     selected_price = base_price if base_price > 0 else count_price
     await state.update_data(slide_count=count, slide_price=selected_price)
     await state.set_state(Creation.slide_design)
+    # Tugma darhol javob bersin: oltita rasmni tayyorlash bir necha soniya oladi.
+    await call.answer()
     # Har bir dizayn alohida rasm ko'rinishida ko'rsatiladi (1..6), shundan
     # keyin tugmalar joylashgan xabar yuboriladi.
     try:
         from aiogram.types import BufferedInputFile
-        from design_preview import render_design_preview
-        # Har bir rasm alohida yuboriladi: albomda Telegram ularni kesib tashlaydi.
-        for index, key in enumerate(DESIGN_KEYS, 1):
+        from design_preview import render_design_preview_jpeg
+        # Oltita rasm parallel chiziladi (~1.5s × 6 ketma-ket o'rniga ~1.5s),
+        # keyin tartib buzilmasligi uchun ketma-ket yuboriladi. JPEG PNG'dan
+        # 5-6 barobar kichik, shuning uchun yuklash ham tez.
+        images = await asyncio.gather(*(
+            asyncio.to_thread(render_design_preview_jpeg, key, lang)
+            for key in DESIGN_KEYS))
+        for index, (key, data) in enumerate(zip(DESIGN_KEYS, images), 1):
             await msg.answer_photo(
-                BufferedInputFile(render_design_preview(key, lang), filename=f"{index}.png"),
+                BufferedInputFile(data, filename=f"{index}.jpg"),
                 caption=f"{index}. {design_name(key, lang)}")
         await msg.answer(_slide_design_prompt(lang), reply_markup=template_kb(lang))
         try:
@@ -516,7 +524,6 @@ async def cb_slide_count(call: CallbackQuery, state: FSMContext):
     except Exception as exc:
         print(f"[creation] Design preview error: {exc}", flush=True)
         await msg.edit_text(_slide_design_prompt(lang), reply_markup=template_kb(lang))
-    await call.answer()
 
 # ===== 7. Taqdimot dizayni =====
 @router.callback_query(Creation.slide_design, F.data.startswith("tmpl:"))

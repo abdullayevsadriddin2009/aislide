@@ -91,7 +91,7 @@ def _trim_black(image):
     return image
 
 
-def _from_asset(path):
+def _image_from_asset(path):
     """Rasmni 1200x675 kartochkaga joylaydi.
 
     16:9 rasm to'liq to'ldiriladi; baland (masalan, bir nechta slayd ko'rsatilgan
@@ -115,8 +115,13 @@ def _from_asset(path):
         panel = source.resize(size, Image.LANCZOS)
         image.paste(panel, ((WIDTH - size[0]) // 2, (HEIGHT - size[1]) // 2))
 
+    return image
+
+
+def _from_asset(path):
+    """`design_assets` rasmini PNG baytlariga aylantiradi."""
     buffer = io.BytesIO()
-    image.save(buffer, format="PNG", optimize=True)
+    _image_from_asset(path).save(buffer, format="PNG", optimize=True)
     return buffer.getvalue()
 
 
@@ -334,12 +339,12 @@ _BUILDERS = {
 
 
 @lru_cache(maxsize=64)
-def render_design_preview(key, lang="uz", topic=""):
-    """Bitta dizayn uchun muqova slaydiga o'xshash PNG baytlarini qaytaradi."""
+def _render_image(key, lang="uz", topic=""):
+    """Bitta dizaynning muqova-rasmi (PIL). Baytga aylantirish chaqiruvchida."""
     asset = asset_path(key)
     if asset:
         try:
-            return _from_asset(asset)
+            return _image_from_asset(asset)
         except Exception as exc:  # buzilgan rasm bo'lsa, chizilgan variant qoladi
             print(f"[design_preview] {asset}: {exc}", flush=True)
 
@@ -366,9 +371,31 @@ def render_design_preview(key, lang="uz", topic=""):
     draw.rounded_rectangle([90, 22, 90 + label_width, 58], radius=18, fill=pill_fill)
     draw.text((102, 30), label, font=label_font, fill=theme["primary"])
 
+    return image
+
+
+def _encode(key, lang, topic, fmt, quality):
+    image = _render_image(key, lang, topic)
     buffer = io.BytesIO()
-    image.save(buffer, format="PNG", optimize=True)
+    if fmt == "jpeg":
+        # JPEG PNG'dan 5-6 barobar kichik: Telegram'ga yuborish ham, Mini
+        # App'da yuklab olish ham shu qadar tez.
+        image.save(buffer, format="JPEG", quality=quality, optimize=True)
+    else:
+        image.save(buffer, format="PNG", optimize=True)
     return buffer.getvalue()
+
+
+@lru_cache(maxsize=64)
+def render_design_preview(key, lang="uz", topic=""):
+    """Bitta dizayn uchun muqova slaydiga o'xshash PNG baytlarini qaytaradi."""
+    return _encode(key, lang, topic, "png", 90)
+
+
+@lru_cache(maxsize=64)
+def render_design_preview_jpeg(key, lang="uz", topic="", quality=86):
+    """Kichik JPEG baytlari — tez yuborish va tez yuklash uchun."""
+    return _encode(key, lang, topic, "jpeg", quality)
 
 
 def all_previews(lang="uz"):
