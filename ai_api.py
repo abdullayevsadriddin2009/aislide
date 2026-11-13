@@ -3184,7 +3184,15 @@ def _error_detail(status, body):
     what the user finally sees under the generated file, so never drop it to a bare
     ``HTTP 429``.
     """
-    text = re.sub(r"<[^>]{1,120}>", " ", str(body or ""))
+    raw = str(body or "").strip()
+    low = raw[:600].lower()
+    if raw.startswith("<") or "<html" in low or "<!doctype" in low:
+        # A proxy/tunnel page is not an API answer: the configured address is
+        # wrong or the tunnel behind it is offline. Say that instead of pasting
+        # the page's markup into the admin report.
+        hint = " (ngrok tunnel yopilgan ko'rinadi)" if "ngrok" in low else ""
+        return f"HTTP {status}: manzil API emas — HTML sahifa qaytardi{hint}; AI_BASE_URL ni tekshiring"
+    text = re.sub(r"<[^>]{1,120}>", " ", raw)
     text = re.sub(r"\s+", " ", text).strip()
     if not text:
         return f"HTTP {status}"
@@ -3308,6 +3316,10 @@ _BAD_MODEL_WORDS = ("embed", "whisper", "tts", "moderation", "rerank", "ocr", "d
                     # HTTP 400 "requires terms acceptance" for a text request.
                     "orpheus", "playai", "speech", "voice", "sonic", "bark", "music")
 _DISCOVER_ERRORS = {}
+# A dead endpoint (a closed tunnel, a wrong host) is not retried on every single
+# generation: a failed discovery is remembered briefly instead.
+_MODEL_FAIL_CACHE = {}
+_MODEL_FAIL_TTL = 300
 _GOOD_MODEL_FILE = os.path.join(DATA_DIR, "ai_good_models.json")
 _GOOD_MODELS = None
 
@@ -3364,6 +3376,9 @@ async def _discover_models(api):
     cached = _MODEL_CACHE.get(cache_key)
     if cached and time.time() - cached[0] < _MODEL_CACHE_TTL:
         return list(cached[1])
+    failed = _MODEL_FAIL_CACHE.get(cache_key)
+    if failed and time.time() - failed[0] < _MODEL_FAIL_TTL:
+        return []
     ids = []
     try:
         headers = {"Authorization": f"Bearer {key}"}
@@ -3373,7 +3388,9 @@ async def _discover_models(api):
             async with session.get(url) as resp:
                 if resp.status != 200:
                     detail = await resp.text()
-                    _DISCOVER_ERRORS[cache_key] = f"HTTP {resp.status}: {_error_detail(resp.status, detail)}"
+                    # `_error_detail` already carries the HTTP status.
+                    _DISCOVER_ERRORS[cache_key] = _error_detail(resp.status, detail)
+                    _MODEL_FAIL_CACHE[cache_key] = (time.time(), _DISCOVER_ERRORS[cache_key])
                     _log(f"Model ro'yxati olinmadi ({api.get('name')}): HTTP {resp.status}")
                     return []
                 data = await resp.json(content_type=None)
@@ -3391,6 +3408,7 @@ async def _discover_models(api):
             ids.append(model_id)
     except Exception as exc:
         _DISCOVER_ERRORS[cache_key] = f"{type(exc).__name__}: {exc}"
+        _MODEL_FAIL_CACHE[cache_key] = (time.time(), _DISCOVER_ERRORS[cache_key])
         _log(f"Model discovery failed ({api.get('name')}): {type(exc).__name__}: {exc}")
         return []
     # OpenRouter lists paid and free twins of the same model: without credit the
@@ -3400,6 +3418,7 @@ async def _discover_models(api):
         ids = free + [model for model in ids if not model.endswith(":free")]
     ids = ids[:8]
     _MODEL_CACHE[cache_key] = (time.time(), ids)
+    _MODEL_FAIL_CACHE.pop(cache_key, None)
     return ids
 
 
@@ -3411,6 +3430,20 @@ async def _models_for_api(api):
         if model and model not in models:
             models.append(model)
     return models[:12]
+
+
+def _key_mismatch(api):
+    """Catch a key pasted for a different provider before it burns every attempt.
+
+    An OpenRouter key always starts with ``sk-or-``; anything else answers the
+    same HTTP 401 for every model on that provider, which used to fill the whole
+    report with identical lines.
+    """
+    base = str(api.get("base_url") or "").lower()
+    key = str(api.get("api_key") or "").strip()
+    if "openrouter.ai" in base and key and not key.startswith("sk-or-"):
+        return "kalit OpenRouter uchun emas — OpenRouter kaliti `sk-or-` bilan boshlanadi"
+    return ""
 
 
 def _budget_rejected(error):
@@ -3472,6 +3505,10 @@ async def _chat_complete(prompt, system=None, max_tokens=2500, temperature=0.5,
         api = apis[api_index]
         if not api.get("api_key"):
             errors.append(f"{api.get('name', 'API')}: kalit sozlanmagan")
+            continue
+        mismatch = _key_mismatch(api)
+        if mismatch:
+            errors.append(f"{api.get('name', 'API')}: {mismatch}")
             continue
         models = await _models_for_api(api)
         if not models:
@@ -3971,12 +4008,18 @@ async def test_api(timeout=12, concurrency=6):
     saved_error = LAST_ERROR
 
     no_key, empty, jobs = [], [], []
+    bad_keys = {}
     try:
         import ai_pool
         probe_apis = ai_pool.runtime_apis() or API_LIST
     except Exception:
         probe_apis = API_LIST
-    for api in probe_apis:
+    report_apis = probe_apis or API_LIST
+    for api in report_apis:
+        mismatch = _key_mismatch(api)
+        if mismatch:
+            bad_keys[api["name"]] = mismatch
+            continue
         if not api.get("api_key"):
             no_key.append(api["name"])
             continue
@@ -4016,17 +4059,20 @@ async def test_api(timeout=12, concurrency=6):
     for name, model, ok, detail in results:
         by_api.setdefault(name, []).append((model, ok, detail))
 
-    if not API_LIST:
+    if not report_apis:
         return "AI provayderlar sozlanmagan."
 
     lines = []
-    for api in API_LIST:
+    for api in report_apis:
         name = api["name"]
+        if name in bad_keys:
+            lines.append(f"❌ {name}: {bad_keys[name]}")
+            continue
         if name in no_key:
             lines.append(f"❌ {name}: API kaliti yo'q")
             continue
         if name in empty:
-            api = next((item for item in API_LIST if item["name"] == name), {})
+            api = next((item for item in report_apis if item["name"] == name), {})
             base = str(api.get("base_url") or "").rstrip("/")
             cache_key = f"{base}|{str(api.get('api_key') or '')[-6:]}"
             why = _DISCOVER_ERRORS.get(cache_key) or "provayder model ro'yxatini bermadi"

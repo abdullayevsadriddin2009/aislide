@@ -170,10 +170,15 @@ async def _post_openai(session, key, model, messages, temperature, max_tokens):
 
 
 def _error_detail(raw, status):
+    text = str(raw or "").strip()
+    low = text[:600].lower()
+    if text.startswith("<") or "<html" in low or "<!doctype" in low:
+        hint = " (ngrok tunnel yopilgan ko'rinadi)" if "ngrok" in low else ""
+        return f"HTTP {status}: manzil API emas — HTML sahifa qaytardi{hint}"
     try:
-        data = json.loads(raw)
+        data = json.loads(text)
     except Exception:
-        return f"HTTP {status}: {str(raw)[:180]}"
+        return f"HTTP {status}: {text[:180]}"
     detail = ((data.get("error") or {}).get("message")
               or (data.get("message") if isinstance(data, dict) else "")
               or (data[0].get("error", {}).get("message") if isinstance(data, list) and data else ""))
