@@ -172,7 +172,22 @@ async def main():
     except Exception:
         pass
 
-    await dp.start_polling(bot)
+    # Deploy paytida ikkinchi nusxa bir xil token bilan so'rov yuborsa Telegram
+    # 409 Conflict qaytaradi va tarmoq ham uzilishi mumkin. Ilgari bitta shunday
+    # xato butun jarayonni o'chirib, Render uni qayta ko'targuncha bot jim
+    # qolardi (Mini App esa 502 olardi). Endi polling qayta uriniladi.
+    delay = 3
+    while True:
+        try:
+            await dp.start_polling(bot)
+            break
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            log.warning("Polling to'xtadi (%s: %s) — %s soniyadan keyin qayta urinamiz",
+                        type(exc).__name__, exc, delay)
+            await asyncio.sleep(delay)
+            delay = min(delay * 2, 60)
 
 if __name__ == "__main__":
     try:

@@ -628,3 +628,17 @@ async def cb_cancel(call: CallbackQuery, state: FSMContext):
     lang = await _lang(call.from_user.id)
     await call.message.answer(t("cancelled", lang), reply_markup=main_kb(lang))
     await call.answer()
+
+
+@router.callback_query()
+async def cb_stale_button(call: CallbackQuery):
+    """Eskirgan inline tugma — bot qayta ishga tushganda FSM holati yo'qoladi.
+
+    Ilgari bunday tugma bosilganda bot butunlay jim qolardi: foydalanuvchi
+    nima bo'lganini bilmasdi. Endi qisqa tushuntirish beriladi.
+    """
+    lang = await _lang(call.from_user.id)
+    try:
+        await call.answer(t("stale_button", lang), show_alert=True)
+    except Exception as exc:
+        print(f"[stale] javob yuborilmadi: {exc}", flush=True)

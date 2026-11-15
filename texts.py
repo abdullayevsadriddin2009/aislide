@@ -4,6 +4,7 @@ TEXTS = {
         # --- Til tanlash ---
         "choose_bot_lang": "🌐 Tilni tanlang / Choose language / Выберите язык:",
         "lang_saved": "✅ Til o'zgartirildi!",
+        "stale_button": "⏳ Bu tugma eskirgan. /start yuboring.",
         # --- Asosiy ---
         "welcome": "Assalomu alaykum! 👋\nMen AI yordamchisiman — slayd, referat, kurs ishi, maqola va boshqa o'quv materiallarini bir necha daqiqada yarataman.\n\n<b>Xizmatlar:</b>\n📊 Taqdimot · 📄 Referat · 📝 Mustaqil ish\n📘 Kurs ishi · 🎓 Diplom · ✍️ Insho · 🖊️ Esse\n✅ Test · 📰 Maqola · 🎓 Tezis\n\nPastdagi tugmalardan foydalaning 👇",
         "help_text": "📖 <b>Yordam</b>\n\n🚀 Yaratish — o'quv materiallari yaratish\n💬 AI Chat — savollaringizga javob\n💰 Balans — hisob holati va to'ldirish\n🎁 Referal — do'stlaringizni taklif qiling, bonus oling\n\nYordam: {support}\nAdmin: {admin}",
@@ -154,6 +155,7 @@ TEXTS = {
     "ru": {
         "choose_bot_lang": "🌐 Tilni tanlang / Choose language / Выберите язык:",
         "lang_saved": "✅ Язык изменён!",
+        "stale_button": "⏳ Эта кнопка устарела. Отправьте /start.",
         "welcome": "Здравствуйте! 👋 Я ИИ-помощник — создам презентации, рефераты, курсовые и другие учебные материалы за несколько минут.\n\n<b>Услуги:</b>\n📊 Презентация · 📄 Реферат · 📝 Самостоятельная работа\n📘 Курсовая · 🎓 Диплом · ✍️ Сочинение · 🖊️ Эссе\n✅ Тест · 📰 Статья · 🎓 Тезисы\n\nИспользуйте кнопки ниже 👇",
         "help_text": "📖 <b>Помощь</b>\n\n🚀 Создать — учебные материалы\n💬 AI Чат — ответы на вопросы\n💰 Баланс — счёт и пополнение\n🎁 Реферал — приглашайте друзей, получайте бонус\n\nПоддержка: {support}\nАдмин: {admin}",
         "prices": "💲 <b>Цены</b>\n\n{price_list}\n\n0 сум = пока БЕСПЛАТНО!",
@@ -291,6 +293,7 @@ TEXTS = {
     "en": {
         "choose_bot_lang": "🌐 Tilni tanlang / Choose language / Выберите язык:",
         "lang_saved": "✅ Language changed!",
+        "stale_button": "⏳ This button is out of date. Send /start.",
         "welcome": "Hello! 👋 I'm your AI assistant — I create presentations, essays, course papers and other study materials in minutes.\n\n<b>Services:</b>\n📊 Presentation · 📄 Essay/Report · 📝 Assignment\n📘 Coursework · 🎓 Thesis · ✍️ Composition · 🖊️ Essay\n✅ Quiz · 📰 Article · 🎓 Abstract\n\nUse the buttons below 👇",
         "help_text": "📖 <b>Help</b>\n\n🚀 Create — study materials\n💬 AI Chat — ask questions\n💰 Balance — account & top-up\n🎁 Referral — invite friends, earn bonus\n\nSupport: {support}\nAdmin: {admin}",
         "prices": "💲 <b>Prices</b>\n\n{price_list}\n\n0 = currently FREE!",
@@ -428,6 +431,7 @@ TEXTS = {
     "tr": {
         "choose_bot_lang": "🌐 Dil seçin:",
         "lang_saved": "✅ Dil değiştirildi!",
+        "stale_button": "⏳ Bu düğme eskidi. /start gönderin.",
         "welcome": "Merhaba! 👋 Ben AI asistanıyım — sunum, rapor ve eğitim materyallerini dakikalar içinde oluştururum.\n\n<b>Hizmetler:</b>\n📊 Sunum · 📄 Rapor · 📝 Ödev · 📘 Dönem ödevi · 🎩 Tez · ✍️ Kompozisyon · 🖊️ Deneme · ✅ Test · 📰 Makale\n\nAşağıdaki düğmeleri kullanın 👇",
         "help_text": "📖 <b>Yardım</b>\n\n🚀 Oluştur · 💬 AI Sohbet · 💰 Bakiye · 🎁 Referans\n\nDestek: {support}\nAdmin: {admin}",
         "prices": "💲 <b>Fiyatlar</b>\n\n{price_list}\n\n0 som = ÜCRETSİZ!",
@@ -565,6 +569,7 @@ TEXTS = {
     "de": {
         "choose_bot_lang": "🌐 Sprache wählen:",
         "lang_saved": "✅ Sprache geändert!",
+        "stale_button": "⏳ Diese Schaltfläche ist veraltet. Senden Sie /start.",
         "welcome": "Hallo! 👋 Ich bin Ihr KI-Assistent — erstelle Präsentationen, Referate und Lernmaterialien in Minuten.\n\n<b>Dienste:</b>\n📊 Präsentation · 📄 Referat · 📝 Hausarbeit · 📘 Seminararbeit · 🎩 Abschlussarbeit · ✍️ Aufsatz · 🖊️ Essay · ✅ Test · 📰 Artikel\n\nBenutzen Sie die Schaltflächen 👇",
         "help_text": "📖 <b>Hilfe</b>\n\n🚀 Erstellen · 💬 KI-Chat · 💰 Guthaben · 🎁 Empfehlung\n\nSupport: {support} · Admin: {admin}",
         "prices": "💲 <b>Preise</b>\n\n{price_list}\n\n0 Sum = KOSTENLOS!",
@@ -702,6 +707,7 @@ TEXTS = {
     "fr": {
         "choose_bot_lang": "🌐 Choisissez la langue:",
         "lang_saved": "✅ Langue changée !",
+        "stale_button": "⏳ Ce bouton est obsolète. Envoyez /start.",
         "welcome": "Bonjour ! 👋 Je suis votre assistant IA — je crée présentations, exposés et matériels pédagogiques en quelques minutes.\n\n<b>Services :</b>\n📊 Présentation · 📄 Exposé · 📝 Devoir · 📘 Mémoire · 🎩 Thèse · ✍️ Dissertation · 🖊️ Essai · ✅ Test · 📰 Article\n\nUtilisez les boutons 👇",
         "help_text": "📖 <b>Aide</b>\n\n🚀 Créer · 💬 Chat IA · 💰 Solde · 🎁 Parrainage\n\nSupport : {support} · Admin : {admin}",
         "prices": "💲 <b>Prix</b>\n\n{price_list}\n\n0 soum = GRATUIT !",

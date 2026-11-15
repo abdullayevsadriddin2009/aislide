@@ -811,7 +811,10 @@ async def cb_confirm(call: CallbackQuery, state: FSMContext):
                 print(f"[creation] Image download error: {e}", flush=True)
                 img_paths = []
             
-        buf = generate_pptx(
+        # python-pptx sinxron va og'ir: alohida oqimda bajariladi, shunda
+        # taqdimot yasalayotganda bot boshqa xabarlarga javob berishda davom etadi.
+        buf = await asyncio.to_thread(
+            generate_pptx,
             topic=generation_topic,
             subject=subj_display,
             lang=language_code,
@@ -819,7 +822,7 @@ async def cb_confirm(call: CallbackQuery, state: FSMContext):
             slide_count=slide_count,
             slides_content=slides_content,
             images=img_paths,
-            author=author
+            author=author,
         )
         # python-pptx embeds image bytes in the presentation; the temporary files
         # can now be safely removed.
@@ -860,7 +863,9 @@ async def cb_confirm(call: CallbackQuery, state: FSMContext):
         # tanlangan hujjat tiliga tarjima qilinadi. Ism va muassasa nomlari o'z holicha qoladi.
         document_data = dict(data)
         # Titul maydonlari ham foydalanuvchi yozganidek qoladi (tarjima qilinmaydi).
-        buf = generate_docx(
+        # python-docx sinxron: hujjat yasalayotganda bot qotib qolmasin.
+        buf = await asyncio.to_thread(
+            generate_docx,
             topic=generation_topic,
             service_name=service_name(service, language_code),
             service_code=service,
@@ -868,14 +873,15 @@ async def cb_confirm(call: CallbackQuery, state: FSMContext):
             pages=pages,
             content_text=text_content,
             author=author,
-            extra_data=document_data
+            extra_data=document_data,
         )
         docx_bytes = buf.read()
         fmt = data.get("file_format", "docx")
         prefix = t(f"fname_{service}", language_code)
         
         if fmt == "pdf":
-            pdf_bytes = _to_pdf(docx_bytes, topic)
+            # LibreOffice bir necha soniya ishlaydi — oqimni bloklamaymiz.
+            pdf_bytes = await asyncio.to_thread(_to_pdf, docx_bytes, topic)
             if pdf_bytes:
                 fname = f"{prefix}_{safe_topic}.pdf".replace(" ", "_")
                 doc = BufferedInputFile(pdf_bytes, filename=fname)
@@ -927,12 +933,15 @@ async def cb_essay_go(call: CallbackQuery, state: FSMContext):
     document_data = dict(data)
     document_data["insho_plan"] = plan
     # Titul maydonlari foydalanuvchi yozganidek qoladi.
-    buf = generate_docx(generation_topic, service_name(service, language_code), service, language_code, pages, text_content, author=author, extra_data=document_data)
+    buf = await asyncio.to_thread(
+        generate_docx, generation_topic, service_name(service, language_code),
+        service, language_code, pages, text_content,
+        author=author, extra_data=document_data)
     docx_bytes = buf.read()
     fmt = data.get("file_format", "docx")
     prefix = t(f"fname_{service}", language_code)
     if fmt == "pdf":
-        pdf_bytes = _to_pdf(docx_bytes, topic)
+        pdf_bytes = await asyncio.to_thread(_to_pdf, docx_bytes, topic)
         if pdf_bytes:
             fname = f"{prefix}_{safe_topic}.pdf".replace(" ", "_")
             doc = BufferedInputFile(pdf_bytes, filename=fname)
