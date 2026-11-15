@@ -338,7 +338,9 @@ _BUILDERS = {
 }
 
 
-@lru_cache(maxsize=64)
+# 6 til × 6 dizayn = 36 ta 1200×675 rasm xotirada ~87 MB. Kesh kichik
+# saqlanadi: bayt ko'rinishidagi natijalar alohida (kichik) keshda turadi.
+@lru_cache(maxsize=12)
 def _render_image(key, lang="uz", topic=""):
     """Bitta dizaynning muqova-rasmi (PIL). Baytga aylantirish chaqiruvchida."""
     asset = asset_path(key)
@@ -396,6 +398,19 @@ def render_design_preview(key, lang="uz", topic=""):
 def render_design_preview_jpeg(key, lang="uz", topic="", quality=86):
     """Kichik JPEG baytlari — tez yuborish va tez yuklash uchun."""
     return _encode(key, lang, topic, "jpeg", quality)
+
+
+def prewarm_previews(langs=("uz",)):
+    """Birinchi tanlovda kutish bo'lmasin: preview'lar oldindan chiziladi.
+
+    Fon oqimida chaqiriladi; xato bo'lsa faqat log yoziladi.
+    """
+    for lang in langs:
+        for key in DESIGN_KEYS:
+            try:
+                render_design_preview_jpeg(key, lang)
+            except Exception as exc:
+                print(f"[design_preview] prewarm {key}/{lang}: {exc}", flush=True)
 
 
 def all_previews(lang="uz"):

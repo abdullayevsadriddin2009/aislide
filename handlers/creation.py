@@ -504,18 +504,27 @@ async def cb_slide_count(call: CallbackQuery, state: FSMContext):
     # Har bir dizayn alohida rasm ko'rinishida ko'rsatiladi (1..6), shundan
     # keyin tugmalar joylashgan xabar yuboriladi.
     try:
-        from aiogram.types import BufferedInputFile
+        from aiogram.types import BufferedInputFile, InputMediaPhoto
         from design_preview import render_design_preview_jpeg
-        # Oltita rasm parallel chiziladi (~1.5s × 6 ketma-ket o'rniga ~1.5s),
-        # keyin tartib buzilmasligi uchun ketma-ket yuboriladi. JPEG PNG'dan
-        # 5-6 barobar kichik, shuning uchun yuklash ham tez.
+        # Oltita rasm parallel chiziladi, keyin BITTA albom bo'lib yuboriladi.
+        # Yakka tartibda yuborilsa Telegram har bir foto uchun ~1 soniya kutadi;
+        # albom bitta so'rov, shuning uchun kartochkalar darhol keladi.
         images = await asyncio.gather(*(
             asyncio.to_thread(render_design_preview_jpeg, key, lang)
             for key in DESIGN_KEYS))
-        for index, (key, data) in enumerate(zip(DESIGN_KEYS, images), 1):
-            await msg.answer_photo(
-                BufferedInputFile(data, filename=f"{index}.jpg"),
-                caption=f"{index}. {design_name(key, lang)}")
+        captions = [f"{index}. {design_name(key, lang)}"
+                    for index, key in enumerate(DESIGN_KEYS, 1)]
+        media = [InputMediaPhoto(media=BufferedInputFile(data, filename=f"{index}.jpg"),
+                                 caption=caption)
+                 for index, (data, caption) in enumerate(zip(images, captions), 1)]
+        try:
+            await msg.answer_media_group(media)
+        except Exception as exc:
+            # Albom rad etilsa — yakka tartibda (sekinroq, lekin ishlaydi).
+            print(f"[creation] Albom yuborilmadi: {exc}", flush=True)
+            for index, (data, caption) in enumerate(zip(images, captions), 1):
+                await msg.answer_photo(
+                    BufferedInputFile(data, filename=f"{index}.jpg"), caption=caption)
         await msg.answer(_slide_design_prompt(lang), reply_markup=template_kb(lang))
         try:
             await msg.delete()

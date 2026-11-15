@@ -128,6 +128,15 @@ async def main():
 
     log.info("Bot ishga tushdi: @%s (id=%s). Admin: %s", me.username, me.id, config.ADMIN_ID)
 
+    # Dizayn kartochkalari birinchi tanlovdayoq tayyor turishi uchun ular fon
+    # oqimida oldindan chiziladi (PIL ishi — event loop'ni bloklamaydi).
+    try:
+        import threading
+        from design_preview import prewarm_previews
+        threading.Thread(target=prewarm_previews, daemon=True).start()
+    except Exception as e:
+        log.warning("Dizayn preview'lari oldindan tayyorlanmadi: %s", e)
+
     # Mini App: chat input yonidagi "Ilova" tugmasi
     await _resolve_webapp_url(bot)
     if config.WEBAPP_URL:
