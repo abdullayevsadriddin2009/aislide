@@ -82,6 +82,8 @@ def services_all_kb(lang="uz"):
     rows = []
     for code, s in SERVICES.items():
         rows.append([InlineKeyboardButton(text=f'{s["emoji"]} {service_name(code, lang)}', callback_data=f"svc:{code}")])
+    # Yozma ishni tekshirish — material yaratish emas, tahlil qilish bo'limi.
+    rows.append([InlineKeyboardButton(text=t("btn_check_essay", lang), callback_data="check:start")])
     rows.append([InlineKeyboardButton(text=t("btn_cancel", lang), callback_data="cancel")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 

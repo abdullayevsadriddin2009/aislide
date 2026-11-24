@@ -11,7 +11,7 @@ from aiogram.client.session.aiohttp import AiohttpSession
 
 import config
 import database as db
-from handlers import user, creation, admin
+from handlers import user, creation, admin, checker
 from admin_web import start_web_thread
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -110,6 +110,7 @@ async def main():
         return True
 
     dp.include_router(admin.router)
+    dp.include_router(checker.router)
     dp.include_router(creation.router)
     dp.include_router(user.router)
 

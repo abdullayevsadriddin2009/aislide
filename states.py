@@ -23,6 +23,10 @@ class Creation(StatesGroup):
     ref_author = State()       # Ijro etuvchi (Talaba)
     ref_checker = State()      # Tekshiruvchi (O'qituvchi)
 
+class Check(StatesGroup):
+    essay = State()   # ✅ Yozma ishni tekshirish uchun fayl/rasm/matn kutish
+
+
 class TopUp(StatesGroup):
     amount = State()
     check_photo = State()
