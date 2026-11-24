@@ -156,7 +156,16 @@ const T = {
     needTopic:"Mavzuni kamida 3 belgi bilan yozing", copied:"Nusxa olindi",
     size:"Hajm", serv:"Xizmat", noAuth:"Mini App faqat Telegram ichida ishlaydi.", noInitData:"Telegram ma'lumot yubormadi. Botga qaytib, «Ilova» tugmasini qayta bosing.", badToken:"Serverdagi bot tokeni boshqacha. Administratorga xabar bering.",
     pagesUnit:"bet", wordsUnit:"so‘z", slidesUnit:"slayd", questionsUnit:"savol",
-    close:"Yopish", planReady:"Reja tayyor", retry:"Qayta urinish"},
+    close:"Yopish", planReady:"Reja tayyor", retry:"Qayta urinish",
+    check:"Esse tekshirish", checkSub:"12 mezon · 24 ball · imlo va uslub",
+    checkTitle:"Esse tekshiruvi",
+    checkIntro:"12 ta rasmiy mezon, har biri 0–2 ball — jami 24 ball. Natija 75 ballik shkalada ham ko‘rsatiladi. Reja va epigraf yozilmaydi.",
+    checkTopicLabel:"Mavzu yoki topshiriq", checkTopicPh:"Esse qaysi mavzu bo‘yicha yozilgan (bo‘sh qoldirish mumkin)",
+    checkTextLabel:"Ish matni", checkTextPh:"Esse matnini shu yerga yozing yoki fayl tanlang…",
+    checkFile:"Fayl (DOCX, TXT yoki rasm)", checkFileHint:"Fayl tanlansa, yuqoridagi matn o‘rniga fayl tekshiriladi.",
+    checkStart:"Tekshirish", checkWait:"Tekshirilmoqda…", checkAgain:"Boshqa ishni tekshirish",
+    checkNeedWork:"Matn yoki fayl yuboring",
+    checkFoot:"100 so‘zdan kam, mavzuga mos bo‘lmagan yoki ko‘chirilgan ish — 2 ball; faqat kirish yoki to‘liq kirill — 0 ball."},
   ru:{ create:"Создать", orders:"Заказы", profile:"Профиль", newdoc:"Новый документ",
     pick:"Выберите услугу", topic:"Тема", topicPh:"Например: Искусственный интеллект в образовании",
     pages:"Объём", lang:"Язык", format:"Формат", author:"Исполнитель (Ф.И.О.)", authorPh:"Алиева Н., 201-группа",
@@ -179,7 +188,16 @@ const T = {
     needTopic:"Введите тему минимум из 3 символов", copied:"Скопировано",
     size:"Объём", serv:"Услуга", noAuth:"Mini App работает только внутри Telegram.", noInitData:"Telegram не передал данные. Вернитесь в бота и нажмите «Приложение» ещё раз.", badToken:"Токен бота на сервере другой. Сообщите администратору.",
     pagesUnit:"стр.", wordsUnit:"слов", slidesUnit:"слайдов", questionsUnit:"вопросов",
-    close:"Закрыть", planReady:"План готов", retry:"Повторить"},
+    close:"Закрыть", planReady:"План готов", retry:"Повторить",
+    check:"Проверка эссе", checkSub:"12 критериев · 24 балла · орфография и стиль",
+    checkTitle:"Проверка эссе",
+    checkIntro:"12 официальных критериев по 0–2 балла — всего 24. Итог также показывается по 75-балльной шкале. План и эпиграф не пишутся.",
+    checkTopicLabel:"Тема или задание", checkTopicPh:"По какой теме написано эссе (можно оставить пустым)",
+    checkTextLabel:"Текст работы", checkTextPh:"Вставьте текст эссе или выберите файл…",
+    checkFile:"Файл (DOCX, TXT или фото)", checkFileHint:"Если выбран файл, проверяется он, а не текст выше.",
+    checkStart:"Проверить", checkWait:"Проверяется…", checkAgain:"Проверить другую работу",
+    checkNeedWork:"Отправьте текст или файл",
+    checkFoot:"Меньше 100 слов, не по теме или списано — 2 балла; только вступление или кириллица — 0."},
   en:{ create:"Create", orders:"Orders", profile:"Profile", newdoc:"New document",
     pick:"Choose a service", topic:"Topic", topicPh:"For example: Artificial intelligence in education",
     pages:"Volume", lang:"Language", format:"Format", author:"Author (full name)", authorPh:"Aliyeva N., group 201",
@@ -202,7 +220,16 @@ const T = {
     needTopic:"Enter a topic of at least 3 characters", copied:"Copied",
     size:"Size", serv:"Service", noAuth:"Mini App works only inside Telegram.", noInitData:"Telegram did not send your data. Go back to the bot and tap the App button again.", badToken:"The bot token on the server is different. Please contact the administrator.",
     pagesUnit:"pages", wordsUnit:"words", slidesUnit:"slides", questionsUnit:"questions",
-    close:"Close", planReady:"Outline ready", retry:"Retry"},
+    close:"Close", planReady:"Outline ready", retry:"Retry",
+    check:"Check an essay", checkSub:"12 criteria · 24 points · spelling and style",
+    checkTitle:"Essay review",
+    checkIntro:"12 official criteria, 0–2 points each — 24 in total. The result is also shown on the 75-point scale. No outline or epigraph.",
+    checkTopicLabel:"Topic or task", checkTopicPh:"Which topic the essay is about (optional)",
+    checkTextLabel:"Essay text", checkTextPh:"Paste the essay text or choose a file…",
+    checkFile:"File (DOCX, TXT or image)", checkFileHint:"If a file is chosen, the file is checked instead of the text above.",
+    checkStart:"Check", checkWait:"Checking…", checkAgain:"Check another work",
+    checkNeedWork:"Send text or a file",
+    checkFoot:"Under 100 words, off topic or copied — 2 points; introduction only or Cyrillic — 0."},
   tr:{ create:"Oluştur", orders:"Siparişler", profile:"Profil", newdoc:"Yeni belge",
     pick:"Hizmet seçin", topic:"Konu", topicPh:"Örneğin: Eğitimde yapay zekâ",
     pages:"Hacim", lang:"Dil", format:"Format", author:"Hazırlayan (ad soyad)", authorPh:"Aliyeva N., 201. grup",
@@ -288,7 +315,9 @@ const state = {
   form:{ topic:"", pages:"", words:"", questions:"", count:10, lang:"uz", format:"docx",
          author:"", institution:"", faculty:"", dept:"", subject:"", checker:"", email:"",
          design_key:"modern", subject_key:"" },
-  orderDetail:null, chat:[], chatBusy:false, confirming:false
+  orderDetail:null, chat:[], chatBusy:false, confirming:false,
+  checkOpen:false,
+  check:{topic:"", text:"", fileName:"", file:null, busy:false, report:null}
 };
 const app = document.getElementById("app");
 const tabs = document.getElementById("tabs");
@@ -312,7 +341,8 @@ async function api(path, options){
 }
 
 function switchTab(tab){
-  state.tab = tab; state.service = null; state.orderDetail = null; render();
+  state.tab = tab; state.service = null; state.orderDetail = null;
+  state.checkOpen = false; render();
 }
 
 function setTabsLabels(){
@@ -404,6 +434,7 @@ function render(){
   if (!state.user) return;
   setTabsLabels();
   if (state.orderDetail) return renderOrderDetail();
+  if (state.checkOpen) return renderCheck();
   if (state.tab === "orders") return renderOrders();
   if (state.tab === "chat") return renderChat();
   if (state.tab === "profile") return renderProfile();
@@ -429,13 +460,21 @@ function renderHome(){
       <div class="name">${esc(item.name)}</div>
       <div class="meta">${optionSummary(item)}</div>
     </div>`).join("");
+  // Botdagi «Yaratishni boshlash» bo'limidek: esse tekshirish alohida karta.
+  const checkCard = `<div class="svc" data-check="1" style="flex-direction:row;align-items:center;gap:12px">
+      <div class="emoji">🔍</div>
+      <div style="flex:1;min-width:0"><div class="name">${esc(t("check"))}</div>
+      <div class="meta">${esc(t("checkSub"))}</div></div><div class="chev">›</div></div>`;
   app.innerHTML = `<div class="wrap">${header()}
     <h2>${esc(t("pick"))}</h2>
+    <div class="grid" style="grid-template-columns:1fr;margin-bottom:10px">${checkCard}</div>
     <div class="grid">${cards}</div>
     ${state.history.length ? `<h2>${esc(t("orders"))}</h2><div class="card">${state.history.slice(0,3).map(orderRow).join("")}</div>` : ""}
     <p class="muted center" style="margin:18px 0 8px">Talaba AI · Mini App</p>
   </div>`;
   app.querySelectorAll("[data-svc]").forEach(node => node.onclick = () => openService(node.dataset.svc));
+  const checkNode = app.querySelector("[data-check]");
+  if (checkNode) checkNode.onclick = openCheck;
   bindOrderRows();
 }
 
@@ -449,6 +488,7 @@ function optionSummary(item){
 function openService(code){
   const item = state.services.find(s => s.code === code);
   if (!item) return;
+  state.checkOpen = false;
   state.service = item;
   state.job = null; state.plan = "";
   state.form.pages = String(item.options[0]);
@@ -753,6 +793,123 @@ function renderError(message){
   document.getElementById("back").onclick = back;
   document.getElementById("back2").onclick = back;
   document.getElementById("retry").onclick = () => { state.service = null; state.tab = "home"; render(); };
+}
+
+/* =====================  Esse tekshirish  ===================== */
+function openCheck(){
+  state.checkOpen = true; state.service = null; state.orderDetail = null;
+  state.check.report = null; state.check.busy = false;
+  render();
+}
+
+function renderCheck(){
+  const c = state.check;
+  if (c.report) return renderCheckReport(c.report);
+  const disabled = c.busy ? "disabled" : "";
+  app.innerHTML = `<div class="wrap">
+    <div class="head"><button class="back" id="back">‹</button><h1>🔍 ${esc(t("checkTitle"))}</h1></div>
+    <div class="card">
+      <p class="muted" style="margin:0 0 4px">${esc(t("checkIntro"))}</p>
+      <label>${esc(t("checkTopicLabel"))}</label>
+      <textarea id="cTopic" placeholder="${esc(t("checkTopicPh"))}" ${disabled}>${esc(c.topic)}</textarea>
+      <label>${esc(t("checkTextLabel"))}</label>
+      <textarea id="cText" style="min-height:170px" placeholder="${esc(t("checkTextPh"))}" ${disabled}>${esc(c.text)}</textarea>
+      <label>${esc(t("checkFile"))}</label>
+      <input type="file" id="cFile" accept=".docx,.txt,.md,.rtf,.jpg,.jpeg,.png,.webp" ${disabled}>
+      <div class="field-note">${esc(c.fileName || t("checkFileHint"))}</div>
+    </div>
+    ${c.busy ? `<div class="card center" style="padding:20px"><div class="spinner"></div>
+      <p class="muted" style="margin:0">${esc(t("checkWait"))}</p></div>` : ""}
+    <button class="btn" id="cGo" ${disabled}>🔍 ${esc(t("checkStart"))}</button>
+    <p class="muted center" style="margin:12px 0 4px">${esc(t("checkFoot"))}</p>
+  </div>`;
+  document.getElementById("back").onclick = () => { state.checkOpen = false; state.tab = "home"; render(); };
+  const topicEl = document.getElementById("cTopic");
+  topicEl.oninput = () => { state.check.topic = topicEl.value; };
+  const textEl = document.getElementById("cText");
+  textEl.oninput = () => { state.check.text = textEl.value; };
+  const fileEl = document.getElementById("cFile");
+  fileEl.onchange = () => {
+    const file = fileEl.files && fileEl.files[0];
+    state.check.file = file || null;
+    state.check.fileName = file ? file.name : "";
+    renderCheck();
+  };
+  document.getElementById("cGo").onclick = runCheck;
+}
+
+async function runCheck(){
+  const c = state.check;
+  if (c.busy) return;
+  if (!(c.text || "").trim() && !c.file) return toast(t("checkNeedWork"));
+  c.busy = true; renderCheck();
+  try {
+    const form = new FormData();
+    form.append("lang", state.lang);
+    form.append("topic", c.topic || "");
+    form.append("text", c.text || "");
+    if (c.file) form.append("file", c.file, c.file.name);
+    const response = await fetch("/api/mini/check", {method:"POST",
+      headers:{"X-Mini-Token": state.token}, body: form});
+    let data = {};
+    try { data = await response.json(); } catch (e) { data = {}; }
+    if (!response.ok || data.ok === false) throw new Error((data && data.message) || ("HTTP " + response.status));
+    c.report = data.report; c.busy = false; render();
+  } catch (error) {
+    c.busy = false; renderCheck();
+    toast(error.message || t("error"));
+  }
+}
+
+function renderCheckReport(report){
+  const L = report.labels || {};
+  const secLabels = L.sections || {};
+  const sec = report.sections || {};
+  const marks = ["kirish", "asosiy", "xulosa"].map(key =>
+    `${esc(secLabels[key] || key)} ${sec[key] ? "✅" : "❌"}`).join(" · ");
+  const flags = (report.flags || []).map(item =>
+    `<div class="field-note" style="color:var(--warn)">⚠️ ${esc(item.text)}</div>`).join("");
+  const criteria = (report.criteria || []).map(item =>
+    `<div class="kv"><span>${item.band}. ${esc(item.name)}</span><b>${item.score}/${item.max}</b></div>`
+    + (item.note ? `<div class="field-note">${esc(item.note)}</div>` : "")).join("");
+  const errors = (report.errors || []).length
+    ? report.errors.map((item, index) => `<div style="padding:8px 0;border-bottom:1px solid var(--line)">
+        <div style="font-size:14px">${index + 1}. «${esc(item.quote || "")}»${item.fix ? " → «" + esc(item.fix) + "»" : ""}</div>
+        <div class="field-note">${esc([item.type, item.rule].filter(Boolean).join(" / "))}</div></div>`).join("")
+    : `<p class="muted" style="margin:0">${esc(L.no_errors || "")}</p>`;
+  const bullets = (values) => (values || []).map(value =>
+    `<div class="field-note" style="font-size:13px;margin:6px 0">• ${esc(value)}</div>`).join("");
+  app.innerHTML = `<div class="wrap">
+    <div class="head"><button class="back" id="back">‹</button><h1>📝 ${esc(t("checkTitle"))}</h1></div>
+    <div class="card center" style="padding:20px 16px">
+      <div style="font-size:40px;font-weight:800;line-height:1.1">${report.total}/${report.max_total}</div>
+      <div class="muted">${esc(L.total || "")} · ${report.percent}%</div>
+      <div class="badge" style="margin-top:8px">${esc(L.scale || "")}: ${report.scale_75}/${report.max_scale}</div>
+    </div>
+    <div class="card">
+      ${report.topic ? `<div class="kv"><span>${esc(t("checkTopicLabel"))}</span><b>${esc(report.topic)}</b></div>` : ""}
+      <div class="kv"><span>${esc(L.words || "")}</span><b>${report.word_count} (${esc(L.required || "")})</b></div>
+      <div class="kv"><span>${esc(L.structure || "")}</span><b>${marks}</b></div>
+      ${report.plan_written ? `<div class="field-note" style="color:var(--warn)">⚠️ ${esc(L.plan_written || "")}</div>` : ""}
+      ${report.epigraph_written ? `<div class="field-note" style="color:var(--warn)">⚠️ ${esc(L.epigraph_written || "")}</div>` : ""}
+      ${flags}
+    </div>
+    <h2>${esc(L.criteria || "")}</h2>
+    <div class="card">${criteria}</div>
+    <h2>${esc(L.errors || "")}</h2>
+    <div class="card">${errors}</div>
+    ${(report.strengths || []).length ? `<h2>${esc(L.strengths || "")}</h2><div class="card">${bullets(report.strengths)}</div>` : ""}
+    ${(report.advice || []).length ? `<h2>${esc(L.advice || "")}</h2><div class="card">${bullets(report.advice)}</div>` : ""}
+    ${report.review ? `<h2>${esc(L.review || "")}</h2><div class="card"><p class="muted" style="margin:0">${esc(report.review)}</p></div>` : ""}
+    <div class="stack" style="margin:8px 0 12px">
+      <button class="btn" id="cAgain">🔁 ${esc(t("checkAgain"))}</button>
+    </div>
+  </div>`;
+  document.getElementById("back").onclick = () => { state.checkOpen = false; state.tab = "home"; render(); };
+  document.getElementById("cAgain").onclick = () => {
+    state.check = {topic: state.check.topic, text:"", fileName:"", file:null, busy:false, report:null};
+    renderCheck();
+  };
 }
 
 function orderRow(order){

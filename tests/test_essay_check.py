@@ -63,10 +63,30 @@ class EssayCheckerTest(unittest.TestCase):
         self.assertIn("notask", report["flags"])
         self.assertEqual(report["total"], 0)
 
+    def test_blank_work_gets_zero(self):
+        report = self._report(text="")
+        self.assertIn("blank", report["flags"])
+        self.assertEqual(report["total"], 0)
+        self.assertEqual(report["scale_75"], 0)
+
     def test_full_cyrillic_gets_zero(self):
         report = self._report(text=CYRILLIC_TEXT)
         self.assertIn("cyrillic", report["flags"])
         self.assertEqual(report["total"], 0)
+
+    def test_scale_75_conversion(self):
+        self.assertEqual(ec.to_scale_75(24), 75)
+        self.assertEqual(ec.to_scale_75(12), 38)
+        self.assertEqual(ec.to_scale_75(0), 0)
+        self.assertEqual(self._report()["scale_75"], 75)
+
+    def test_plan_and_epigraph_are_reported(self):
+        report = self._report({"has_plan": True, "has_epigraph": True})
+        self.assertTrue(report["plan_written"])
+        self.assertTrue(report["epigraph_written"])
+        body = ec.format_report(report, "uz")
+        self.assertIn("reja yozilgan", body)
+        self.assertIn("epigraf yozilgan", body)
 
     def test_report_lists_every_band_and_total(self):
         report = self._report({"errors": [{"quote": "kelmagan", "fix": "kelmagan",
@@ -79,11 +99,37 @@ class EssayCheckerTest(unittest.TestCase):
         self.assertIn("kelmagan", text)
         self.assertNotIn("<", text)
 
+    def test_report_shows_scale_and_structure(self):
+        report = self._report({"sections": {"kirish": True, "asosiy": True, "xulosa": False}})
+        body = ec.format_report(report, "uz")
+        self.assertIn("75 ballik shkala: 75/75", body)
+        self.assertIn("Tuzilma", body)
+        self.assertIn("Xulosa ❌", body)
+
+    def test_errors_are_capped_at_twenty(self):
+        errors = [{"quote": f"xato {i}", "fix": "to'g'ri", "type": "imlo"} for i in range(30)]
+        report = self._report({"errors": errors})
+        self.assertEqual(len(report["errors"]), 20)
+
+    def test_payload_for_mini_app(self):
+        report = self._report({"notes": {"imlo": "Ikki imlo xatosi bor."},
+                               "sections": {"kirish": True, "asosiy": True, "xulosa": True}})
+        payload = ec.report_payload(report, "uz")
+        self.assertEqual(payload["total"], 24)
+        self.assertEqual(payload["scale_75"], 75)
+        self.assertEqual(payload["percent"], 100)
+        self.assertEqual(len(payload["criteria"]), 12)
+        self.assertEqual(payload["criteria"][0]["band"], 1)
+        self.assertEqual(payload["criteria"][0]["name"], "Publitsistik uslub")
+        self.assertEqual(payload["labels"]["total"], "Jami")
+        self.assertTrue(payload["sections"]["asosiy"])
+
     def test_prompt_contains_official_bands_and_topic(self):
         prompt = ec.build_prompt("Matn.", "Mavzu matni")
         self.assertIn("12 ta band", prompt)
         self.assertIn("Mavzu matni", prompt)
         self.assertIn("FAQAT 0, 1 yoki 2 ball", prompt)
+        self.assertIn("reja va epigraf yozilmaydi", prompt)
 
     def test_word_count_keeps_apostrophe_words(self):
         self.assertEqual(ec.word_count("Bir ikki uch, to'rt!"), 4)

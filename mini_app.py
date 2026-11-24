@@ -473,6 +473,69 @@ def api_plan():
     return jsonify({"ok": True, "plan": plan})
 
 
+# =====================  Esse tekshirish  =====================
+CHECK_MAX_BYTES = 20 * 1024 * 1024
+CHECK_DOCX = (".docx",)
+CHECK_TXT = (".txt", ".md", ".rtf")
+CHECK_IMAGES = (".jpg", ".jpeg", ".png", ".webp")
+
+
+@mini.route("/api/mini/check", methods=["POST"])
+def api_check():
+    """Esseni botdagi kabi 12 rasmiy mezon bo'yicha tekshiradi."""
+    uid = _token_user()
+    if not uid:
+        return _unauthorized()
+    import essay_checker
+    from texts import t as text_of
+
+    lang = str(request.form.get("lang") or request.args.get("lang") or "uz").lower()
+    if lang not in ALL_LANGS:
+        lang = "uz"
+    topic = re.sub(r"\s+", " ", str(request.form.get("topic") or "")).strip()[:300]
+    body = str(request.form.get("text") or "").strip()
+    upload = request.files.get("file")
+    if upload and upload.filename:
+        name = str(upload.filename).lower()
+        if name.endswith(".pdf"):
+            return jsonify({"ok": False, "error": "pdf",
+                            "message": text_of("check_pdf", lang)}), 400
+        data = upload.read(CHECK_MAX_BYTES + 1)
+        if len(data) > CHECK_MAX_BYTES:
+            return jsonify({"ok": False, "error": "size",
+                            "message": "Fayl juda katta — 20 MB gacha."}), 400
+        try:
+            if name.endswith(CHECK_DOCX):
+                body = essay_checker.extract_docx_text(data)
+            elif name.endswith(CHECK_TXT):
+                body = essay_checker.decode_text(data)
+            elif name.endswith(CHECK_IMAGES):
+                body = asyncio.run(essay_checker.ocr_image(data, lang)) or ""
+                if not body.strip():
+                    return jsonify({"ok": False, "error": "image",
+                                    "message": text_of("check_image_unreadable", lang)}), 400
+            else:
+                return jsonify({"ok": False, "error": "format",
+                                "message": text_of("check_unsupported", lang)}), 400
+        except Exception as exc:
+            print(f"[mini] check fayl xatosi: {type(exc).__name__}: {exc}", flush=True)
+            return jsonify({"ok": False, "error": "format",
+                            "message": text_of("check_unsupported", lang)}), 400
+    body = str(body or "").strip()
+    if len(body) < 40:
+        return jsonify({"ok": False, "error": "empty",
+                        "message": text_of("check_empty", lang)}), 400
+    try:
+        report = asyncio.run(essay_checker.analyze_essay(body, lang, topic))
+    except Exception as exc:
+        print(f"[mini] check xatosi: {type(exc).__name__}: {exc}", flush=True)
+        report = None
+    if not report:
+        return jsonify({"ok": False, "error": "check",
+                        "message": text_of("check_error", lang)}), 502
+    return jsonify({"ok": True, "report": essay_checker.report_payload(report, lang)})
+
+
 # =====================  Generatsiya navbati  =====================
 def _clean_jobs():
     now = time.time()

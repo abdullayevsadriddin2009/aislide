@@ -23,11 +23,12 @@ import aiohttp
 import ai_pool
 
 MAX_CHARS = 15000          # bir marta tekshiriladigan matn hajmi
-MAX_ERRORS = 12
+MAX_ERRORS = 20
 MAX_IMAGE_SIDE = 1600
 MAX_PER_BAND = 2
 MAX_TOTAL = 24
 MIN_WORDS = 100
+SCALE_MAX = 75             # rasmiy: 24 ballik natija 75 ballik shkalaga o'tkaziladi
 
 # Rasmiy mezon: 12 band, har biri 0..2. Kalit — hisobot va JSON uchun.
 CRITERIA = (
@@ -63,7 +64,13 @@ _LABELS = {
         "advice": "Maslahatlar",
         "review": "Taqriz",
         "band": "band",
+        "scale": "75 ballik shkala",
+        "structure": "Tuzilma",
+        "sections": {"kirish": "Kirish", "asosiy": "Asosiy qism", "xulosa": "Xulosa"},
+        "plan_written": "Matnda reja yozilgan — rasmiy talabda reja yozilmaydi.",
+        "epigraph_written": "Matnda epigraf yozilgan — rasmiy talabda epigraf yozilmaydi.",
         "flags": {
+            "blank": "Varaq bo'sh — ish yozilmagan, 0 ball.",
             "short": "Ish hajmi 100 so'zdan kam — rasmiy qoidaga ko'ra 2 ball qo'yiladi.",
             "offtopic": "Ish mavzuga mos emas — rasmiy qoidaga ko'ra 2 ball qo'yiladi.",
             "copied": "Ish boshqa manbadan ko'chirilgan deb baholandi — 2 ball.",
@@ -97,7 +104,13 @@ _LABELS = {
         "advice": "Рекомендации",
         "review": "Рецензия",
         "band": "критерий",
+        "scale": "Шкала 75 баллов",
+        "structure": "Структура",
+        "sections": {"kirish": "Вступление", "asosiy": "Основная часть", "xulosa": "Заключение"},
+        "plan_written": "В работе есть план — по официальным требованиям план не пишется.",
+        "epigraph_written": "В работе есть эпиграф — по официальным требованиям эпиграф не пишется.",
         "flags": {
+            "blank": "Лист пуст — работа не написана, 0 баллов.",
             "short": "Объём меньше 100 слов — по официальному правилу ставится 2 балла.",
             "offtopic": "Работа не соответствует теме — по официальному правилу 2 балла.",
             "copied": "Работа оценена как списанная — 2 балла.",
@@ -131,7 +144,13 @@ _LABELS = {
         "advice": "Recommendations",
         "review": "Reviewer note",
         "band": "criterion",
+        "scale": "75-point scale",
+        "structure": "Structure",
+        "sections": {"kirish": "Introduction", "asosiy": "Body", "xulosa": "Conclusion"},
+        "plan_written": "The work contains an outline — the official rules do not allow one.",
+        "epigraph_written": "The work contains an epigraph — the official rules do not allow one.",
         "flags": {
+            "blank": "The page is blank — nothing was written, 0 points.",
             "short": "Fewer than 100 words — the official rule gives 2 points.",
             "offtopic": "The work is off topic — the official rule gives 2 points.",
             "copied": "The work was judged copied — 2 points.",
@@ -327,6 +346,16 @@ def band_scores(raw_scores):
     return scores
 
 
+def to_scale_75(total):
+    """Rasmiy qoida: 24 ballik natija 75 ballik shkalaga o'tkaziladi."""
+    try:
+        value = float(total or 0)
+    except (TypeError, ValueError):
+        value = 0.0
+    value = max(0.0, min(float(MAX_TOTAL), value))
+    return int(round(value * SCALE_MAX / float(MAX_TOTAL)))
+
+
 def normalize_report(data, text, lang="uz", topic=""):
     """AI javobini rasmiy qoidalar bilan tekshirilgan hisobotga aylantiradi."""
     scores = band_scores(data.get("scores"))
@@ -352,12 +381,15 @@ def normalize_report(data, text, lang="uz", topic=""):
         })
 
     words = word_count(text)
-    sections = data.get("sections") if isinstance(data.get("sections"), dict) else {}
+    raw_sections = data.get("sections") if isinstance(data.get("sections"), dict) else {}
+    sections = {key: raw_sections.get(key) is True for key in ("kirish", "asosiy", "xulosa")}
     flags = []
     total = sum(scores.values())
 
-    # 0 ball: topshiriq bajarilmagan yoki to'liq kirill alifbosida.
-    if sections and not (sections.get("asosiy") or sections.get("xulosa")):
+    # 0 ball: varaq bo'sh, faqat kirish yozilgan yoki to'liq kirill alifbosida.
+    if words == 0:
+        flags.append("blank")
+    elif sections["kirish"] and not (sections["asosiy"] or sections["xulosa"]):
         flags.append("notask")
     elif cyrillic_ratio(text) >= 0.6:
         flags.append("cyrillic")
@@ -369,7 +401,7 @@ def normalize_report(data, text, lang="uz", topic=""):
     elif data.get("plagiarism_suspected") is True:
         flags.append("copied")
 
-    if "notask" in flags or "cyrillic" in flags:
+    if flags and flags[0] in ("blank", "notask", "cyrillic"):
         total = 0
     elif flags:
         total = 2
@@ -379,6 +411,10 @@ def normalize_report(data, text, lang="uz", topic=""):
         "notes": notes,
         "total": total,
         "max_total": MAX_TOTAL,
+        "scale_75": to_scale_75(total),
+        "sections": sections,
+        "plan_written": data.get("has_plan") is True,
+        "epigraph_written": data.get("has_epigraph") is True,
         "flags": flags,
         "word_count": words,
         "min_words": MIN_WORDS,
@@ -410,7 +446,17 @@ def build_prompt(text, topic="", lang="uz"):
         "- 0 — bajarilmagan.\n\n"
         "Qat'iy qoidalar: matnda yo'q xatoni o'ylab topmang; bir xil xato bir necha "
         "joyda takrorlansa — bitta xato; quote — matndagi aniq parcha; imlo va tinish "
-        "bo'yicha o'zbek lotin alifbosi qoidalariga tayaning.\n\n"
+        "bo'yicha o'zbek lotin alifbosi qoidalariga tayaning. Eng ko'pi bilan 20 ta "
+        "aniq xato ko'rsatiladi.\n\n"
+        "Rasmiy talablar (buzilishi ballni tushiradi):\n"
+        "- esse lotin yozuvidagi o'zbek alifbosida yoziladi;\n"
+        "- uslub publitsistik (argumentli, munozarali) bo'ladi;\n"
+        "- kirish, asosiy qism va xulosa bo'ladi;\n"
+        "- reja va epigraf yozilmaydi — matnda bo'lsa, has_plan/has_epigraph ni true "
+        "qiling va bu kamchilikni «qismlar» bandida hisobga oling.\n\n"
+        "Istisno qoidalar (o'zingiz qo'llamang, faqat hisobga oling): 100 so'zdan kam — "
+        "2 ball, mavzuga mos emas — 2 ball, ko'chirilgan — 2 ball; faqat kirish "
+        "yozilgan yoki to'liq kirill alifbosida — 0 ball.\n\n"
         f"{topic_block}"
         "Javob faqat shu JSON sxemasida bo'lsin (boshqa matn yozmang):\n"
         "{\n"
@@ -422,6 +468,7 @@ def build_prompt(text, topic="", lang="uz"):
         '"tinish": "...", "qoshimchalar": "...", "soz": "...", "paremiya": "...", '
         '"adabiy": "..."},\n'
         '  "sections": {"kirish": true, "asosiy": true, "xulosa": true},\n'
+        '  "has_plan": false, "has_epigraph": false,\n'
         '  "topic_match": true,\n'
         '  "plagiarism_suspected": false,\n'
         '  "errors": [{"quote": "matndan parcha", "fix": "to\'g\'ri varianti", '
@@ -435,7 +482,7 @@ def build_prompt(text, topic="", lang="uz"):
 
 
 async def analyze_essay(text, lang="uz", topic=""):
-    """Esseни 12 band bo'yicha tekshiradi. AI ishlamasa None qaytaradi."""
+    """Esseni 12 band bo'yicha tekshiradi. AI ishlamasa None qaytaradi."""
     import ai_api
     body = str(text or "").strip()
     if len(body) < 40:
@@ -466,9 +513,20 @@ def format_report(report, lang="uz"):
     percent = int(round(100.0 * report["total"] / MAX_TOTAL))
     lines = [info["title"], ""]
     lines.append(f"📊 {info['total']}: {report['total']}/{MAX_TOTAL} ball ({percent}%)")
+    lines.append(f"📐 {info['scale']}: {report.get('scale_75', to_scale_75(report['total']))}/{SCALE_MAX} ball")
     lines.append(f"📄 {info['words']}: {report['word_count']} ({info['required']})")
     if report.get("topic"):
         lines.append(f"🎯 Mavzu: {report['topic']}")
+    sections = report.get("sections") or {}
+    if sections:
+        marks = " · ".join(
+            f"{info['sections'][key]} {'✅' if sections.get(key) else '❌'}"
+            for key in ("kirish", "asosiy", "xulosa"))
+        lines.append(f"🧱 {info['structure']}: {marks}")
+    if report.get("plan_written"):
+        lines.append(f"⚠️ {info['plan_written']}")
+    if report.get("epigraph_written"):
+        lines.append(f"⚠️ {info['epigraph_written']}")
     for flag in report.get("flags") or []:
         text = info["flags"].get(flag)
         if text:
@@ -509,3 +567,62 @@ def format_report(report, lang="uz"):
         lines.append("")
         lines.append(f"🧾 {info['review']}: {report['review']}")
     return "\n".join(lines)
+
+
+def criteria_payload(report, lang="uz"):
+    """12 band ro'yxati — Mini App va boshqa interfeyslar uchun."""
+    info = labels(lang)
+    items = []
+    for band, key in enumerate(CRITERIA_KEYS, 1):
+        items.append({
+            "band": band,
+            "key": key,
+            "name": info["crit"].get(key, key),
+            "score": int((report.get("scores") or {}).get(key, 0)),
+            "max": MAX_PER_BAND,
+            "note": str((report.get("notes") or {}).get(key) or ""),
+        })
+    return items
+
+
+def report_payload(report, lang="uz"):
+    """Hisobotni Mini App uchun to'liq JSON lug'atiga aylantiradi."""
+    info = labels(lang)
+    total = int(report.get("total") or 0)
+    return {
+        "total": total,
+        "max_total": MAX_TOTAL,
+        "scale_75": int(report.get("scale_75") or to_scale_75(total)),
+        "max_scale": SCALE_MAX,
+        "percent": int(round(100.0 * total / MAX_TOTAL)),
+        "word_count": int(report.get("word_count") or 0),
+        "min_words": MIN_WORDS,
+        "topic": str(report.get("topic") or ""),
+        "flags": [{"key": key, "text": info["flags"].get(key, key)}
+                  for key in report.get("flags") or []],
+        "sections": {key: bool((report.get("sections") or {}).get(key))
+                     for key in ("kirish", "asosiy", "xulosa")},
+        "plan_written": bool(report.get("plan_written")),
+        "epigraph_written": bool(report.get("epigraph_written")),
+        "criteria": criteria_payload(report, lang),
+        "errors": list(report.get("errors") or []),
+        "strengths": list(report.get("strengths") or []),
+        "advice": list(report.get("advice") or []),
+        "review": str(report.get("review") or ""),
+        "labels": {
+            "total": info["total"],
+            "scale": info["scale"],
+            "words": info["words"],
+            "required": info["required"],
+            "structure": info["structure"],
+            "sections": info["sections"],
+            "criteria": info["criteria"],
+            "errors": info["errors"],
+            "no_errors": info["no_errors"],
+            "strengths": info["strengths"],
+            "advice": info["advice"],
+            "review": info["review"],
+            "plan_written": info["plan_written"],
+            "epigraph_written": info["epigraph_written"],
+        },
+    }

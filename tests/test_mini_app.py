@@ -127,6 +127,41 @@ class MiniAppTests(unittest.TestCase):
         data = make_init_data({"id": user_id}, config.BOT_TOKEN)
         return self.client.post("/api/mini/init", json={"initData": data}).get_json()["token"]
 
+    def test_check_endpoint_returns_report(self):
+        import essay_checker
+        token = self._token_for(560)
+        original = essay_checker.analyze_essay
+
+        async def fake_analyze(text, lang="uz", topic=""):
+            return essay_checker.normalize_report(
+                {"scores": {key: 2 for key in essay_checker.CRITERIA_KEYS},
+                 "sections": {"kirish": True, "asosiy": True, "xulosa": True}},
+                text, lang, topic)
+
+        essay_checker.analyze_essay = fake_analyze
+        try:
+            response = self.client.post(
+                "/api/mini/check",
+                data={"lang": "uz", "topic": "Ta'lim",
+                      "text": "Bugungi kunda ta'lim tizimi jamiyat taraqqiyotining omili. " * 20},
+                headers={"X-Mini-Token": token}, content_type="multipart/form-data")
+        finally:
+            essay_checker.analyze_essay = original
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["report"]["total"], 24)
+        self.assertEqual(payload["report"]["scale_75"], 75)
+        self.assertEqual(len(payload["report"]["criteria"]), 12)
+
+    def test_check_endpoint_requires_token_and_text(self):
+        self.assertEqual(self.client.post("/api/mini/check", data={}).status_code, 401)
+        token = self._token_for(561)
+        response = self.client.post("/api/mini/check", data={"text": ""},
+                                    headers={"X-Mini-Token": token},
+                                    content_type="multipart/form-data")
+        self.assertEqual(response.status_code, 400)
+
     def test_slide_count_is_limited_to_bot_options(self):
         self.assertEqual(mini_app._payload_options("slide", {"options": {"count": 16}}), {"count": 15})
         self.assertEqual(mini_app._payload_options("slide", {"options": {"count": 4}}), {"count": 10})
