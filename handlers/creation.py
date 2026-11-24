@@ -10,13 +10,15 @@ from states import Creation
 from services import (SERVICES, service_name, ALL_LANGS, document_pages,
                       slide_body_count, slide_image_total)
 from keyboards import (option_kb_for, confirm_kb, main_kb, option_label,
-                       languages_kb, format_kb, template_kb, slide_count_kb, subjects_kb)
+                       languages_kb, format_kb, template_kb, slide_count_kb, subjects_kb,
+                       alphabet_kb)
 from designs import (subject_name, detect_subject_key, lang_full_name, SLIDE_COUNTS,
                      design_name, DESIGNS, DESIGN_KEYS, SUBJECT_KEYS)
 from ai_api import (generate, generate_slides_structured, get_last_error, search_images, download_image,
                     generate_insho_plan, image_grade, related_keywords)
 from pptx_generator import generate_pptx
 from docx_generator import generate_docx
+from alphabet import slides_to_new_alphabet, to_new_alphabet
 
 router = Router()
 
@@ -694,6 +696,18 @@ async def _show_confirm(event, state):
     topic = data.get("topic", "")
     options = data.get("options", {})
     
+    # O'zbek tilida hujjat oxirida alifbo so'raladi: yangi alifbo tanlansa
+    # matn butunlay ö/ğ/ş/ç bilan yoziladi, eski tanlansa hozirgi ko'rinish.
+    if str(data.get("language") or "uz").lower() == "uz" and not data.get("alphabet"):
+        await state.set_state(Creation.alphabet)
+        text = t("choose_alphabet", lang)
+        kb = alphabet_kb(lang)
+        if is_cb:
+            await msg.edit_text(text, reply_markup=kb)
+        else:
+            await msg.answer(text, reply_markup=kb)
+        return
+
     # Referat bo'lsa ref_author, bo'lmasa oddiy author
     author = data.get("ref_author") or data.get("author", "") or "—"
     
@@ -745,6 +759,15 @@ async def _show_confirm(event, state):
     else:
         await msg.answer(text, reply_markup=confirm_kb(lang))
 
+@router.callback_query(Creation.alphabet, F.data.startswith("alpha:"))
+async def cb_alphabet(call: CallbackQuery, state: FSMContext):
+    """Eski yoki yangi o'zbek alifbosi tanlandi — tasdiqlashga qaytamiz."""
+    value = call.data.split(":", 1)[1]
+    await state.update_data(alphabet="new" if value == "new" else "old")
+    await call.answer()
+    await _show_confirm(call, state)
+
+
 # ===== 10. Yaratish =====
 @router.callback_query(Creation.confirm, F.data == "confirm:yes")
 async def cb_confirm(call: CallbackQuery, state: FSMContext):
@@ -776,6 +799,9 @@ async def cb_confirm(call: CallbackQuery, state: FSMContext):
     generation_topic = topic
     await state.update_data(generation_topic=generation_topic)
     data["generation_topic"] = generation_topic
+    # Yangi o'zbek alifbosi tanlangan bo'lsa, fayl butunlay ö/ğ/ş/ç bilan yoziladi.
+    new_alphabet = (str(language_code).lower() == "uz"
+                    and data.get("alphabet") == "new")
     
     # ===== INSHO UCHUN MAXSUS: REJA =====
     # Inshoda reja majburiy va u hujjat boshida (mavzudan keyin) yoziladi.
@@ -808,6 +834,8 @@ async def cb_confirm(call: CallbackQuery, state: FSMContext):
         
         slides_content, real = await generate_slides_structured(
             generation_topic, subj_display, language_code, slide_body_count(slide_count))
+        if new_alphabet:
+            slides_content = slides_to_new_alphabet(slides_content)
         
         img_paths = []
         if config.SLIDE_IMAGES:
@@ -822,9 +850,11 @@ async def cb_confirm(call: CallbackQuery, state: FSMContext):
             
         # python-pptx sinxron va og'ir: alohida oqimda bajariladi, shunda
         # taqdimot yasalayotganda bot boshqa xabarlarga javob berishda davom etadi.
+        pptx_topic = (to_new_alphabet(generation_topic)
+                      if new_alphabet else generation_topic)
         buf = await asyncio.to_thread(
             generate_pptx,
-            topic=generation_topic,
+            topic=pptx_topic,
             subject=subj_display,
             lang=language_code,
             design_key=data.get("design_key", DESIGN_KEYS[0]),
@@ -859,6 +889,11 @@ async def cb_confirm(call: CallbackQuery, state: FSMContext):
         # Tanlangan fan hujjat mazmuniga ham ta'sir qiladi.
         options["subject"] = data.get("ref_subject") or data.get("subject_custom") or ""
         text_content, real = await generate(service, generation_topic, options, language_code)
+        doc_topic = generation_topic
+        if new_alphabet:
+            # Sarlavha ham, butun matn ham yangi alifboda.
+            text_content = to_new_alphabet(text_content)
+            doc_topic = to_new_alphabet(generation_topic)
         
         if service == "esse":
             words = int(options.get("words", 250) or 250)
@@ -875,7 +910,7 @@ async def cb_confirm(call: CallbackQuery, state: FSMContext):
         # python-docx sinxron: hujjat yasalayotganda bot qotib qolmasin.
         buf = await asyncio.to_thread(
             generate_docx,
-            topic=generation_topic,
+            topic=doc_topic,
             service_name=service_name(service, language_code),
             service_code=service,
             lang=language_code,
@@ -936,14 +971,22 @@ async def cb_essay_go(call: CallbackQuery, state: FSMContext):
     language_code = data.get("language", lang)
     plan = data.get("essay_outline", "")
     options["plan"] = plan
+    new_alphabet = (str(language_code).lower() == "uz"
+                    and data.get("alphabet") == "new")
     options["subject"] = data.get("ref_subject") or data.get("subject_custom") or ""
     text_content, real = await generate(service, generation_topic, options, language_code)
+    essay_topic = generation_topic
+    if new_alphabet:
+        text_content = to_new_alphabet(text_content)
+        plan = to_new_alphabet(plan)
+        options["plan"] = plan
+        essay_topic = to_new_alphabet(generation_topic)
     pages = document_pages(service, options)
     document_data = dict(data)
     document_data["insho_plan"] = plan
     # Titul maydonlari foydalanuvchi yozganidek qoladi.
     buf = await asyncio.to_thread(
-        generate_docx, generation_topic, service_name(service, language_code),
+        generate_docx, essay_topic, service_name(service, language_code),
         service, language_code, pages, text_content,
         author=author, extra_data=document_data)
     docx_bytes = buf.read()

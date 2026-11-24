@@ -166,6 +166,16 @@ def template_kb(lang="uz"):
     rows.append([InlineKeyboardButton(text=t("btn_cancel", lang), callback_data="cancel")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
+# ===== O'zbek alifbosi: eski yoki yangi =====
+def alphabet_kb(lang="uz"):
+    """Yangi alifbo tanlovi (faqat o'zbek tili uchun)."""
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text=t("btn_alpha_old", lang), callback_data="alpha:old")],
+        [InlineKeyboardButton(text=t("btn_alpha_new", lang), callback_data="alpha:new")],
+        [InlineKeyboardButton(text=t("btn_cancel", lang), callback_data="cancel")],
+    ])
+
+
 # ===== AI Chat: tarixni tozalash tugmasi =====
 CHAT_UI = {
     "uz": {"clear": "🧹 Suhbat tarixini tozalash", "cleared": "🧹 <b>Suhbat tarixi tozalandi.</b>\n\nYangi mavzuni yozing — avvalgi suhbatga bog'lanmayman.", "start": "💬 <b>AI Chat</b>\n\nSavolingizni yozing — men javob beraman va suhbatni davom ettiraman.\nYangi mavzu kerak bo'lsa «🧹 Suhbat tarixini tozalash» tugmasini bosing."},

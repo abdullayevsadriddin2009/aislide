@@ -8,6 +8,7 @@ class Creation(StatesGroup):
     design = State()
     slide_count = State()
     slide_design = State()
+    alphabet = State()   # ✅ O'zbekcha: eski yoki yangi alifbo
     option = State()
     format = State()
     author = State()   # ✅ Muallif ismi (bir nechta qator bo'lishi mumkin)
