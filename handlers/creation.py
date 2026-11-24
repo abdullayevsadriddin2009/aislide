@@ -368,7 +368,13 @@ async def cb_service(call: CallbackQuery, state: FSMContext):
 async def topic_received(message: Message, state: FSMContext):
     user_id = message.from_user.id
     lang = await _lang(user_id)
-    topic = message.text.strip()
+    topic = (message.text or "").strip()
+    if not topic:
+        # Rasm, stiker yoki fayl kelganda `message.text` bo'sh bo'ladi.
+        data = await state.get_data()
+        key = "enter_slide_topic" if data.get("service") == "slide" else "enter_topic_generic"
+        await message.answer(t(key, lang, service=service_name(data.get("service"), lang)))
+        return
     data = await state.get_data()
     service = data.get("service")
     await state.update_data(topic=topic)
@@ -727,9 +733,10 @@ async def _show_confirm(event, state):
         u = await db.get_user(user_id)
         if u and "pages" not in options and s.get("option_type") == "pages":
             allowed_pages = tuple(s.get("options") or (10, 15, 20))
+            # sqlite3.Row da .get() yo'q: mavjud ustun bo'lsa o'sha olinadi.
             try:
-                default_pages = int(u.get("default_pages", allowed_pages[0]))
-            except (TypeError, ValueError):
+                default_pages = int(u["default_pages"])
+            except (KeyError, IndexError, TypeError, ValueError):
                 default_pages = allowed_pages[0]
             options["pages"] = default_pages if default_pages in allowed_pages else allowed_pages[0]
         await state.update_data(options=options)
@@ -888,6 +895,17 @@ async def cb_confirm(call: CallbackQuery, state: FSMContext):
         language_code = data.get("language", lang)
         # Tanlangan fan hujjat mazmuniga ham ta'sir qiladi.
         options["subject"] = data.get("ref_subject") or data.get("subject_custom") or ""
+        if service == "esse":
+            # Tanlov SERVICES dagi qiymatlar (250/400/600); AI ham shu hajmda yozishi
+            # uchun qiymat generatsiyadan OLDIN tekshiriladi.
+            allowed = tuple(SERVICES.get(service, {}).get("options") or (250, 400, 600))
+            try:
+                words = int(options.get("words", allowed[0]) or allowed[0])
+            except (TypeError, ValueError):
+                words = allowed[0]
+            options["words"] = words if words in allowed else min(
+                allowed, key=lambda value: abs(value - words))
+            options["target_words"] = options["words"]
         text_content, real = await generate(service, generation_topic, options, language_code)
         doc_topic = generation_topic
         if new_alphabet:
@@ -895,11 +913,6 @@ async def cb_confirm(call: CallbackQuery, state: FSMContext):
             text_content = to_new_alphabet(text_content)
             doc_topic = to_new_alphabet(generation_topic)
         
-        if service == "esse":
-            words = int(options.get("words", 250) or 250)
-            words = words if words in (150, 250, 350) else min((150, 250, 350), key=lambda n: abs(n - words))
-            options["words"] = words
-            options["target_words"] = words
         # Hajm ikkala interfeysda bir xil hisoblanadi.
         pages = document_pages(service, options)
             

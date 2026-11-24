@@ -75,7 +75,7 @@ async def cmd_testapi(message: Message):
         await message.answer(text)
 
 # ===== Statistika =====
-@router.message(F.text.contains("📊") | F.text.contains("Statistika") | F.text.contains("Статистика") | F.text.contains("Statistics"))
+@router.message(F.from_user.id == config.ADMIN_ID, F.text.contains("📊") | F.text.contains("Statistika") | F.text.contains("Статистика") | F.text.contains("Statistics"))
 async def adm_stats(message: Message):
     if not is_admin(message.from_user.id): return
     lang = await _admin_lang()
@@ -91,7 +91,7 @@ async def adm_stats(message: Message):
           checks=checks, ref_bonus=ref_bonus, price_lines=plines))
 
 # ===== Broadcast =====
-@router.message(F.text.contains("Broadcast") | F.text.contains("Рассылка") | F.text.contains("Xabar yuborish"))
+@router.message(F.from_user.id == config.ADMIN_ID, F.text.contains("Broadcast") | F.text.contains("Рассылка") | F.text.contains("Xabar yuborish"))
 async def adm_broadcast(message: Message, state: FSMContext):
     if not is_admin(message.from_user.id): return
     lang = await _admin_lang()
@@ -104,9 +104,13 @@ async def adm_broadcast_send(message: Message, state: FSMContext):
     lang = await _admin_lang()
     users = await db.all_users()
     count = 0
+    broadcast_text = message.html_text or message.text or ""
+    if not broadcast_text.strip():
+        await message.answer(t("adm_broadcast_text", lang))
+        return
     for u in users:
         try:
-            await message.bot.send_message(u["telegram_id"], message.text)
+            await message.bot.send_message(u["telegram_id"], broadcast_text)
             count += 1
         except Exception:
             pass
@@ -114,7 +118,7 @@ async def adm_broadcast_send(message: Message, state: FSMContext):
     await message.answer(t("adm_broadcast_done", lang, count=count))
 
 # ===== Cheklar =====
-@router.message(F.text.contains("✅") | F.text.contains("Chek") | F.text.contains("Чек"))
+@router.message(F.from_user.id == config.ADMIN_ID, F.text.contains("✅") | F.text.contains("Chek") | F.text.contains("Чек"))
 async def adm_checks(message: Message):
     if not is_admin(message.from_user.id): return
     lang = await _admin_lang()
@@ -151,16 +155,24 @@ async def adm_check_review(call: CallbackQuery):
             pass
         # Tahrirlashda ham tilga moslashtiriladi
         approved_txt = t("btn_approve", lang).replace("✅ ", "")
-        await call.message.edit_caption(caption=(call.message.caption or "") + f"\n\n✅ {approved_txt}")
+        try:
+            await call.message.edit_caption(
+                caption=(call.message.caption or "") + f"\n\n✅ {approved_txt}")
+        except Exception:
+            pass
         await call.answer(t("adm_approved", lang, amount=check["amount"]))
     else:
         await db.review_check(cid, "rejected", call.from_user.id)
         rejected_txt = t("btn_reject", lang).replace("❌ ", "")
-        await call.message.edit_caption(caption=(call.message.caption or "") + f"\n\n❌ {rejected_txt}")
+        try:
+            await call.message.edit_caption(
+                caption=(call.message.caption or "") + f"\n\n❌ {rejected_txt}")
+        except Exception:
+            pass
         await call.answer(t("adm_rejected", lang))
 
 # ===== Foydalanuvchi + balans =====
-@router.message(F.text.contains("👤") | F.text.contains("Foydalanuvchi") | F.text.contains("Пользователь") | F.text.contains("User"))
+@router.message(F.from_user.id == config.ADMIN_ID, F.text.contains("👤") | F.text.contains("Foydalanuvchi") | F.text.contains("Пользователь") | F.text.contains("User"))
 async def adm_users(message: Message, state: FSMContext):
     if not is_admin(message.from_user.id): return
     lang = await _admin_lang()
@@ -207,7 +219,7 @@ async def adm_balance_adjust(message: Message, state: FSMContext):
     await message.answer(t("adm_balance_updated", lang, balance=u['balance']))
 
 # ===== Narxlar =====
-@router.message(F.text.contains("💲") | F.text.contains("Narx") | F.text.contains("Цен") | F.text.contains("Price"))
+@router.message(F.from_user.id == config.ADMIN_ID, F.text.contains("💲") | F.text.contains("Narx") | F.text.contains("Цен") | F.text.contains("Price"))
 async def adm_prices(message: Message, state: FSMContext):
     if not is_admin(message.from_user.id): return
     lang = await _admin_lang()
@@ -266,7 +278,7 @@ async def adm_ref_save(message: Message, state: FSMContext):
     await message.answer(t("adm_ref_bonus_saved", lang, amount=amt))
 
 # ===== To'lov rekvizitlari =====
-@router.message(F.text.contains("💳") | F.text.contains("To'lov") | F.text.contains("Платеж") | F.text.contains("Payment"))
+@router.message(F.from_user.id == config.ADMIN_ID, F.text.contains("💳") | F.text.contains("To'lov") | F.text.contains("Платеж") | F.text.contains("Payment"))
 async def adm_payment(message: Message, state: FSMContext):
     if not is_admin(message.from_user.id): return
     lang = await _admin_lang()
@@ -278,9 +290,10 @@ async def adm_payment_type(message: Message, state: FSMContext):
     if not is_admin(message.from_user.id): return
     lang = await _admin_lang()
     # 6 tildagi "Orqaga" tugmasini tekshirish
-    if message.text in btn_all("btn_back") or "⬅️" in message.text:
+    text = message.text or ""
+    if text in btn_all("btn_back") or "⬅️" in text:
         await state.clear(); await _menu(message); return
-    p_type = message.text
+    p_type = (message.text or "Card").strip()
     await state.update_data(payment_type=p_type)
     await state.set_state(Admin.payment_number)
     await message.answer(t("adm_enter_payment_number", lang, ptype=p_type),
@@ -292,7 +305,10 @@ async def adm_payment_save(message: Message, state: FSMContext):
     lang = await _admin_lang()
     data = await state.get_data()
     p_type = data.get("payment_type", "Card")
-    p_number = message.text.strip()
+    p_number = (message.text or "").strip()
+    if not p_number:
+        await message.answer(t("adm_enter_payment_number", lang, ptype=p_type))
+        return
     await db.set_setting("payment_type", p_type)
     await db.set_setting("payment_number", p_number)
     await db.set_setting("payment_info", f"{p_type}\n{p_number}")
@@ -301,7 +317,7 @@ async def adm_payment_save(message: Message, state: FSMContext):
                          reply_markup=admin_kb(lang))
 
 # ===== Majburiy kanal obunasi =====
-@router.message(F.text.contains("Majburiy") | F.text.contains("Обязательная") | F.text.contains("Subscription"))
+@router.message(F.from_user.id == config.ADMIN_ID, F.text.contains("Majburiy") | F.text.contains("Обязательная") | F.text.contains("Subscription"))
 async def adm_channel(message: Message, state: FSMContext):
     if not is_admin(message.from_user.id): return
     lang = await _admin_lang()
@@ -333,7 +349,10 @@ async def adm_channel_cb(call: CallbackQuery, state: FSMContext):
 async def adm_channel_save(message: Message, state: FSMContext):
     if not is_admin(message.from_user.id): return
     lang = await _admin_lang()
-    ch = message.text.strip()
+    ch = (message.text or "").strip()
+    if not ch:
+        await message.answer(t("adm_enter_channel", lang))
+        return
     if not ch.startswith("@"):
         ch = "@" + ch
     await db.set_setting("channel_username", ch)
@@ -341,7 +360,7 @@ async def adm_channel_save(message: Message, state: FSMContext):
     await message.answer(t("adm_channel_saved", lang, channel=ch), reply_markup=admin_kb(lang))
 
 # ===== Orqaga =====
-@router.message(F.text.in_(btn_all("btn_back")) | F.text.contains("⬅️"))
+@router.message(F.from_user.id == config.ADMIN_ID, F.text.in_(btn_all("btn_back")) | F.text.contains("⬅️"))
 async def adm_back(message: Message, state: FSMContext):
     if not is_admin(message.from_user.id): return
     await state.clear()

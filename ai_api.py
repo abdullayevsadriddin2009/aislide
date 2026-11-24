@@ -104,7 +104,7 @@ API_LIST = [
     {
         "name": "Google AI 3",
         "base_url": "https://generativelanguage.googleapis.com/v1beta",
-        "api_key": os.getenv("GOOGLE_KEY_2", ""),
+        "api_key": os.getenv("GOOGLE_KEY_3", ""),
         "type": "google",
         "models": [
             "gemini-2.5-flash", "gemini-flash-lite-latest", "gemini-2.0-flash",

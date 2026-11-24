@@ -30,9 +30,12 @@ async def cmd_mini_app(message: Message):
         "📱 <b>Mini App</b>\n\nHujjat va taqdimotlarni bot ichidagi qulay ilovada yaratishingiz mumkin.",
         reply_markup=kb)
 
+LANGS = ("uz", "ru", "en", "tr", "de", "fr")
+
+
 async def _lang(user_id):
     u = await db.get_user(user_id)
-    return u["lang"] if u else "uz"
+    return u["lang"] if u and u["lang"] in LANGS else "uz"
 
 async def _award_referral_bonus(bot, user_id):
     """Referal bonus beradi — yangi foydalanuvchi til tanlaganda va /start da chaqiriladi."""

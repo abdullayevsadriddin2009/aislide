@@ -226,7 +226,7 @@ async def stream_reply(system, prompt, history=None, on_text=None,
             last = f"{label}: {error or 'javob kelmadi'}"
             print(f"[ai_chat] ❌ {last}", flush=True)
             if status == 404:
-                break  # model topilmadi → keyingi model
+                continue  # model topilmadi → keyingi model/kalit sinaladi
             if status in _CREDENTIAL_CODES:
                 ai_pool.mark_result(key_id, False)
             await asyncio.sleep(0)

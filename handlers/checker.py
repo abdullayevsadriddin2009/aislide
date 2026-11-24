@@ -1,4 +1,8 @@
-"""Esse tekshirish bo'limi — fayl, rasm yoki matnni mezon bo'yicha tahlil qiladi."""
+"""Esse tekshirish bo'limi — Milliy sertifikat mezoni bo'yicha tahlil.
+
+Oqim: mavzu/topshiriq → ish (DOCX/TXT fayl, qo'lyozma rasmi yoki matn) → 12 band
+bo'yicha 24 ballik hisobot va taqriz.
+"""
 import asyncio
 
 from aiogram import F, Router
@@ -32,16 +36,36 @@ def _retry_kb(lang):
     ])
 
 
+def _topic_kb(lang):
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text=t("check_topic_skip", lang), callback_data="check:no_topic")],
+    ])
+
+
 @router.callback_query(F.data == "check:start")
 async def cb_check_start(call: CallbackQuery, state: FSMContext):
-    """«Yaratishni boshlash» ichidagi tekshirish bo'limi."""
+    """«Yaratishni boshlash» ichidagi tekshirish bo'limi — 1-qadam: mavzu."""
     lang = await _lang(call.from_user.id)
     await state.clear()
-    await state.set_state(Check.essay)
+    await state.set_state(Check.topic)
+    await state.update_data(check_topic="")
     try:
-        await call.message.edit_text(t("check_prompt", lang))
+        await call.message.edit_text(t("check_prompt", lang), reply_markup=_topic_kb(lang))
     except Exception:
-        await call.message.answer(t("check_prompt", lang))
+        await call.message.answer(t("check_prompt", lang), reply_markup=_topic_kb(lang))
+    await call.answer()
+
+
+@router.callback_query(F.data == "check:no_topic")
+async def cb_check_no_topic(call: CallbackQuery, state: FSMContext):
+    """Mavzusiz tekshirish: 2-qadamga o'tadi."""
+    lang = await _lang(call.from_user.id)
+    await state.set_state(Check.essay)
+    await state.update_data(check_topic="")
+    try:
+        await call.message.edit_text(t("check_essay_prompt", lang))
+    except Exception:
+        await call.message.answer(t("check_essay_prompt", lang))
     await call.answer()
 
 
@@ -57,39 +81,62 @@ async def _download(message: Message):
             pass
 
 
+async def _read_work(message: Message, lang):
+    """Xabardan matn ajratadi. (matn, xatolik_kaliti) qaytaradi."""
+    if message.document:
+        name = (message.document.file_name or "").lower()
+        if name.endswith(_PDF):
+            return "", "check_pdf"
+        if not name.endswith(_DOCX + _TXT + _IMAGES):
+            return "", "check_unsupported"
+        data = await _download(message)
+        if name.endswith(_DOCX):
+            return await asyncio.to_thread(essay_checker.extract_docx_text, data), ""
+        if name.endswith(_IMAGES):
+            return await essay_checker.ocr_image(data, lang), "check_image_unreadable"
+        return essay_checker.decode_text(data), ""
+    if message.photo:
+        data = await _download(message)
+        return await essay_checker.ocr_image(data, lang), "check_image_unreadable"
+    if (message.text or "").strip():
+        return message.text.strip(), ""
+    return "", "check_prompt"
+
+
+@router.message(Check.topic)
+async def topic_received(message: Message, state: FSMContext):
+    """Mavzuni qabul qiladi; fayl/rasm kelsa — mavzusiz tekshirishga o'tadi."""
+    lang = await _lang(message.from_user.id)
+    if message.document or message.photo:
+        await state.update_data(check_topic="")
+        await state.set_state(Check.essay)
+        await _run_check(message, state, lang)
+        return
+    topic = (message.text or "").strip()
+    if len(topic) < 3:
+        await message.answer(t("check_prompt", lang), reply_markup=_topic_kb(lang))
+        return
+    await state.update_data(check_topic=topic[:300])
+    await state.set_state(Check.essay)
+    await message.answer(t("check_essay_prompt", lang))
+
+
 @router.message(Check.essay)
 async def check_received(message: Message, state: FSMContext):
     lang = await _lang(message.from_user.id)
-    text = ""
+    await _run_check(message, state, lang)
+
+
+async def _run_check(message: Message, state: FSMContext, lang):
     try:
-        if message.document:
-            name = (message.document.file_name or "").lower()
-            if name.endswith(_PDF):
-                await message.answer(t("check_pdf", lang))
-                return
-            if not name.endswith(_DOCX + _TXT + _IMAGES):
-                await message.answer(t("check_unsupported", lang))
-                return
-            data = await _download(message)
-            if name.endswith(_DOCX):
-                text = await asyncio.to_thread(essay_checker.extract_docx_text, data)
-            elif name.endswith(_IMAGES):
-                text = await essay_checker.ocr_image(data, lang)
-            else:
-                text = essay_checker.decode_text(data)
-        elif message.photo:
-            data = await _download(message)
-            text = await essay_checker.ocr_image(data, lang)
-        elif (message.text or "").strip():
-            text = message.text.strip()
-        else:
-            await message.answer(t("check_prompt", lang))
-            return
+        text, error_key = await _read_work(message, lang)
     except Exception as exc:
         print(f"[check] faylni o'qish xatosi: {type(exc).__name__}: {exc}", flush=True)
         await message.answer(t("check_error", lang))
         return
-
+    if error_key and not text.strip():
+        await message.answer(t(error_key, lang))
+        return
     if not text.strip():
         await message.answer(t("check_image_unreadable", lang))
         return
@@ -97,8 +144,10 @@ async def check_received(message: Message, state: FSMContext):
         await message.answer(t("check_empty", lang))
         return
 
+    data = await state.get_data()
+    topic = str(data.get("check_topic") or "")
     thinking = await message.answer(t("check_waiting", lang))
-    report = await essay_checker.analyze_essay(text, lang)
+    report = await essay_checker.analyze_essay(text, lang, topic)
     if not report:
         try:
             await thinking.edit_text(t("check_error", lang))

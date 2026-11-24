@@ -190,8 +190,13 @@ async def fb_load_orders(limit=5000):
 
     def op():
         rows = []
-        query = db.collection(_ORDERS).order_by("created_at").limit(limit)
-        for snap in query.stream():
+        try:
+            query = db.collection(_ORDERS).order_by("created_at").limit(limit)
+            stream = query.stream()
+        except Exception:
+            # Maydoni yo'q hujjat bo'lsa order_by yiqiladi: tartibsiz o'qiymiz.
+            stream = db.collection(_ORDERS).limit(limit).stream()
+        for snap in stream:
             data = snap.to_dict() or {}
             data["fb_id"] = snap.id
             rows.append(data)

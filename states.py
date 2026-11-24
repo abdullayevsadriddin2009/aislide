@@ -24,6 +24,7 @@ class Creation(StatesGroup):
     ref_checker = State()      # Tekshiruvchi (O'qituvchi)
 
 class Check(StatesGroup):
+    topic = State()   # ✅ Esse mavzusi / topshiriq matni
     essay = State()   # ✅ Yozma ishni tekshirish uchun fayl/rasm/matn kutish
 
 
