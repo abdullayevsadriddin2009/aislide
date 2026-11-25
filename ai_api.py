@@ -3302,7 +3302,11 @@ async def _try_post(api, model, payload):
                                 return 200, _google_text(body), None
                             except Exception as e:
                                 return resp.status, None, str(e)
-                        if attempt == 0 and resp.status == 400 and "thinking" in body.lower():
+                        # Gemini flash-lite ba'zi versiyalari thinkingConfig'ni
+                        # qabul qilmaydi (400 INVALID_ARGUMENT). Shu holatda
+                        # sozlamasiz qayta so'raymiz, modelni tashlab ketmaymiz.
+                        if attempt == 0 and resp.status == 400 and \
+                                "thinkingConfig" in data["generationConfig"]:
                             continue
                         return _failure(api, resp.status, body)
             return _failure(api, 400, "thinkingConfig qabul qilinmadi")
@@ -3453,7 +3457,11 @@ async def _discover_models(api):
         return []
     ids = []
     try:
-        headers = {"Authorization": f"Bearer {key}"}
+        # Google kaliti `?key=` bilan beriladi. Unga qo'shimcha `Bearer` sarlavhasi
+        # qo'shilsa Google 401 qaytaradi va butun model ro'yxati olinmay qoladi —
+        # shu sabab hardcoded ro'yxatdan tashqari modellar hech qachon sinalmagan.
+        headers = ({} if api.get("type") == "google"
+                   else {"Authorization": f"Bearer {key}"})
         url = f"{base}/models?key={key}" if api.get("type") == "google" else f"{base}/models"
         async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=12),
                                          headers=headers) as session:
@@ -3488,6 +3496,12 @@ async def _discover_models(api):
     free = [model for model in ids if model.endswith(":free")]
     if free:
         ids = free + [model for model in ids if not model.endswith(":free")]
+    if api.get("type") == "google":
+        # Google katalogi aralash tartibda keladi: tez flash modellari oldinda
+        # bo'lsin, preview/pro modellari esa zaxira bo'lib qolsin.
+        ids.sort(key=lambda name: ("flash" not in name.lower(),
+                                   "preview" in name.lower(),
+                                   "pro" in name.lower(), len(name)))
     ids = ids[:8]
     _MODEL_CACHE[cache_key] = (time.time(), ids)
     _MODEL_FAIL_CACHE.pop(cache_key, None)
@@ -4073,7 +4087,7 @@ async def chat_answer(question, user_lang="uz", history=None, on_text=None):
     # FAQAT barcha AI provayderlari ishlamagan holatda failure message.
     return _chat_failure_message(lang)
 
-async def test_api(timeout=12, concurrency=6):
+async def test_api(timeout=20, concurrency=6):
     """Probe every configured provider/model quickly and report each result.
 
     The old version called the models one after another with the full
