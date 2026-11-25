@@ -99,6 +99,16 @@ class EssayCheckerTest(unittest.TestCase):
         self.assertEqual(config["thinkingConfig"], {"thinkingBudget": 0})
         self.assertNotIn("thinkingConfig", ec._vision_config("gemini-2.0-flash", 4096))
 
+    def test_google_answer_joins_text_parts_without_thoughts(self):
+        body = json.dumps({"candidates": [{"content": {"parts": [
+            {"text": "o'ylash", "thought": True}, {"text": "{\"a\": "},
+            {"text": "1}"}]}, "finishReason": "STOP"}]})
+        self.assertEqual(ai_api._google_text(body), '{"a": 1}')
+        self.assertTrue(ai_api._google_thinks("gemini-2.5-flash"))
+        self.assertTrue(ai_api._google_thinks("gemini-flash-lite-latest"))
+        self.assertFalse(ai_api._google_thinks("gemini-2.0-flash"))
+        self.assertFalse(ai_api._google_thinks("gemma-3-27b-it"))
+
     def test_vision_text_reports_truncation(self):
         body = json.dumps({"candidates": [{"content": {"parts": [{"text": "matn"}]},
                                            "finishReason": "MAX_TOKENS"}]})
@@ -106,6 +116,35 @@ class EssayCheckerTest(unittest.TestCase):
         done = json.dumps({"candidates": [{"content": {"parts": [{"text": "matn"}]},
                                            "finishReason": "STOP"}]})
         self.assertEqual(ec._vision_text(done), ("matn", False))
+
+    def test_truncated_ai_json_still_gives_a_report(self):
+        # Gemini o'ylash byudjetini sarflab javobni yarmida to'xtatishi mumkin.
+        cut = '{"scores": {"uslub": 2, "qarashlar": 1, "dalillar":'
+        data = ec._parse_json_object(cut)
+        self.assertIsNotNone(data)
+        self.assertEqual(data["scores"]["uslub"], 2)
+        report = ec.normalize_report(data, LONG_TEXT, "uz")
+        self.assertGreater(report["total"], 0)
+
+    def test_report_is_requested_again_when_answer_is_not_json(self):
+        answers = ["⚠️ AI serverga ulanib bo'lmadi.",
+                   json.dumps({"scores": {key: 2 for key in ec.CRITERIA_KEYS},
+                               "sections": {"kirish": True, "asosiy": True, "xulosa": True}})]
+        calls = []
+
+        async def fake_complete(prompt, **kwargs):
+            calls.append(kwargs.get("max_tokens"))
+            return answers[min(len(calls), len(answers)) - 1]
+
+        original = ai_api._chat_complete
+        ai_api._chat_complete = fake_complete
+        try:
+            report = asyncio.run(ec.analyze_essay(LONG_TEXT, "uz", ""))
+        finally:
+            ai_api._chat_complete = original
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(calls[1], 4000)
+        self.assertEqual(report["total"], 24)
 
     def test_off_topic_essay_gets_two_points(self):
         report = self._report({"topic_match": False}, topic="Ta'limdagi islohotlar")

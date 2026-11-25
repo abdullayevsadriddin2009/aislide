@@ -3237,6 +3237,28 @@ def _failure(api, status, body):
     return status, None, detail
 
 
+def _google_thinks(model):
+    """Gemini 2.5/3 «o'ylash» byudjetini javob tokenlaridan oladi.
+
+    Yoqilgan bo'lsa uzun JSON javob (masalan, esse bahosi) yarmida uzilib
+    qoladi va hisobot o'rniga xatolik chiqadi. Shu modellarda o'ylashni
+    o'chiramiz; eski modellar bu sozlamani bilmaydi (400 qaytaradi).
+    """
+    name = str(model or "").lower()
+    if "gemma" in name or "2.0" in name:
+        return False
+    return "2.5" in name or name.startswith("gemini-3") or "flash-lite-latest" in name
+
+
+def _google_text(body):
+    """Javobning barcha matn qismlarini birlashtiradi («o'ylash» qismlarisiz)."""
+    payload = json.loads(body)
+    candidate = (payload.get("candidates") or [{}])[0]
+    parts = ((candidate.get("content") or {}).get("parts") or [])
+    return "".join(str(part.get("text") or "") for part in parts
+                   if not part.get("thought")).strip()
+
+
 async def _try_post(api, model, payload):
     global LAST_ERROR
     if not api["api_key"]:
@@ -3265,14 +3287,25 @@ async def _try_post(api, model, payload):
                 except (TypeError, ValueError):
                     pass
             data["generationConfig"] = generation
-            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=AI_TIMEOUT)) as session:
-                async with session.post(url, json=data, timeout=AI_TIMEOUT) as resp:
-                    body = await resp.text()
-                    if resp.status == 200:
-                        LAST_ERROR = None
-                        try: return 200, json.loads(body)["candidates"][0]["content"]["parts"][0]["text"], None
-                        except Exception as e: return resp.status, None, str(e)
-                    return _failure(api, resp.status, body)
+            for attempt in range(2):
+                if attempt:
+                    # Eski model thinkingConfig'ni bilmaydi — usiz qayta so'raymiz.
+                    data["generationConfig"].pop("thinkingConfig", None)
+                elif _google_thinks(model):
+                    data["generationConfig"]["thinkingConfig"] = {"thinkingBudget": 0}
+                async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=AI_TIMEOUT)) as session:
+                    async with session.post(url, json=data, timeout=AI_TIMEOUT) as resp:
+                        body = await resp.text()
+                        if resp.status == 200:
+                            LAST_ERROR = None
+                            try:
+                                return 200, _google_text(body), None
+                            except Exception as e:
+                                return resp.status, None, str(e)
+                        if attempt == 0 and resp.status == 400 and "thinking" in body.lower():
+                            continue
+                        return _failure(api, resp.status, body)
+            return _failure(api, 400, "thinkingConfig qabul qilinmadi")
         else:
             headers = {"Content-Type": "application/json", "Authorization": f"Bearer {api['api_key']}"}
             url = f"{api['base_url']}/chat/completions"

@@ -18,6 +18,7 @@ TEXTS = {
         "check_empty": "❌ Matn juda qisqa. To'liqroq ish yuboring.",
         "check_image_unreadable": "❌ Rasmdan matn o'qib bo'lmadi. Aniqroq surat yoki DOCX yuboring.",
         "check_error": "⚠️ Tekshirishda xatolik yuz berdi. Qayta urinib ko'ring.",
+        "check_ai": "⚠️ AI xizmati hozir javob bera olmadi. Bir daqiqadan so'ng ishni qayta yuboring.",
         "check_again": "🔁 Boshqa ishni tekshirish",
         # --- Asosiy ---
         "welcome": "Assalomu alaykum! 👋\nMen AI yordamchisiman — slayd, referat, kurs ishi, maqola va boshqa o'quv materiallarini bir necha daqiqada yarataman.\n\n<b>Xizmatlar:</b>\n📊 Taqdimot · 📄 Referat · 📝 Mustaqil ish\n📘 Kurs ishi · 🎓 Diplom · ✍️ Insho · 🖊️ Esse\n✅ Test · 📰 Maqola · 🎓 Tezis\n\nPastdagi tugmalardan foydalaning 👇",
@@ -183,6 +184,7 @@ TEXTS = {
         "check_empty": "❌ Текст слишком короткий. Отправьте работу полностью.",
         "check_image_unreadable": "❌ Не удалось распознать текст на фото. Пришлите более чёткое фото или DOCX.",
         "check_error": "⚠️ Ошибка при проверке. Попробуйте ещё раз.",
+        "check_ai": "⚠️ ИИ-сервис сейчас не ответил. Отправьте работу ещё раз через минуту.",
         "check_again": "🔁 Проверить другую работу",
         "welcome": "Здравствуйте! 👋 Я ИИ-помощник — создам презентации, рефераты, курсовые и другие учебные материалы за несколько минут.\n\n<b>Услуги:</b>\n📊 Презентация · 📄 Реферат · 📝 Самостоятельная работа\n📘 Курсовая · 🎓 Диплом · ✍️ Сочинение · 🖊️ Эссе\n✅ Тест · 📰 Статья · 🎓 Тезисы\n\nИспользуйте кнопки ниже 👇",
         "help_text": "📖 <b>Помощь</b>\n\n🚀 Создать — учебные материалы\n💬 AI Чат — ответы на вопросы\n💰 Баланс — счёт и пополнение\n🎁 Реферал — приглашайте друзей, получайте бонус\n\nПоддержка: {support}\nАдмин: {admin}",
@@ -335,6 +337,7 @@ TEXTS = {
         "check_empty": "❌ The text is too short. Send the whole work.",
         "check_image_unreadable": "❌ Could not read text from the image. Send a sharper photo or a DOCX.",
         "check_error": "⚠️ The check failed. Please try again.",
+        "check_ai": "⚠️ The AI service did not respond. Send the work again in a minute.",
         "check_again": "🔁 Check another work",
         "welcome": "Hello! 👋 I'm your AI assistant — I create presentations, essays, course papers and other study materials in minutes.\n\n<b>Services:</b>\n📊 Presentation · 📄 Essay/Report · 📝 Assignment\n📘 Coursework · 🎓 Thesis · ✍️ Composition · 🖊️ Essay\n✅ Quiz · 📰 Article · 🎓 Abstract\n\nUse the buttons below 👇",
         "help_text": "📖 <b>Help</b>\n\n🚀 Create — study materials\n💬 AI Chat — ask questions\n💰 Balance — account & top-up\n🎁 Referral — invite friends, earn bonus\n\nSupport: {support}\nAdmin: {admin}",

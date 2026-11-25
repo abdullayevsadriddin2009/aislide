@@ -158,7 +158,7 @@ async def _run_check(message: Message, state: FSMContext, lang):
         text, error_key = await _read_work(message, lang)
     except Exception as exc:
         print(f"[check] faylni o'qish xatosi: {type(exc).__name__}: {exc}", flush=True)
-        await message.answer(t("check_error", lang))
+        await message.answer(t("check_error", lang), reply_markup=_retry_kb(lang))
         return
     if error_key and not text.strip():
         await message.answer(t(error_key, lang))
@@ -174,12 +174,22 @@ async def _run_check(message: Message, state: FSMContext, lang):
     topic = str(data.get("check_topic") or "")
     thinking = await message.answer(t("check_waiting", lang))
     print(f"[check] matn: {essay_checker.word_count(text)} so'z (rasm={from_image})", flush=True)
-    report = await essay_checker.analyze_essay(text, lang, topic, from_image=from_image)
+    try:
+        report = await essay_checker.analyze_essay(text, lang, topic, from_image=from_image)
+    except Exception as exc:
+        # Kutilmagan xato ham foydalanuvchini javobsiz qoldirmasligi kerak.
+        import traceback
+        print(f"[check] tahlil kutilmagan xatosi: {type(exc).__name__}: {exc}", flush=True)
+        traceback.print_exc()
+        report = None
     if not report:
+        import ai_api
+        reason = getattr(ai_api, "LAST_ERROR", "") or ""
+        print(f"[check] hisobot olinmadi: {reason}", flush=True)
         try:
-            await thinking.edit_text(t("check_error", lang))
+            await thinking.edit_text(t("check_ai", lang), reply_markup=_retry_kb(lang))
         except Exception:
-            await message.answer(t("check_error", lang))
+            await message.answer(t("check_ai", lang), reply_markup=_retry_kb(lang))
         return
 
     body = essay_checker.format_report(report, lang)

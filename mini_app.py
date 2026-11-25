@@ -537,7 +537,7 @@ def api_check():
         report = None
     if not report:
         return jsonify({"ok": False, "error": "check",
-                        "message": text_of("check_error", lang)}), 502
+                        "message": text_of("check_ai", lang)}), 502
     return jsonify({"ok": True, "report": essay_checker.report_payload(report, lang)})
 
 

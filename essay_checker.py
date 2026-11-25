@@ -419,6 +419,62 @@ async def ocr_image(image_data, lang="uz"):
 
 
 # ===== AI tahlili =====
+def _json_closers(text):
+    """Ochiq qolgan qavslar/satr uchun yopuvchi belgilar."""
+    stack, in_string, escaped = [], False, False
+    for char in str(text or ""):
+        if in_string:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                in_string = False
+            continue
+        if char == '"':
+            in_string = True
+        elif char == "{":
+            stack.append("}")
+        elif char == "[":
+            stack.append("]")
+        elif char in "}]" and stack:
+            stack.pop()
+    if in_string:
+        stack.insert(0, '"')
+    return "".join(stack)
+
+
+def _repair_json(text):
+    """Tokeni tugab uzilgan JSON javobini yopib ko'radi.
+
+    Model javobni yarmida to'xtatsa, avvalgi kod butun hisobotni yo'qotardi va
+    foydalanuvchi «xatolik» ko'rardi. Endi oxirgi to'liq bo'lmagan bo'lak
+    kesiladi va qolgan qism yopiladi.
+    """
+    raw = str(text or "")
+    start = raw.find("{")
+    if start == -1:
+        return None
+    raw = raw[start:]
+    for _ in range(8):
+        if not raw.strip():
+            return None
+        head = raw.rstrip().rstrip(",")
+        closers = _json_closers(head)
+        if closers:
+            try:
+                data = json.loads(head + closers)
+                if isinstance(data, dict) and "scores" in data:
+                    return data
+            except Exception:
+                pass
+        cut = max(head.rfind(","), head.rfind(":"))
+        if cut <= 0:
+            return None
+        raw = head[:cut]
+    return None
+
+
 def _parse_json_object(text):
     raw = str(text or "").strip()
     if not raw:
@@ -427,13 +483,14 @@ def _parse_json_object(text):
     if fenced:
         raw = fenced.group(1)
     start, end = raw.find("{"), raw.rfind("}")
-    if start == -1 or end <= start:
-        return None
-    try:
-        data = json.loads(raw[start:end + 1])
-    except Exception:
-        return None
-    return data if isinstance(data, dict) else None
+    if start != -1 and end > start:
+        try:
+            data = json.loads(raw[start:end + 1])
+            if isinstance(data, dict) and data:
+                return data
+        except Exception:
+            pass
+    return _repair_json(raw)
 
 
 def _clean_list(values, limit=5, size=180):
@@ -676,25 +733,40 @@ def build_prompt(text, topic="", lang="uz", retry=False):
 
 
 async def _request_report(body, topic, lang, retry=False):
-    """AI'dan JSON hisobot so'raydi; xato bo'lsa None."""
+    """AI'dan JSON hisobot so'raydi; xato bo'lsa None.
+
+    Javob uzilib qolishi yoki provayder almashishi mumkin, shuning uchun bitta
+    muvaffaqiyatsiz urinishdan keyin hisobot yana bir marta so'raladi.
+    """
     import ai_api
     system = (
         "Siz ona tili va adabiyot fanidan yozma ishni baholovchi ekspertsiz. "
         "Faqat JSON obyekt qaytarasiz, ballarni 0, 1 yoki 2 dan boshqa qiymatda "
         "bermaysiz."
     )
-    try:
-        raw = await ai_api._chat_complete(
-            build_prompt(body, topic, lang, retry), system=system, max_tokens=3000,
-            temperature=0.35 if retry else 0.2,
-            frequency_penalty=0.2, presence_penalty=0.0)
-    except Exception as exc:
-        print(f"[check] tahlil xatosi: {type(exc).__name__}: {exc}", flush=True)
-        return None
-    data = _parse_json_object(raw)
-    if not data:
-        print(f"[check] JSON o'qilmadi: {str(raw)[:200]}", flush=True)
-    return data
+    prompt = build_prompt(body, topic, lang, retry)
+    raw = ""
+    for attempt in range(2):
+        try:
+            raw = await ai_api._chat_complete(
+                prompt, system=system, max_tokens=4000 if attempt else 3000,
+                temperature=0.35 if retry else 0.2,
+                frequency_penalty=0.2, presence_penalty=0.0)
+        except Exception as exc:
+            print(f"[check] tahlil xatosi: {type(exc).__name__}: {exc}", flush=True)
+            continue
+        data = _parse_json_object(raw)
+        if data:
+            return data
+        print(f"[check] JSON o'qilmadi (urinish {attempt + 1}, {len(str(raw))} belgi): "
+              f"{str(raw)[:200]}", flush=True)
+        if attempt == 0:
+            # Provayder xatosini keyingi urinishda o'tkazib yubormaslik uchun
+            # qaysi sabab qaytgani logda ko'rinsin.
+            last = getattr(ai_api, "LAST_ERROR", None)
+            if last:
+                print(f"[check] AI sababi: {last}", flush=True)
+    return None
 
 
 def _unscored(report):
