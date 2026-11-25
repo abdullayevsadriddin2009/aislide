@@ -864,7 +864,11 @@ async def analyze_essay(text, lang="uz", topic="", from_image=False):
     body = body[:MAX_CHARS]
     data = await _request_report(body, topic, lang)
     if not data:
-        return None
+        # AI provayderlar butunlay javob bermasa ham foydalanuvchi «xatolik»
+        # o'rniga hisobot olishi kerak: matn tahliliga asoslangan ehtiyot
+        # baholari qo'llanadi va hisobotda bu ochiq ogohlantiriladi.
+        print("[check] AI hisobot bermadi — matn tahliliga asoslangan baho", flush=True)
+        data = {"scores": baseline_scores(body), "estimated": True}
     report = normalize_report(data, body, lang, topic, from_image=from_image)
     if _unscored(report):
         # 100+ so'zli lotin matniga barcha bandlar 0 — model sxemadagi nollarni
