@@ -245,7 +245,7 @@ class EssayCheckerTest(unittest.TestCase):
         self.assertNotIn("QAYTA BAHOLASH", prompt)
         self.assertIn("QAYTA BAHOLASH", ec.build_prompt("Matn.", "Mavzu", retry=True))
 
-    def test_all_zero_answer_is_retried_then_estimated(self):
+    def test_all_zero_answer_is_retried_then_not_graded(self):
         calls = []
         zeros = json.dumps({"scores": {key: 0 for key in ec.CRITERIA_KEYS},
                             "sections": {"kirish": False, "asosiy": False, "xulosa": False}})
@@ -262,10 +262,29 @@ class EssayCheckerTest(unittest.TestCase):
             ai_api._chat_complete = original
         self.assertEqual(len(calls), 2)
         self.assertIn("QAYTA BAHOLASH", calls[1])
-        self.assertIn("estimated", report["flags"])
-        self.assertGreaterEqual(report["total"], 12)
-        self.assertGreater(report["scale_75"], 0)
-        self.assertIn("taxminiy", ec.format_report(report, "uz"))
+        self.assertTrue(report["not_graded"])
+        self.assertEqual(report["reason"], "no_scores")
+        # Yaroqli essega yolg'on ball qo'yilmaydi.
+        self.assertNotIn("total", report)
+        message = ec.format_report(report, "uz")
+        self.assertIn("Baholab bo'lmadi", message)
+        self.assertNotIn("/24", message)
+
+    def test_ai_outage_returns_honest_not_graded_message(self):
+        async def fake_complete(prompt, **kwargs):
+            return ""
+
+        original = ai_api._chat_complete
+        ai_api._chat_complete = fake_complete
+        try:
+            report = asyncio.run(ec.analyze_essay(LONG_TEXT, "uz", "Ta'lim"))
+        finally:
+            ai_api._chat_complete = original
+        self.assertTrue(report["not_graded"])
+        self.assertEqual(report["reason"], "unavailable")
+        self.assertEqual(report["word_count"], ec.word_count(LONG_TEXT))
+        self.assertIn("Qayta tekshirish", ec.format_report(report, "uz"))
+        self.assertEqual(ec.report_payload(report, "uz")["not_graded"], True)
 
     def test_good_first_answer_is_not_retried(self):
         calls = []
@@ -284,6 +303,7 @@ class EssayCheckerTest(unittest.TestCase):
         self.assertEqual(len(calls), 1)
         self.assertEqual(report["total"], 24)
         self.assertNotIn("estimated", report["flags"])
+        self.assertFalse(report.get("not_graded"))
 
 
 if __name__ == "__main__":

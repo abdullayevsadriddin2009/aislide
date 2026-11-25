@@ -15,6 +15,7 @@ o'qiladi. Hisobotda har bir band bo'yicha ball, aniq xatolar va taqriz qaytadi.
 """
 import asyncio
 import base64
+import hashlib
 import io
 import json
 import re
@@ -26,7 +27,8 @@ import ai_pool
 
 MAX_CHARS = 15000          # bir marta tekshiriladigan matn hajmi
 MAX_ERRORS = 20
-MAX_IMAGE_SIDE = 2200      # qo'lyozma ingichka: kichik rasmda harflar yo'qoladi
+MAX_IMAGE_SIDE = 2600      # qo'lyozma ingichka: kichik rasmda harflar yo'qoladi
+MIN_IMAGE_SIDE = 1700      # bundan kichik suratni kattalashtiramiz (ingichka harflar)
 MAX_PER_BAND = 2
 MAX_TOTAL = 24
 MIN_WORDS = 100
@@ -85,7 +87,10 @@ _LABELS = {
             "notask": "Faqat kirish qismi yozilgan — topshiriq bajarilmagan, 0 ball.",
             "cyrillic": "Ish to'liq kirill alifbosida — tekshirilmaydi, 0 ball.",
             "estimated": "AI to'liq baholay olmadi; ballar matn tahlili asosida taxminiy qo'yildi. Qayta tekshirib ko'ring.",
+            "not_graded": "Hozircha AI baholab bo'lmadi — bepul limitlar vaqtincha band. Ballar o'ylab topilmaydi: bir daqiqadan so'ng «Qayta tekshirish»ni bosing.",
         },
+        "not_graded_title": "Baholab bo'lmadi",
+        "not_graded_retry": "Matn saqlandi — pastdagi «Qayta tekshirish» tugmasini bir daqiqadan so'ng bosing.",
         "crit": {
             "uslub": "Publitsistik uslub",
             "qarashlar": "Ikkala qarash + shaxsiy fikr",
@@ -127,7 +132,10 @@ _LABELS = {
             "notask": "Написано только вступление — задание не выполнено, 0 баллов.",
             "cyrillic": "Работа полностью на кириллице — не проверяется, 0 баллов.",
             "estimated": "AI не смог полностью оценить работу; баллы выставлены приблизительно. Проверьте ещё раз.",
+            "not_graded": "Сейчас AI не смог оценить работу — бесплатные лимиты временно заняты. Баллы не выдумываются: нажмите «Проверить ещё раз» через минуту.",
         },
+        "not_graded_title": "Оценить не удалось",
+        "not_graded_retry": "Текст сохранён — нажмите «Проверить ещё раз» через минуту.",
         "crit": {
             "uslub": "Публицистический стиль",
             "qarashlar": "Две точки зрения + своё мнение",
@@ -169,7 +177,10 @@ _LABELS = {
             "notask": "Only the introduction is written — task not done, 0 points.",
             "cyrillic": "The work is fully in Cyrillic — not checked, 0 points.",
             "estimated": "The AI could not grade the whole work; the scores are approximate. Please check it again.",
+            "not_graded": "The AI could not grade the work right now — free limits are temporarily used up. No scores are invented: press “Check again” in a minute.",
         },
+        "not_graded_title": "Could not grade",
+        "not_graded_retry": "The text is kept — press “Check again” in a minute.",
         "crit": {
             "uslub": "Publicistic style",
             "qarashlar": "Both views + own opinion",
@@ -239,6 +250,11 @@ def cyrillic_ratio(text):
 OCR_PROMPT = (
     "Bu rasmda qo'lyozma yoki bosma matn (o'quvchi daftari yoki varaq) bor. "
     "Sahifadagi BARCHA matnni to'liq va tartib bilan yozib bering.\n"
+    "- Matn o'zbek lotin alifbosida qo'lda yozilgan bo'lishi mumkin: o', g', sh, ch, "
+    "ng harflari va apostroflar (o', g') ni aniq saqlang, ularni tushirib qoldirmang.\n"
+    "- Daftar chizig'iga yozilgan mayda harflarni ham o'qing; qator chetidagi, "
+    "sarlavha va sana kabi yozuvlarni ham qo'shing.\n"
+    "- So'z chizilgan yoki ustidan tuzatilgan bo'lsa, oxirgi (tuzatilgan) variantni yozing.\n"
     "- Hech narsani qisqartirmang va tashlab ketmang; qatorlar va xatboshilarni saqlang.\n"
     "- Imlo va tinish belgilaridagi xatolarni TUZATMANG: so'z qanday yozilgan bo'lsa, "
     "aynan shunday yozing — tekshiruv uchun bu muhim.\n"
@@ -254,22 +270,33 @@ _CONTINUE_PROMPT = (
 
 
 def prepare_image(data):
-    """Rasmni kichraytirib JPEG'ga o'giradi.
+    """Rasmni o'qish uchun tayyorlaydi: kattalashtirish, kontrast, JPEG.
 
     Qo'lyozma uchun o'lcham muhim: juda kichik rasmda ingichka harflar yo'qoladi va
-    model sahifaning faqat bir qismini o'qib qo'yadi.
+    model sahifaning faqat bir qismini o'qib qo'yadi. Shu sababli kichik suratni
+    kattalashtiramiz, xira suratning kontrastini esa yengil ko'taramiz.
     """
     try:
-        from PIL import Image
+        from PIL import Image, ImageOps
         with Image.open(io.BytesIO(data)) as source:
             source.load()
             image = source.convert("RGB")
-            if max(image.size) > MAX_IMAGE_SIDE:
-                ratio = MAX_IMAGE_SIDE / float(max(image.size))
+            longest = max(image.size)
+            if longest > MAX_IMAGE_SIDE:
+                ratio = MAX_IMAGE_SIDE / float(longest)
                 size = (max(1, int(image.width * ratio)), max(1, int(image.height * ratio)))
                 image = image.resize(size, Image.LANCZOS)
+            elif longest < MIN_IMAGE_SIDE:
+                ratio = MIN_IMAGE_SIDE / float(longest)
+                size = (max(1, int(image.width * ratio)), max(1, int(image.height * ratio)))
+                image = image.resize(size, Image.LANCZOS)
+            try:
+                # Daftar sahifasidagi kulrang fon va xira qalamni ajratish uchun.
+                image = ImageOps.autocontrast(image, cutoff=1)
+            except Exception:
+                pass
             buffer = io.BytesIO()
-            image.save(buffer, format="JPEG", quality=90, optimize=True)
+            image.save(buffer, format="JPEG", quality=92, optimize=True)
         return buffer.getvalue(), "image/jpeg"
     except Exception as exc:
         print(f"[check] rasm tayyorlanmadi: {type(exc).__name__}: {exc}", flush=True)
@@ -431,6 +458,54 @@ def _vision_candidates(models):
     return ordered
 
 
+# Oxirgi marta ishlagan model eslab qolinadi: keyingi sahifalarda birinchi
+# navbatda o'sha sinaladi. Bu bepul kvotani behuda sarflashni kamaytiradi.
+_VISION_LAST = {}
+# Bir xil sahifa qayta yuborilsa (albomni qayta yig'ish, foydalanuvchi qayta
+# urinishi) OCR takrorlanmaydi.
+_OCR_CACHE = {}
+_OCR_CACHE_TTL = 900
+_OCR_CACHE_MAX = 40
+
+
+def _ocr_cache_get(key):
+    entry = _OCR_CACHE.get(key)
+    if not entry:
+        return ""
+    if time.time() - entry[1] > _OCR_CACHE_TTL:
+        _OCR_CACHE.pop(key, None)
+        return ""
+    return entry[0]
+
+
+def _ocr_cache_put(key, text):
+    if not text:
+        return
+    if len(_OCR_CACHE) >= _OCR_CACHE_MAX:
+        oldest = min(_OCR_CACHE, key=lambda name: _OCR_CACHE[name][1])
+        _OCR_CACHE.pop(oldest, None)
+    _OCR_CACHE[key] = (text, time.time())
+
+
+def _prefer_last_model(rows):
+    """Oxirgi ishlagan kalitni ro'yxat boshiga suradi."""
+    name = str(_VISION_LAST.get("key") or "")
+    if not name:
+        return rows
+    return sorted(rows, key=lambda row: 0 if str(row.get("name") or "") == name else 1)
+
+
+def _order_models(row, models):
+    """Oxirgi ishlagan modelni birinchi qilib qaytaradi."""
+    ordered = _vision_candidates(models)
+    name = str(_VISION_LAST.get("key") or "")
+    model = str(_VISION_LAST.get("model") or "")
+    if name and model and str(row.get("name") or "") == name and model in ordered:
+        ordered.remove(model)
+        ordered.insert(0, model)
+    return ordered
+
+
 async def ocr_image(image_data, lang="uz"):
     """Rasmdagi matnni to'liq o'qib beradi; Google kaliti bo'lmasa bo'sh satr.
 
@@ -440,6 +515,11 @@ async def ocr_image(image_data, lang="uz"):
     """
     if not image_data:
         return ""
+    cache_key = hashlib.sha1(image_data).hexdigest()
+    cached = _ocr_cache_get(cache_key)
+    if cached:
+        print(f"[check] OCR keshdan: {word_count(cached)} so'z", flush=True)
+        return cached
     rows = []
     try:
         for item in ai_pool.keys(active_only=True):
@@ -451,6 +531,7 @@ async def ocr_image(image_data, lang="uz"):
         return ""
     if not rows:
         return ""
+    rows = _prefer_last_model(rows)
     data, mime = prepare_image(image_data)
     best = ""
     # Har bir kalitdagi barcha Google kalitlarini sinaymiz, lekin jami urinish
@@ -458,7 +539,7 @@ async def ocr_image(image_data, lang="uz"):
     budget = 6
     for row in rows[:3]:
         models = [m.strip() for m in str(row["models"] or "").split(",") if m.strip()]
-        for model in _vision_candidates(models):
+        for model in _order_models(row, models):
             if budget <= 0:
                 break
             if _vision_skipped(row, model):
@@ -467,10 +548,15 @@ async def ocr_image(image_data, lang="uz"):
             text = await _read_full_page(row, model, data, mime, OCR_PROMPT)
             if word_count(text) > word_count(best):
                 best = text
+                if word_count(best) >= MIN_OCR_WORDS:
+                    _VISION_LAST["key"] = str(row.get("name") or "")
+                    _VISION_LAST["model"] = model
             if word_count(best) >= OCR_ENOUGH_WORDS:
+                _ocr_cache_put(cache_key, best)
                 return best
         if budget <= 0 or word_count(best) >= OCR_ENOUGH_WORDS:
             break
+    _ocr_cache_put(cache_key, best)
     return best
 
 
@@ -816,6 +902,11 @@ async def _request_report(body, topic, lang, retry=False):
             return data
         print(f"[check] JSON o'qilmadi (urinish {attempt + 1}, {len(str(raw))} belgi): "
               f"{str(raw)[:200]}", flush=True)
+        if attempt == 0 and not str(raw).strip():
+            # Provayder butunlay bo'sh javob qaytardi: ikkinchi to'liq so'rov ham
+            # behuda ketadi, kvotani tejash uchun qisqa so'rovga o'tamiz.
+            print("[check] bo'sh javob — qisqa baholashga o'tildi", flush=True)
+            break
         if attempt == 0:
             # Provayder xatosini keyingi urinishda o'tkazib yubormaslik uchun
             # qaysi sabab qaytgani logda ko'rinsin.
@@ -856,19 +947,33 @@ def _unscored(report):
             and int(report.get("word_count") or 0) >= MIN_WORDS)
 
 
+def not_graded(body, lang="uz", topic="", reason="unavailable"):
+    """AI baholay olmagan holat: yolg'on ball o'rniga halol «baholab bo'lmadi».
+
+    Ilgari bu yerda matn tahliliga asoslangan taxminiy ballar qo'yilardi va
+    yaroqli esse 12/24 (yoki hajm qoidasi bilan 2/24) bo'lib ko'rinardi — bu
+    foydalanuvchini chalg'itardi. Endi ball umuman ko'rsatilmaydi.
+    """
+    return {
+        "not_graded": True,
+        "reason": str(reason or "unavailable"),
+        "word_count": word_count(body),
+        "min_words": MIN_WORDS,
+        "topic": str(topic or "").strip()[:300],
+        "language": str(lang or "uz")[:16],
+    }
+
+
 async def analyze_essay(text, lang="uz", topic="", from_image=False):
-    """Esseni 12 band bo'yicha tekshiradi. AI ishlamasa None qaytaradi."""
+    """Esseni 12 band bo'yicha tekshiradi; AI ishlamasa «baholab bo'lmadi». """
     body = str(text or "").strip()
     if len(body) < 40:
         return None
     body = body[:MAX_CHARS]
     data = await _request_report(body, topic, lang)
     if not data:
-        # AI provayderlar butunlay javob bermasa ham foydalanuvchi «xatolik»
-        # o'rniga hisobot olishi kerak: matn tahliliga asoslangan ehtiyot
-        # baholari qo'llanadi va hisobotda bu ochiq ogohlantiriladi.
-        print("[check] AI hisobot bermadi — matn tahliliga asoslangan baho", flush=True)
-        data = {"scores": baseline_scores(body), "estimated": True}
+        print("[check] AI hisobot bermadi — halol «baholab bo'lmadi» qaytadi", flush=True)
+        return not_graded(body, lang, topic, "unavailable")
     report = normalize_report(data, body, lang, topic, from_image=from_image)
     if _unscored(report):
         # 100+ so'zli lotin matniga barcha bandlar 0 — model sxemadagi nollarni
@@ -881,20 +986,32 @@ async def analyze_essay(text, lang="uz", topic="", from_image=False):
             if retry_report["total"] > report["total"]:
                 report = retry_report
         if _unscored(report):
-            # Ikkinchi urinish ham nol bo'lsa, noto'g'ri 0 o'rniga ehtiyot
-            # bahosini beramiz va buni hisobotda ochiq ogohlantiramiz.
-            print("[check] AI baholay olmadi — taxminiy ballar qo'llanadi", flush=True)
-            fallback = dict(retry_data or data)
-            fallback["scores"] = baseline_scores(body)
-            fallback["estimated"] = True
-            report = normalize_report(fallback, body, lang, topic,
-                                      from_image=from_image)
+            print("[check] AI baholay olmadi — ball qo'yilmaydi", flush=True)
+            return not_graded(body, lang, topic, "no_scores")
     return report
 
 
 # ===== Hisobot matni (Telegram uchun oddiy matn) =====
+def not_graded_text(report, lang="uz"):
+    """AI baholay olmagan holat uchun halol xabar (ball ko'rsatilmaydi)."""
+    info = labels(lang)
+    words = int(report.get("word_count") or 0)
+    lines = [
+        info["title"], "",
+        f"⚠️ {info['not_graded_title']}",
+        info["flags"]["not_graded"], "",
+        f"📄 {info['words']}: {words} ({info['required']})",
+    ]
+    if report.get("topic"):
+        lines.append(f"🎯 Mavzu: {report['topic']}")
+    lines.extend(["", f"♻️ {info['not_graded_retry']}"])
+    return "\n".join(lines)
+
+
 def format_report(report, lang="uz"):
     info = labels(lang)
+    if report.get("not_graded"):
+        return not_graded_text(report, lang)
     percent = int(round(100.0 * report["total"] / MAX_TOTAL))
     lines = [info["title"], ""]
     lines.append(f"📊 {info['total']}: {report['total']}/{MAX_TOTAL} ball ({percent}%)")
@@ -994,6 +1111,7 @@ def report_payload(report, lang="uz"):
         "strengths": list(report.get("strengths") or []),
         "advice": list(report.get("advice") or []),
         "review": str(report.get("review") or ""),
+        "not_graded": bool(report.get("not_graded")),
         "labels": {
             "total": info["total"],
             "scale": info["scale"],
@@ -1009,5 +1127,7 @@ def report_payload(report, lang="uz"):
             "review": info["review"],
             "plan_written": info["plan_written"],
             "epigraph_written": info["epigraph_written"],
+            "not_graded": info["not_graded_title"],
+            "not_graded_text": info["flags"]["not_graded"],
         },
     }

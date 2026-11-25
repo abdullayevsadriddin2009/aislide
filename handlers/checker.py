@@ -8,6 +8,7 @@ albom tugashini kutib, barcha sahifalar matni birlashtirilib, bitta ish sifatida
 tahlil qilinadi.
 """
 import asyncio
+import time
 
 from aiogram import F, Router
 from aiogram.fsm.context import FSMContext
@@ -28,11 +29,18 @@ _IMAGES = (".jpg", ".jpeg", ".png", ".webp")
 _PDF = (".pdf",)
 LANGS = ("uz", "ru", "en", "tr", "de", "fr")
 
-# Telegram albomni bir necha alohida xabar qilib yuboradi. Har birini darhol
-# tekshirish o'rniga qisqa vaqt kutamiz va sahifalarni birlashtiramiz.
-_ALBUM_WAIT = 2.0
-_ALBUM_MAX = 10
+# Telegram albomni bir necha alohida xabar qilib yuboradi. Ba'zan foydalanuvchi
+# 5-6 varaqni albom qilib emas, ketma-ket alohida yuboradi. Ikkala holatda ham
+# sahifalarni birlashtirish uchun har bir rasm kelganda qisqa vaqt kutamiz va
+# yangi sahifa kelgach taymerni qaytadan boshlaymiz.
+_ALBUM_WAIT = 3.0
+_ALBUM_MAX = 12
 _ALBUMS = {}
+# Sahifalar sekin, birma-bir yuborilsa ham bitta ish bo'lib qolishi uchun
+# oxirgi tekshiruvning sahifalari qisqa vaqt eslab qolinadi: keyingi rasm
+# kelganda u avvalgi sahifalarga qo'shilib, yakuniy javob yangilanadi.
+_PAGE_SESSION_TTL = 120
+_PAGES = {}
 
 
 async def _lang(user_id):
@@ -66,9 +74,37 @@ async def _redirect_menu(message, state):
         return False
 
 
+async def _clear_album(chat_id):
+    """Yangi tekshiruv boshlanganda eski yarim yig'ilgan sahifalar tashlanadi."""
+    bucket = _ALBUMS.pop(chat_id, None)
+    if bucket and bucket.get("task") and not bucket["task"].done():
+        bucket["task"].cancel()
+    _PAGES.pop(chat_id, None)
+
+
+def _page_session(chat_id):
+    """Oxirgi rasm tekshiruvining sahifalari (muddati o'tgan bo'lsa — yo'q)."""
+    session = _PAGES.get(chat_id)
+    if not session:
+        return None
+    if time.time() - float(session.get("time") or 0) > _PAGE_SESSION_TTL:
+        _PAGES.pop(chat_id, None)
+        return None
+    return session
+
+
+def _remember_pages(chat_id, images, message):
+    if not images or message is None:
+        _PAGES.pop(chat_id, None)
+        return
+    _PAGES[chat_id] = {"images": list(images), "time": time.time(),
+                       "message": message}
+
+
 async def start_check(message: Message, state: FSMContext):
     """Asosiy menyudagi tugma uchun: tekshiruvni mavzu qadamidan boshlaydi."""
     lang = await _lang(message.from_user.id)
+    await _clear_album(message.chat.id)
     await state.clear()
     await state.set_state(Check.topic)
     await state.update_data(check_topic="")
@@ -79,6 +115,7 @@ async def start_check(message: Message, state: FSMContext):
 async def cb_check_start(call: CallbackQuery, state: FSMContext):
     """«Yaratishni boshlash» ichidagi tekshirish bo'limi — 1-qadam: mavzu."""
     lang = await _lang(call.from_user.id)
+    await _clear_album(call.message.chat.id)
     await state.clear()
     await state.set_state(Check.topic)
     await state.update_data(check_topic="")
@@ -149,6 +186,12 @@ def _album_bucket(message, state, lang):
     bucket = _ALBUMS.get(key)
     if bucket is None:
         bucket = {"images": [], "task": None, "token": 0}
+        session = _page_session(key)
+        if session:
+            # Oldingi sahifalar davom etmoqda: hammasini birga tekshiramiz.
+            bucket["images"] = list(session["images"])
+            bucket["waiting"] = session.get("message")
+            bucket["continued"] = True
         _ALBUMS[key] = bucket
     bucket["state"] = state
     bucket["lang"] = lang
@@ -162,6 +205,9 @@ async def _collect_album(message, state, lang):
     data = await _download(message)
     if len(bucket["images"]) < _ALBUM_MAX:
         bucket["images"].append(data)
+    else:
+        # Juda ko'p sahifa: eng eskisi tushirilib, oxirgilari qoladi.
+        bucket["images"] = bucket["images"][-(_ALBUM_MAX - 1):] + [data]
     bucket["token"] += 1
     token = bucket["token"]
     if bucket["task"] and not bucket["task"].done():
@@ -182,7 +228,15 @@ async def _flush_album(chat_id, token):
     images = list(bucket["images"])
     if not images:
         return
-    waiting = await message.answer(t("check_waiting", lang))
+    waiting = bucket.get("waiting")
+    if waiting is None:
+        waiting = await message.answer(t("check_waiting", lang))
+    else:
+        # Bir necha sahifa birma-bir keldi: bitta xabar yangilanib boradi.
+        try:
+            await waiting.edit_text(t("check_waiting", lang))
+        except Exception:
+            waiting = await message.answer(t("check_waiting", lang))
     semaphore = asyncio.Semaphore(2)
 
     async def read_page(data):
@@ -201,8 +255,11 @@ async def _flush_album(chat_id, token):
             await waiting.edit_text(t("check_image_unreadable", lang))
         except Exception:
             await message.answer(t("check_image_unreadable", lang))
+        # Keyingi varaq kelganda oldingi (o'qilgan) sahifalar bilan birlashsin.
+        _remember_pages(message.chat.id, images, waiting)
         return
-    await _analyze_and_send(message, state, lang, text, from_image=True, waiting=waiting)
+    await _analyze_and_send(message, state, lang, text, from_image=True,
+                            waiting=waiting, keep_state=True, pages=images)
 
 
 @router.message(Check.topic)
@@ -214,7 +271,7 @@ async def topic_received(message: Message, state: FSMContext):
     if message.document or message.photo:
         await state.update_data(check_topic="")
         await state.set_state(Check.essay)
-        if message.media_group_id and _is_image(message):
+        if _is_image(message):
             await _collect_album(message, state, lang)
             return
         await _run_check(message, state, lang)
@@ -239,8 +296,9 @@ async def check_received(message: Message, state: FSMContext):
     if await _redirect_menu(message, state):
         return
     lang = await _lang(message.from_user.id)
-    # 5-6 varaq bitta albomda kelsa, faqat birinchi sahifa tekshirilib qolmasin.
-    if message.media_group_id and _is_image(message):
+    # 5-6 varaq albomda yoki ketma-ket alohida kelsa ham bitta ish sifatida
+    # tekshiriladi: faqat birinchi sahifa ko'rib qolmasin.
+    if _is_image(message):
         await _collect_album(message, state, lang)
         return
     await _run_check(message, state, lang)
@@ -267,7 +325,8 @@ async def _run_check(message: Message, state: FSMContext, lang):
 
 
 async def _analyze_and_send(message: Message, state: FSMContext, lang, text,
-                            from_image=False, waiting=None):
+                            from_image=False, waiting=None, keep_state=False,
+                            pages=None):
     data = await state.get_data()
     topic = str(data.get("check_topic") or "")
     if waiting is None:
@@ -290,6 +349,18 @@ async def _analyze_and_send(message: Message, state: FSMContext, lang, text,
         except Exception:
             await message.answer(t("check_ai", lang), reply_markup=_retry_kb(lang))
         return
+    if report.get("not_graded"):
+        # Yolg'on past ball ko'rsatilmaydi: halol «baholab bo'lmadi» xabari.
+        print(f"[check] baholanmadi: {report.get('reason')}", flush=True)
+        body = essay_checker.format_report(report, lang)
+        try:
+            await waiting.edit_text(body, parse_mode=None, reply_markup=_retry_kb(lang))
+        except Exception:
+            await message.answer(body, parse_mode=None, reply_markup=_retry_kb(lang))
+        if keep_state:
+            # Sahifalar saqlanadi: keyingi varaq kelganda hammasi qayta ko'riladi.
+            _remember_pages(message.chat.id, pages, waiting)
+        return
 
     body = essay_checker.format_report(report, lang)
     parts = split_text(body, 3500) or [body]
@@ -303,4 +374,11 @@ async def _analyze_and_send(message: Message, state: FSMContext, lang, text,
             except Exception:
                 pass
         await message.answer(part, parse_mode=None, reply_markup=markup)
-    await state.clear()
+    if keep_state:
+        # Rasm bilan tekshirildi: holat saqlanadi va sahifalar eslab qolinadi,
+        # shunda keyingi varaq kelganda yakuniy javob hammasi bo'yicha yangilanadi.
+        _remember_pages(message.chat.id, pages, waiting)
+        await state.set_state(Check.essay)
+    else:
+        _PAGES.pop(message.chat.id, None)
+        await state.clear()

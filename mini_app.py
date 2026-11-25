@@ -539,6 +539,10 @@ def api_check():
     if not report:
         return jsonify({"ok": False, "error": "check",
                         "message": text_of("check_ai", lang)}), 502
+    if report.get("not_graded"):
+        # Ball o'ylab topilmaydi: Mini App ham halol xabarni ko'rsatadi.
+        return jsonify({"ok": False, "error": "busy",
+                        "message": essay_checker.not_graded_text(report, lang)}), 200
     return jsonify({"ok": True, "report": essay_checker.report_payload(report, lang)})
 
 
