@@ -19,6 +19,7 @@ import hashlib
 import io
 import json
 import re
+import threading
 import time
 
 import aiohttp
@@ -33,6 +34,11 @@ MAX_PER_BAND = 2
 MAX_TOTAL = 24
 MIN_WORDS = 100
 MIN_OCR_WORDS = 25         # bundan kam o'qilgan rasm — to'liq o'qilmagan bo'lishi mumkin
+# Bir vaqtda 6-7 foydalanuvchi albom yuborsa, o'nlab so'rov birdaniga ketib
+# bepul limitlarni «portlatadi». Navbat bilan yuborilsa, ko'proq so'rov muvaffaqiyatli
+# o'tadi va hech kim xato ko'rmaydi.
+OCR_CONCURRENCY = 3
+ANALYZE_CONCURRENCY = 4
 OCR_ENOUGH_WORDS = 100     # shu hajmdan keyin boshqa modelni sinash shart emas
 VISION_MAX_TOKENS = 8192
 SCALE_MAX = 75             # rasmiy: 24 ballik natija 75 ballik shkalaga o'tkaziladi
@@ -244,6 +250,24 @@ def cyrillic_ratio(text):
     latin = len(_LATIN_RE.findall(str(text or "")))
     total = cyrillic + latin
     return (cyrillic / float(total)) if total else 0.0
+
+
+# Navbat chegaralari har hodisa tsikli (event loop) uchun alohida: bot bitta
+# tsiklda, Mini App esa har so'rovda o'z tsiklida ishlaydi.
+_GATES = threading.local()
+
+
+def _gate(name, limit):
+    loop_id = id(asyncio.get_running_loop())
+    state = getattr(_GATES, "state", None)
+    if state is None or state["loop"] != loop_id:
+        state = {"loop": loop_id, "sems": {}}
+        _GATES.state = state
+    sem = state["sems"].get(name)
+    if sem is None:
+        sem = asyncio.Semaphore(limit)
+        state["sems"][name] = sem
+    return sem
 
 
 # ===== Rasmdan matn (OCR) — Gemini vision =====
@@ -545,7 +569,8 @@ async def ocr_image(image_data, lang="uz"):
             if _vision_skipped(row, model):
                 continue
             budget -= 1
-            text = await _read_full_page(row, model, data, mime, OCR_PROMPT)
+            async with _gate("ocr", OCR_CONCURRENCY):
+                text = await _read_full_page(row, model, data, mime, OCR_PROMPT)
             if word_count(text) > word_count(best):
                 best = text
                 if word_count(best) >= MIN_OCR_WORDS:
@@ -890,10 +915,11 @@ async def _request_report(body, topic, lang, retry=False):
     raw = ""
     for attempt in range(2):
         try:
-            raw = await ai_api._chat_complete(
-                prompt, system=system, max_tokens=4000 if attempt else 3000,
-                temperature=0.35 if retry else 0.2,
-                frequency_penalty=0.2, presence_penalty=0.0)
+            async with _gate("analyze", ANALYZE_CONCURRENCY):
+                raw = await ai_api._chat_complete(
+                    prompt, system=system, max_tokens=4000 if attempt else 3000,
+                    temperature=0.35 if retry else 0.2,
+                    frequency_penalty=0.2, presence_penalty=0.0)
         except Exception as exc:
             print(f"[check] tahlil xatosi: {type(exc).__name__}: {exc}", flush=True)
             continue
@@ -929,8 +955,9 @@ async def _request_report(body, topic, lang, retry=False):
         f"Mavzu: {topic or 'ko\'rsatilmagan'}\nESSE MATNI:\n" + body[:8000]
     )
     try:
-        raw = await ai_api._chat_complete(compact, system=system, max_tokens=700,
-                                          temperature=0.1)
+        async with _gate("analyze", ANALYZE_CONCURRENCY):
+            raw = await ai_api._chat_complete(compact, system=system, max_tokens=700,
+                                              temperature=0.1)
         data = _parse_json_object(raw)
         if data:
             print("[check] qisqa (faqat ballar) javob ishlatildi", flush=True)
