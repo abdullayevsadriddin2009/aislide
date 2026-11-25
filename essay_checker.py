@@ -244,6 +244,26 @@ def word_count(text):
     return len(_WORD_RE.findall(str(text or "")))
 
 
+# Qo'lyozmada so'z qator oxirida bo'g'inlarga bo'linadi: OCR buni «dar-\nggoh»
+# ko'rinishida qaytaradi. AI buni imlo xatosi deb sanab, butun bandni 0 qilardi.
+_OCR_LINE_BREAK_RE = re.compile(r"(?<=[^\W\d_])-\s*\n\s*(?=[^\W\d_])", re.UNICODE)
+
+
+def clean_ocr_text(text):
+    """OCR natijasidagi qator oxiri chiziqchalarini birlashtiradi.
+
+    «maʼlumot-\nga» → «maʼlumotga». Faqat harf-harf orasidagi chiziqcha
+    olib tashlanadi, shuning uchun «2020-2021» kabi yozuvlar tegilmaydi.
+    """
+    value = str(text or "")
+    for _ in range(3):
+        updated = _OCR_LINE_BREAK_RE.sub("", value)
+        if updated == value:
+            break
+        value = updated
+    return value
+
+
 def cyrillic_ratio(text):
     """Matndagi harflarning qancha qismi kirill ekani (0..1)."""
     cyrillic = len(_CYRILLIC_RE.findall(str(text or "")))
@@ -378,7 +398,8 @@ def _vision_skipped(row, model):
 def _vision_fail(row, model, status, body):
     low = str(body or "").lower()
     if status == 429:
-        seconds = 1800 if ("quota" in low or "billing" in low) else 90
+        minute = ("perminute" in low or "per minute" in low or "per_minute" in low)
+        seconds = 90 if minute else (1800 if ("quota" in low or "billing" in low) else 90)
         reason = "bepul kvota tugagan" if seconds > 100 else "so'rov limiti"
     elif status in (404, 410) or "no longer available" in low:
         seconds, reason = 6 * 3600, "model mavjud emas"
@@ -421,6 +442,8 @@ async def _vision_call(row, model, image_data, mime, prompt, total=90):
             status, body = await _vision_post(url, payload, total)
         except Exception as exc:
             print(f"[check] vision xatosi: {type(exc).__name__}: {exc}", flush=True)
+            # Javob kelmasa (timeout) modelni qayta-qayta kutib o'tirmaymiz.
+            _vision_fail(row, model, 504, f"{type(exc).__name__}: {exc}")
             return "", False
         if status == 200:
             return _vision_text(body)
@@ -571,6 +594,7 @@ async def ocr_image(image_data, lang="uz"):
             budget -= 1
             async with _gate("ocr", OCR_CONCURRENCY):
                 text = await _read_full_page(row, model, data, mime, OCR_PROMPT)
+            text = clean_ocr_text(text)
             if word_count(text) > word_count(best):
                 best = text
                 if word_count(best) >= MIN_OCR_WORDS:
@@ -810,6 +834,18 @@ def normalize_report(data, text, lang="uz", topic="", from_image=False):
         total = 0
     elif flags and flags[0] != "ocr_short":
         total = 2
+    # AI ba'zan xato ro'yxatida ko'rsatmasdan turib imlo/tinishga 0 qo'yadi
+    # (asosan qo'lyozma OCR chiziqchalari sabab). Xato ko'rsatilmagan band 0
+    # bo'lib qolmasin — bu bahoni asossiz tushirardi.
+    # Faqat qo'lyozma (OCR) yo'lida: matn faylida AI 0 qo'ysa, bu haqiqiy
+    # baho bo'lishi mumkin. Barcha bandlar 0 bo'lsa ham tegilmaydi (sxema
+    # nusxasi) — u holat `_unscored` orqali qayta baholanadi.
+    if from_image and not flags and words >= MIN_WORDS and sum(scores.values()) > 0:
+        error_types = {item["type"] for item in errors}
+        for key in ("imlo", "tinish", "qoshimchalar", "soz", "paremiya", "adabiy"):
+            if scores[key] == 0 and key not in error_types:
+                scores[key] = 1
+        total = sum(scores.values())
     if estimated:
         # Taxminiy ballar hisobotda alohida ogohlantirish bilan ko'rsatiladi.
         flags.append("estimated")
@@ -836,7 +872,7 @@ def normalize_report(data, text, lang="uz", topic="", from_image=False):
     }
 
 
-def build_prompt(text, topic="", lang="uz", retry=False):
+def build_prompt(text, topic="", lang="uz", retry=False, from_image=False):
     """Rasmiy mezon asosidagi tekshirish topshirig'i."""
     bands = "\n".join(f"- {key} ({band}): {name}" for band, (key, name) in
                       enumerate(CRITERIA, 1))
@@ -848,6 +884,12 @@ def build_prompt(text, topic="", lang="uz", retry=False):
     topic_block = (f"ESSE MAVZUSI / TOPSHIRIQ:\n\"\"\"\n{topic}\n\"\"\"\n\n"
                    if topic else
                    "ESSE MAVZUSI: berilmagan — mavzuga moslikni matnning o'zidan baholang.\n\n")
+    ocr_block = (
+        "MATN QO'LYOZMADAN O'QILGAN (OCR): qator oxiridagi bo'g'in ko'chirish "
+        "chiziqchalari, harf uzilishlari va ʼ/’/ʻ ko'rinishidagi apostrof "
+        "belgilari imlo xatosi emas. Faqat yozuvchining haqiqiy imlo "
+        "xatolarini ko'rsating.\n\n" if from_image else ""
+    )
     return (
         "Siz O'zbekiston Bilim va malakalarni baholash agentligining ona tili va "
         "adabiyot fanidan yozma ish (esse) bo'yicha ekspertisiz. Quyidagi esseni "
@@ -861,7 +903,13 @@ def build_prompt(text, topic="", lang="uz", retry=False):
         "Muhim: quyidagi JSON sxemasidagi 0 lar — shunchaki namuna, ularni nusxa "
         "ko'chirmang. Har bir bandni matnga qarab baholang. Matn mavjud bo'lsa, "
         "barcha bandlarga birdan 0 qo'yish mumkin emas.\n\n"
+        "Adolatli baholang: 0 faqat band umuman bajarilmagan bo'lsa qo'yiladi. "
+        "Imlo bo'yicha xato ko'rsatmagan bo'lsangiz, imlo 0 bo'lmaydi; tinish "
+        "belgilari to'g'ri qo'llangan bo'lsa, tinish 0 bo'lmaydi; matnda atama "
+        "yoki tasviriy ifoda bo'lsa, paremiya 0 bo'lmaydi. O'rtacha, lekin "
+        "yaroqli ish odatda 1 ball oladi.\n\n"
         f"{retry_block}"
+        f"{ocr_block}"
         "Qat'iy qoidalar: matnda yo'q xatoni o'ylab topmang; bir xil xato bir necha "
         "joyda takrorlansa — bitta xato; quote — matndagi aniq parcha; imlo va tinish "
         "bo'yicha o'zbek lotin alifbosi qoidalariga tayaning. Eng ko'pi bilan 20 ta "
@@ -899,7 +947,7 @@ def build_prompt(text, topic="", lang="uz", retry=False):
     )
 
 
-async def _request_report(body, topic, lang, retry=False):
+async def _request_report(body, topic, lang, retry=False, from_image=False):
     """AI'dan JSON hisobot so'raydi; xato bo'lsa None.
 
     Javob uzilib qolishi yoki provayder almashishi mumkin, shuning uchun bitta
@@ -911,7 +959,7 @@ async def _request_report(body, topic, lang, retry=False):
         "Faqat JSON obyekt qaytarasiz, ballarni 0, 1 yoki 2 dan boshqa qiymatda "
         "bermaysiz."
     )
-    prompt = build_prompt(body, topic, lang, retry)
+    prompt = build_prompt(body, topic, lang, retry, from_image=from_image)
     raw = ""
     for attempt in range(2):
         try:
@@ -997,7 +1045,7 @@ async def analyze_essay(text, lang="uz", topic="", from_image=False):
     if len(body) < 40:
         return None
     body = body[:MAX_CHARS]
-    data = await _request_report(body, topic, lang)
+    data = await _request_report(body, topic, lang, from_image=from_image)
     if not data:
         print("[check] AI hisobot bermadi — halol «baholab bo'lmadi» qaytadi", flush=True)
         return not_graded(body, lang, topic, "unavailable")
@@ -1006,7 +1054,8 @@ async def analyze_essay(text, lang="uz", topic="", from_image=False):
         # 100+ so'zli lotin matniga barcha bandlar 0 — model sxemadagi nollarni
         # ko'chirgan bo'lishi mumkin. Bir marta qayta so'raymiz.
         print("[check] barcha bandlar 0 — qayta baholash so'raladi", flush=True)
-        retry_data = await _request_report(body, topic, lang, retry=True)
+        retry_data = await _request_report(body, topic, lang, retry=True,
+                                          from_image=from_image)
         if retry_data:
             retry_report = normalize_report(retry_data, body, lang, topic,
                                             from_image=from_image)

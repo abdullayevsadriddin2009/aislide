@@ -1,6 +1,7 @@
 import asyncio
 import io
 import json
+import time
 import unittest
 
 import ai_api
@@ -238,6 +239,41 @@ class EssayCheckerTest(unittest.TestCase):
 
     def test_labels_fallback_for_unknown_language(self):
         self.assertEqual(ec.labels("de")["total"], "Total")
+
+    def test_ocr_line_breaks_are_joined(self):
+        raw = "Yangi Oʻzbe-\nkiston nashri, maʼlumot-\nlariga ko'ra"
+        self.assertEqual(ec.clean_ocr_text(raw),
+                         "Yangi Oʻzbekiston nashri, maʼlumotlariga ko'ra")
+        # Raqamlar orasidagi chiziqcha (yil oralig'i) tegilmaydi.
+        self.assertEqual(ec.clean_ocr_text("2020-\n2021 yil"), "2020-\n2021 yil")
+
+    def test_handwriting_report_does_not_zero_bands_without_errors(self):
+        """Qo'lyozmada AI xato ko'rsatmasa, imlo/tinish kabi bandlar 0 bo'lmasin."""
+        scores = {"uslub": 1, "qarashlar": 2, "dalillar": 1, "qismlar": 1,
+                  "mantiq": 0, "izchillik": 0, "imlo": 0, "tinish": 0,
+                  "qoshimchalar": 0, "soz": 0, "paremiya": 0, "adabiy": 0}
+        data = {"scores": scores,
+                "sections": {"kirish": True, "asosiy": True, "xulosa": True},
+                "errors": [{"quote": "xato", "fix": "to'g'ri", "type": "imlo"}]}
+        image = ec.normalize_report(data, LONG_TEXT, "uz", "AI", from_image=True)
+        self.assertEqual(image["scores"]["imlo"], 0)      # xatosi ko'rsatilgan
+        self.assertEqual(image["scores"]["tinish"], 1)
+        self.assertEqual(image["scores"]["paremiya"], 1)
+        self.assertGreater(image["total"], 5)
+        # Matn faylida bunday yumshoq tuzatish yo'q.
+        plain = ec.normalize_report(data, LONG_TEXT, "uz", "AI")
+        self.assertEqual(plain["scores"]["tinish"], 0)
+
+    def test_quota_window_separates_minute_and_daily_limits(self):
+        row = {"name": "Google AI 1"}
+        ec._VISION_SKIP.clear()
+        ec._vision_fail(row, "m1", 429, "quota exceeded ... requests per minute")
+        ec._vision_fail(row, "m2", 429, "quota exceeded ... requests per day")
+        minute = ec._VISION_SKIP[ec._vision_key(row, "m1")][0] - time.time()
+        daily = ec._VISION_SKIP[ec._vision_key(row, "m2")][0] - time.time()
+        self.assertLess(minute, 300)
+        self.assertGreater(daily, 1500)
+        ec._VISION_SKIP.clear()
 
     def test_prompt_forbids_copying_the_zero_example(self):
         prompt = ec.build_prompt("Matn.", "Mavzu")

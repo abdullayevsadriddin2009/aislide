@@ -3361,6 +3361,19 @@ def _warm_key(api):
     _KEY_SKIP.pop(_key_skip_key(api), None)
 
 
+def _quota_window(detail):
+    """429 kvota oynasi: daqiqalik limit tez tiklanadi, kunlik — kechroq.
+
+    Google javobida `quotaId` ko'rinadi: `...PerMinute...` bir daqiqada, `...PerDay...`
+    esa kunlik limit tugaganini bildiradi. Ilgari ikkalasi ham 30 daqiqaga
+    chetlatilardi va daqiqalik limitda ham model bekorga uzoq turardi.
+    """
+    low = str(detail or "").lower()
+    if "perminute" in low or "per minute" in low or "per_minute" in low:
+        return 90
+    return 1800
+
+
 def _note_model_status(api, model, status, detail):
     """Modelni vaqtincha ro'yxatdan chiqarish: yopilgan, band yoki limit tugagan."""
     low = str(detail or "").lower()
@@ -3372,7 +3385,9 @@ def _note_model_status(api, model, status, detail):
         if "quota" in low or "billing" in low:
             # Kunlik/oylik bepul kvota tugagan: keyingi foydalanuvchilar uni
             # qayta-qayta sinab vaqt yo'qotmasligi kerak.
-            _skip_model(api, model, 1800, "bepul kvota tugagan")
+            window = _quota_window(low)
+            _skip_model(api, model, window,
+                        "bepul kvota tugagan" if window > 100 else "daqiqalik limit")
         else:
             _skip_model(api, model, 75, "so'rov limiti")
 
@@ -3829,6 +3844,10 @@ async def _chat_complete(prompt, system=None, max_tokens=2500, temperature=0.5,
             detail = f"{api.get('name', 'API')} / {model}: {reason}"
             errors.append(detail)
             _log(f"❌ {detail}")
+            if status is None:
+                # Javob umuman kelmadi (timeout/tarmoq): modelni har so'rovda
+                # qayta kutib o'tirmaymiz, 5 daqiqaga chetga suramiz.
+                _skip_model(api, model, 300, "javob kelmadi (timeout)")
             if status == 429 and _budget_rejected(reason):
                 # Groq counts the requested completion budget against its per-minute
                 # output limit, so a long deck is refused before the model runs. That
