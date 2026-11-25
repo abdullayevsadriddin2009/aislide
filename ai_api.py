@@ -169,7 +169,10 @@ def clean_ai_text(text):
     if not text: return ""
     text = re.sub(r'\*+', '', str(text))
     text = re.sub(r'^#{1,6}\s*', '', str(text), flags=re.MULTILINE)
-    text = re.sub(r'```.*?```', '', str(text), flags=re.DOTALL)
+    # Faqat ``` belgilarini olib tashlaymiz. Ilgari butun kod bloki o'chirilardi va
+    # model JSON hisobotni ```json ichida qaytarsa, javob 0 belgi bo'lib qolardi.
+    text = re.sub(r'^[ \t]*```[A-Za-z0-9_+.-]*[ \t]*$', '', text, flags=re.MULTILINE)
+    text = text.replace('```', '')
     text = re.sub(r'\n\s*\n', '\n\n', str(text))
     return text.strip()
 
@@ -388,8 +391,9 @@ async def _wikipedia_related(topic, lang, max_chars=4000, full=False):
     return {}
 
 
-async def wikipedia_fetch(topic, max_chars=4000, full=False, gen_lang="uz"):
+async def wikipedia_fetch(topic, max_chars=4000, full=False, gen_lang="uz", allow_related=None):
     langs = wiki_langs_for_topic(topic, gen_lang)
+    rejected = False
     _log(f"🔍 Wikipedia qidiruv: {langs} (mavzu: '{topic}')")
     async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=20), headers={"User-Agent": USER_AGENT}) as session:
         for lang in langs:
@@ -404,6 +408,7 @@ async def wikipedia_fetch(topic, max_chars=4000, full=False, gen_lang="uz"):
                     if (re.fullmatch(r"[A-Za-z\s'\u2019\-\.]+", str(topic))
                             and not _looks_like_same_name(topic, title)):
                         _log(f"[WIKI {lang}] '{title}' mavzuga mos emas, keyingisi")
+                        rejected = True
                         continue
                 exintro = "" if full else "&exintro"
                 page_url = f"https://{lang}.wikipedia.org/w/api.php?action=query&prop=extracts|pageimages{exintro}&explaintext&piprop=original&titles={aiohttp.helpers.quote(title)}&format=json&redirects=1"
@@ -417,11 +422,20 @@ async def wikipedia_fetch(topic, max_chars=4000, full=False, gen_lang="uz"):
                         return {"found": True, "lang": lang, "title": title, "text": extract[:max_chars], "image": image, "url": f"https://{lang}.wikipedia.org/wiki/{title.replace(' ', '_')}"}
             except Exception as e:
                 _log(f"[WIKI {lang}] xato: {e}"); continue
-    # No article for this exact phrase: use the closest same-language subject, so
-    # the facts still come from an encyclopedia instead of from the model alone.
-    related = await _wikipedia_related(topic, gen_lang, max_chars=max_chars, full=full)
-    if related.get("found"):
-        return related
+    # A misspelled word or a search hit that was clearly about something else must
+    # not be replaced with an unrelated article: the document then came out on a
+    # different topic than the user asked for.
+    if rejected:
+        return {"found": False, "text": "", "image": "", "url": "", "title": "", "lang": ""}
+    # Long descriptive topics (50-100 characters) have no exact article; using the
+    # "closest" one silently switched the subject. Only short, title-like topics
+    # may use the related article fallback.
+    if allow_related is None:
+        allow_related = len(str(topic or "").split()) <= 6 and len(str(topic or "")) <= 60
+    if allow_related:
+        related = await _wikipedia_related(topic, gen_lang, max_chars=max_chars, full=full)
+        if related.get("found"):
+            return related
     return {"found": False, "text": "", "image": "", "url": "", "title": "", "lang": ""}
 
 def wiki_block(wiki, lang="uz"):
@@ -574,6 +588,9 @@ async def _generate_section(service, topic, sec_title, sec_pages, sec_desc, lang
         }
         prompt = (
             f"{topic_label}: {topic}\n{section_label}: {sec_title} ({sec_desc})\n"
+            f"The topic is fixed exactly as written: {topic}. Do not rename, translate, narrow, "
+            "broaden or replace it, and never switch to a related subject. Every paragraph must "
+            "serve exactly this topic.\n"
             f"{part_instructions.get(lc, part_instructions['en'])}\n"
             f"{prev_label} (avoid repeating): {local_prev[:600]}\n"
             f"{wiki_block(wiki, lc)}\n\n{instruction}\n"
@@ -1176,11 +1193,18 @@ async def _generate_insho(topic, pages, lang, plan="", subject=""):
     except (TypeError, ValueError):
         pages = 3
     pages = min(5, max(3, pages))
-    lines = _insho_plan_lines(plan, topic, lc)
-    plan_intro = re.sub(r"^\s*1[.)]\s*", "", lines[0]).strip()
-    plan_a = re.sub(r"^\s*a[)]\s*", "", lines[2]).strip() if len(lines) > 2 else ""
-    plan_b = re.sub(r"^\s*b[)]\s*", "", lines[3]).strip() if len(lines) > 3 else ""
-    plan_concl = re.sub(r"^\s*3[.)]\s*", "", lines[4]).strip() if len(lines) > 4 else ""
+    # Reja endi so'ralmaydi: bo'limlar mavzuning o'zidan quriladi. Eski
+    # sessiyalarda reja kelib qolsa, avvalgidek ishlatiladi.
+    if str(plan or "").strip():
+        lines = _insho_plan_lines(plan, topic, lc)
+        plan_intro = re.sub(r"^\s*1[.)]\s*", "", lines[0]).strip()
+        plan_a = re.sub(r"^\s*a[)]\s*", "", lines[2]).strip() if len(lines) > 2 else ""
+        plan_b = re.sub(r"^\s*b[)]\s*", "", lines[3]).strip() if len(lines) > 3 else ""
+        plan_concl = re.sub(r"^\s*3[.)]\s*", "", lines[4]).strip() if len(lines) > 4 else ""
+    else:
+        plan_intro = str(topic or "").strip()
+        plan_a = plan_b = ""
+        plan_concl = ""
 
     try:
         wiki = await wikipedia_fetch(topic, max_chars=6000, full=True, gen_lang=lc)
@@ -1197,8 +1221,8 @@ async def _generate_insho(topic, pages, lang, plan="", subject=""):
     solid = 0
     for marker, title, section_pages, desc in (
         ("INSHO_INTRO", f"{intro_word}: {plan_intro}", 1, f"{intro_desc} {style_desc}"),
-        ("INSHO_BODY_A", f"{body_word}, a): {plan_a}", first_pages, f"{body_desc} {style_desc}"),
-        ("INSHO_BODY_B", f"{body_word}, b): {plan_b}", second_pages, f"{body_desc} {style_desc}"),
+        ("INSHO_BODY_A", f"{body_word}, a): {plan_a}".rstrip(": "), first_pages, f"{body_desc} {style_desc}"),
+        ("INSHO_BODY_B", f"{body_word}, b): {plan_b}".rstrip(": "), second_pages, f"{body_desc} {style_desc}"),
         ("INSHO_CONCLUSION", f"{concl_word}: {plan_concl}", 1, f"{concl_desc} {style_desc}"),
     ):
         text = await _generate_section("insho", topic, title, section_pages,
@@ -1572,7 +1596,9 @@ async def _generate_impl(service, topic, options, lang="uz"):
             f" You are a skilled essay writer. Write idiomatic, coherent {ln} only. "
             "Do not code-switch or imitate broken language. Never repeat a sentence or paragraph. "
             "Do not invent precise statistics, quotations, or sources. Do not output section headings. "
-            "Write the essay itself: never output rules, tips, checklists or advice about how an essay should be written."
+            "Write the essay itself: never output rules, tips, checklists or advice about how an essay should be written. "
+            f"The user's topic is fixed exactly as written: {topic}. Never rename it, translate it, "
+            "narrow it or drift to a related subject; every paragraph must answer exactly this topic."
         )
 
         async def generate_section(label, prompt, expected, max_tokens=1200):
@@ -3306,13 +3332,49 @@ def _skip_model(api, model, seconds, reason):
     _log(f"⏭ {api.get('name', 'API')} / {model}: {reason}")
 
 
+# Kalit darajasidagi tanaffus. «Kvota tugadi / juda ko'p so'rov» javobida o'sha
+# kalitning qolgan modellarini ham ketma-ket sinash bekorga so'rov sarflaydi:
+# bir vaqtda kirgan 5-6 foydalanuvchi shu sababli butun limitni yoqib yuborardi.
+_KEY_SKIP = {}
+
+
+def _key_skip_key(api):
+    return f"{str(api.get('name') or '')}|{str(api.get('api_key') or '')[-6:]}"
+
+
+def _key_cooling(api):
+    entry = _KEY_SKIP.get(_key_skip_key(api))
+    if not entry:
+        return False
+    if time.time() >= entry[0]:
+        _KEY_SKIP.pop(_key_skip_key(api), None)
+        return False
+    return True
+
+
+def _cool_key(api, seconds, reason):
+    _KEY_SKIP[_key_skip_key(api)] = (time.time() + seconds, reason)
+    _log(f"⏸ {api.get('name', 'API')} {int(seconds)}s chetlatildi: {reason}")
+
+
+def _warm_key(api):
+    _KEY_SKIP.pop(_key_skip_key(api), None)
+
+
 def _note_model_status(api, model, status, detail):
-    """Modelni vaqtincha ro'yxatdan chiqarish: yopilgan yoki band bo'lsa."""
+    """Modelni vaqtincha ro'yxatdan chiqarish: yopilgan, band yoki limit tugagan."""
     low = str(detail or "").lower()
     if status in (404, 410) or "no longer available" in low:
         _skip_model(api, model, 6 * 3600, "model mavjud emas")
     elif status in (503, 529) or "high demand" in low or "overloaded" in low:
         _skip_model(api, model, 120, "model vaqtincha band")
+    elif status == 429:
+        if "quota" in low or "billing" in low:
+            # Kunlik/oylik bepul kvota tugagan: keyingi foydalanuvchilar uni
+            # qayta-qayta sinab vaqt yo'qotmasligi kerak.
+            _skip_model(api, model, 1800, "bepul kvota tugagan")
+        else:
+            _skip_model(api, model, 75, "so'rov limiti")
 
 
 def _failure(api, status, body, model=""):
@@ -3320,6 +3382,16 @@ def _failure(api, status, body, model=""):
     detail = _error_detail(status, body)
     if "manzil API emas" in detail:
         _mark_api_dead(api, detail)
+        # Yopilgan tunnel (eski AI_BASE_URL) bazada qolib, har so'rovda qayta
+        # sinaladi. Uni butunlay o'chirib qo'yamiz — admin panelda qayta yoqish
+        # mumkin, lekin u o'zi hech qachon navbatga qaytmaydi.
+        try:
+            import ai_pool
+            if api.get("key_id"):
+                ai_pool.deactivate_key(api["key_id"], detail)
+                _log(f"⏹ {api.get('name', 'API')} o'chirildi: manzil API emas")
+        except Exception:
+            pass
     if model:
         _note_model_status(api, model, status, detail)
     return status, None, detail
@@ -3335,7 +3407,12 @@ def _google_thinks(model):
     name = str(model or "").lower()
     if "gemma" in name or "2.0" in name:
         return False
-    return "2.5" in name or name.startswith("gemini-3") or "flash-lite-latest" in name
+    # Gemini 3 «thinkingBudget»ni qabul qilmaydi, lekin 400 javobida
+    # `_try_post` sozlamasiz avtomatik qayta so'raydi. flash-lite-latest
+    # o'ylashni o'chirishni talab qiladi (aks holda JSON yarmida uziladi).
+    if "flash-lite-latest" in name:
+        return True
+    return "2.5" in name
 
 
 def _google_text(body):
@@ -3395,6 +3472,8 @@ async def _try_post(api, model, payload):
                         # sozlamasiz qayta so'raymiz, modelni tashlab ketmaymiz.
                         if attempt == 0 and resp.status == 400 and \
                                 "thinkingConfig" in data["generationConfig"]:
+                            # 400 har doim thinkingConfig aybi bo'lmasa ham,
+                            # sozlamasiz qayta so'rash arzon (Gemini 3 oilasi).
                             continue
                         # 503 — model vaqtincha to'lgan; bir marta qayta so'raymiz.
                         if attempt == 0 and resp.status in (500, 502, 503, 504):
@@ -3571,6 +3650,14 @@ async def _discover_models(api):
                     _DISCOVER_ERRORS[cache_key] = _error_detail(resp.status, detail)
                     _MODEL_FAIL_CACHE[cache_key] = (time.time(), _DISCOVER_ERRORS[cache_key])
                     _log(f"Model ro'yxati olinmadi ({api.get('name')}): HTTP {resp.status}")
+                    if "manzil API emas" in _DISCOVER_ERRORS[cache_key]:
+                        _mark_api_dead(api, _DISCOVER_ERRORS[cache_key])
+                        try:
+                            import ai_pool
+                            if api.get("key_id"):
+                                ai_pool.deactivate_key(api["key_id"], _DISCOVER_ERRORS[cache_key])
+                        except Exception:
+                            pass
                     return []
                 data = await resp.json(content_type=None)
         for item in (data.get("data") or data.get("models") or []):
@@ -3692,11 +3779,15 @@ async def _chat_complete(prompt, system=None, max_tokens=2500, temperature=0.5,
         start_api = CURRENT_API_INDEX % len(apis)
     errors = []
     attempts = 0
+    rate_limited_models = []
     for api_offset in range(len(apis)):
         api_index = (start_api + api_offset) % len(apis)
         api = apis[api_index]
         if not api.get("api_key"):
             errors.append(f"{api.get('name', 'API')}: kalit sozlanmagan")
+            continue
+        if _key_cooling(api):
+            errors.append(f"{api.get('name', 'API')}: qisqa tanaffusda (limit tugagan)")
             continue
         mismatch = _key_mismatch(api)
         if mismatch:
@@ -3721,6 +3812,7 @@ async def _chat_complete(prompt, system=None, max_tokens=2500, temperature=0.5,
                 CURRENT_API_INDEX = api_index
                 CURRENT_MODEL_INDEX = 0
                 _mark_api_alive(api)
+                _warm_key(api)
                 _save_good_model(api, model)
                 try:
                     ai_pool.mark_result(api.get("key_id"), True)
@@ -3729,7 +3821,10 @@ async def _chat_complete(prompt, system=None, max_tokens=2500, temperature=0.5,
                     pass
                 LAST_ERROR = None
                 _log(f"✅ Ishladi: {api.get('name', 'API')} → {model}")
-                return clean_ai_text(answer).strip()
+                # JSON so'ralgan javobni tozalash mumkin emas: tozalash JSON
+                # kalitlarini yoki kod blokini buzib, hisobot yo'qolardi.
+                raw_answer = str(answer).strip()
+                return raw_answer if _payload_expects_json(payload) else clean_ai_text(raw_answer).strip()
             reason = error or f"bo'sh javob (HTTP {status})"
             detail = f"{api.get('name', 'API')} / {model}: {reason}"
             errors.append(detail)
@@ -3750,14 +3845,45 @@ async def _chat_complete(prompt, system=None, max_tokens=2500, temperature=0.5,
                 break
             if status == 429:
                 consecutive_rate_limits += 1
-                await asyncio.sleep(0.25)
-                if consecutive_rate_limits >= 2:
+                rate_limited_models.append((api, model))
+                low = str(reason).lower()
+                await asyncio.sleep(0.2)
+                # Kunlik kvota tugagan bo'lsa, o'sha kalitning boshqa modellarini
+                # ham sinash 10-20 bekorga so'rov degani. Model 1800s chetlatiladi
+                # (_note_model_status), kalit esa 2 daqiqa tanaffusga chiqadi.
+                if "quota" in low or "billing" in low:
+                    _cool_key(api, 120, "bepul kvota tugagan")
+                    break
+                if consecutive_rate_limits >= 3:
+                    _cool_key(api, 60, "so'rov limiti")
                     break
                 continue
             consecutive_rate_limits = 0
         # brief pause between providers to avoid immediate rate-limit bursts
         if api_offset < len(apis) - 1:
             await asyncio.sleep(0.15)
+
+    # Ba'zi limitlar daqiqalik: qisqa tanaffusdan keyin aynan 429 bergan
+    # modellarni yana bir marta sinab ko'rish ko'pincha natija beradi.
+    if rate_limited_models:
+        await asyncio.sleep(2.0)
+        for api, model in rate_limited_models[-3:]:
+            attempts += 1
+            status, answer, error = await _try_post(api, model, _model_payload(payload, model))
+            if status == 200 and answer and str(answer).strip():
+                _mark_api_alive(api)
+                _warm_key(api)
+                _save_good_model(api, model)
+                try:
+                    ai_pool.mark_result(api.get("key_id"), True)
+                    ai_pool.note_error("")
+                except Exception:
+                    pass
+                LAST_ERROR = None
+                _log(f"✅ Limitdan keyin ishladi: {api.get('name', 'API')} → {model}")
+                raw_answer = str(answer).strip()
+                return raw_answer if _payload_expects_json(payload) else clean_ai_text(raw_answer).strip()
+            errors.append(f"{api.get('name', 'API')} / {model}: {error or f'HTTP {status}'}")
 
     LAST_ERROR = f"Barcha AI urinishlari muvaffaqiyatsiz ({attempts} model). " + " | ".join(errors[-4:])
     try:

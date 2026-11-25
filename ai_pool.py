@@ -106,6 +106,10 @@ def _exec(sql, args=()):
 
 
 _SYNCED_PATHS = set()
+# Sxema va boshlang'ich sozlamalar bir marta yoziladi. Avval `ensure()` har
+# `keys()`/`models()` chaqiruvida bazaga yozardi: bir vaqtda kirgan 5-6
+# foydalanuvchida SQLite qulflanib, handler xatolari kelib chiqardi.
+_READY_PATHS = set()
 
 
 def ensure():
@@ -115,11 +119,17 @@ def ensure():
     qo'shilsa, u bazada hali yo'q bo'lsa avtomatik qo'shiladi. Admin panelda
     qo'lda qo'shilgan kalitlar va o'chirilgan kalitlar tegilmaydi.
     """
+    path = os.path.abspath(str(config.DB_PATH))
+    # `_SYNCED_PATHS` ham tekshiriladi: muhitdagi yangi kalitlar bir marta
+    # ko'chirilishi kerak, qolgan chaqiruvlar esa bazaga yozmaydi.
+    if path in _READY_PATHS and path in _SYNCED_PATHS:
+        return
     with _LOCK:
+        if path in _READY_PATHS and path in _SYNCED_PATHS:
+            return
         con = _connect()
         try:
             con.executescript(_SCHEMA)
-            path = os.path.abspath(str(config.DB_PATH))
             if path not in _SYNCED_PATHS:
                 existing = {row[0] for row in con.execute("SELECT api_key FROM ai_keys")}
                 added = 0
@@ -139,6 +149,10 @@ def ensure():
                 if dropped:
                     print(f"[ai_pool] {dropped} ta eskirgan model ro'yxatdan olib tashlandi",
                           flush=True)
+                paused = _pause_dead_endpoints(con)
+                if paused:
+                    print(f"[ai_pool] {paused} ta o'lik manzil (tunnel/localhost) o'chirildi",
+                          flush=True)
                 _SYNCED_PATHS.add(path)
             for key, value in CHAT_DEFAULTS.items():
                 con.execute("INSERT OR IGNORE INTO ai_settings(k,v) VALUES(?,?)", (key, value))
@@ -149,6 +163,7 @@ def ensure():
             con.commit()
         finally:
             con.close()
+        _READY_PATHS.add(path)
 
 
 def _drop_retired_models(con):
@@ -163,6 +178,26 @@ def _drop_retired_models(con):
     return dropped
 
 
+# Vaqtinchalik tunnel manzillari (ngrok va h.k.) deploy qilingan botda bir necha
+# soatdan keyin o'lik bo'ladi va har so'rovda HTML 404 qaytaradi. Bunday kalit
+# ishlayotgan provayderlar navbatini buzmasligi uchun o'chirib qo'yiladi.
+_DEAD_HOST_WORDS = ("ngrok", "trycloudflare", "localhost", "127.0.0.1", "0.0.0.0")
+
+
+def _is_tunnel_base(base_url):
+    return any(word in str(base_url or "").lower() for word in _DEAD_HOST_WORDS)
+
+
+def _pause_dead_endpoints(con):
+    paused = 0
+    rows = con.execute("SELECT id, base_url, active FROM ai_keys WHERE active=1").fetchall()
+    for row in rows:
+        if _is_tunnel_base(row["base_url"]):
+            con.execute("UPDATE ai_keys SET active=0 WHERE id=?", (row["id"],))
+            paused += 1
+    return paused
+
+
 def _env_keys():
     """Muhit o'zgaruvchilaridagi mavjud kalitlar (bir marta ko'chiriladi)."""
     rows = []
@@ -173,6 +208,11 @@ def _env_keys():
             if not key:
                 continue
             base = str(api.get("base_url") or "")
+            if _is_tunnel_base(base) and not str(api.get("models") or ""):
+                # AI_MODE=auto bilan qo'yilgan vaqtinchalik tunnel: bazaga
+                # ko'chirilmaydi, u baribir o'lik bo'ladi.
+                print(f"[ai_pool] vaqtinchalik tunnel manzili o'tkazib yuborildi: {base}", flush=True)
+                continue
             provider = "google" if "generativelanguage" in base else (
                 "groq" if "groq.com" in base else (
                     "cloudflare" if "cloudflare" in base else "openai"))
@@ -215,6 +255,23 @@ def toggle_key(key_id):
 
 def delete_key(key_id):
     _exec("DELETE FROM ai_keys WHERE id=?", (int(key_id),))
+
+
+def deactivate_key(key_id, reason=""):
+    """O'lik manzilni (masalan, yopilgan ngrok tunneli) butunlay o'chirib qo'yadi.
+
+    Har so'rovda qayta sinalmasligi uchun `active=0` qilinadi. Admin panelda
+    kalitni yana yoqish mumkin.
+    """
+    if not key_id:
+        return False
+    try:
+        _exec("UPDATE ai_keys SET active=0 WHERE id=?", (int(key_id),))
+        if reason:
+            print(f"[ai_pool] kalit #{key_id} o'chirildi: {str(reason)[:160]}", flush=True)
+        return True
+    except Exception:
+        return False
 
 
 def mark_result(key_id, ok):

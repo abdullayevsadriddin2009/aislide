@@ -89,17 +89,16 @@ class EssayAndDesignPreviewTests(unittest.TestCase):
                  "Shu sababli tarbiyaga vaqt ajratish kelajakka qo'yilgan sarmoyadir.")
         self.assertFalse(ai_api._essay_text_is_suspicious(essay, "uz", 40))
 
-    def test_essay_document_starts_with_a_plan(self):
+    def test_essay_document_has_no_plan(self):
         content = ("[[ESSAY_INTRO]]\nYoshlikda berilgan tarbiya muhim.\n\n"
                    "[[ESSAY_BODY]]\nBirinchi dalil shu yerda.\n\nIkkinchi dalil ham shu yerda.\n\n"
                    "[[ESSAY_CONCLUSION]]\nXulosa shu yerda.")
         body = paragraphs(docx_generator.generate_docx(
             "Yoshlikda berilgan tarbiyaning ahamiyati", service_name("esse", "uz"), "esse", "uz",
             250, content, author="Talaba"))
-        plan_index = next(i for i, line in enumerate(body) if line.isupper() and "REJA" in line)
-        plan_lines = body[plan_index + 1:plan_index + 6]
-        self.assertEqual(len([line for line in plan_lines if re.match(r"^\d+\.", line)]), 5,
-                         body[plan_index:plan_index + 8])
+        self.assertFalse([line for line in body if line.isupper() and "REJA" in line], body)
+        self.assertFalse([line for line in body if re.match(r"^\d+\.\s", line)], body)
+        self.assertTrue(any("Birinchi dalil" in line for line in body), body)
 
     def test_design_previews_are_distinct_images(self):
         import design_preview

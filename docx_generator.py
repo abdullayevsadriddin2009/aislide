@@ -2509,10 +2509,8 @@ def _generate_insho_docx(doc, topic, lang, content_text, author, lbl, extra_data
     section = _mq_setup_page(doc, mq)
     _add_footer(section, lc)
 
-    plan_lines = _insho_plan_for_doc(extra_data.get("insho_plan", ""), topic, lc)
-    plan_a = re.sub(r"^\s*a[)]\s*", "", plan_lines[2]).strip() if len(plan_lines) > 2 else ""
-    plan_b = re.sub(r"^\s*b[)]\s*", "", plan_lines[3]).strip() if len(plan_lines) > 3 else ""
-
+    # Reja so'ralmaydi: hujjat mavzudan keyin to'g'ridan-to'g'ri matn bilan
+    # boshlanadi (reja qadami mavzuni o'zgartirib yuborardi).
     # 1. Mavzu (markazlashtirilgan)
     title = doc.add_paragraph()
     title.alignment = WD_ALIGN_PARAGRAPH.CENTER
@@ -2528,17 +2526,6 @@ def _generate_insho_docx(doc, topic, lang, content_text, author, lbl, extra_data
         run = byline.add_run(str(author).strip())
         _mq_font(run, 14)
 
-    # 2. REJA (majburiy, matndan oldin)
-    _mq_heading(doc, ESSAY_PLAN_TITLES.get(lc, "OUTLINE"), size=16, center=True, after=8)
-    for line in plan_lines:
-        para = doc.add_paragraph()
-        para.alignment = WD_ALIGN_PARAGRAPH.LEFT
-        fmt = para.paragraph_format
-        fmt.line_spacing = 1.5; fmt.space_after = Pt(0)
-        fmt.first_line_indent = Cm(0)
-        fmt.left_indent = Cm(1.0 if line.strip().startswith(("a)", "b)", "а)", "б)")) else 0)
-        run = para.add_run(line)
-        _mq_font(run, 14)
     _mq_blank(doc, 1)
 
     sections = _parse_insho_sections(content_text)
@@ -2549,16 +2536,7 @@ def _generate_insho_docx(doc, topic, lang, content_text, author, lbl, extra_data
         _mq_para(doc, part)
 
     _mq_heading(doc, words[1], size=16, center=True, after=8)
-    for label, key in (("a)", "body_a"), ("b)", "body_b")):
-        sub_title = plan_a if label == "a)" else plan_b
-        if sub_title:
-            sub = doc.add_paragraph()
-            sub.alignment = WD_ALIGN_PARAGRAPH.LEFT
-            fmt = sub.paragraph_format
-            fmt.first_line_indent = Cm(0); fmt.line_spacing = 1.5; fmt.space_after = Pt(4)
-            fmt.keep_with_next = True
-            run = sub.add_run(f"{label} {sub_title}")
-            _mq_font(run, 14, bold=True)
+    for key in ("body_a", "body_b"):
         for part in _insho_paragraphs(sections.get(key, "")) or [_loc("essay_main_fb", lc, topic)]:
             _mq_para(doc, part)
 
@@ -2626,17 +2604,7 @@ def _generate_esse_docx(doc, topic, lang, content_text, author, lbl, extra_data=
         fmt.first_line_indent = Cm(0); fmt.line_spacing = 1.15; fmt.space_after = Pt(10)
         _mq_font(byline.add_run(str(author).strip()), 12, italic=True)
 
-    # REJA hujjatning boshida (mavzudan keyin) turadi, xuddi inshodagi kabi.
-    plan_items = _essay_plan_items(extra_data.get("essay_outline", ""), topic, lc)
-    if plan_items:
-        _mq_heading(doc, ESSAY_PLAN_TITLES.get(lc, "OUTLINE"), size=14, center=True, after=6)
-        for index, item in enumerate(plan_items, 1):
-            plan_para = doc.add_paragraph()
-            fmt = plan_para.paragraph_format
-            fmt.first_line_indent = Cm(0); fmt.line_spacing = 1.15; fmt.space_after = Pt(2)
-            _mq_font(plan_para.add_run(f"{index}. {item}"), 12)
-        _mq_blank(doc, 1)
-
+    # Esse rejasiz: mavzudan keyin darhol matn boshlanadi.
     intro, body, conclusion = _parse_essay_sections(content_text)
     intro = _remove_essay_section_headings(intro)
     conclusion = _remove_essay_section_headings(conclusion)

@@ -42,6 +42,17 @@ def _key_models(key):
     return list(ai_pool.PROVIDER_MODELS.get(str(key.get("provider") or ""), ()))
 
 
+def _api_ref(key):
+    """`ai_api` cooldown/skip funksiyalari kutgan qisqa lug'at."""
+    provider = str(key.get("provider") or "")
+    return {
+        "name": key.get("label") or provider,
+        "api_key": key.get("api_key") or "",
+        "base_url": key.get("base_url") or "",
+        "key_id": key.get("id"),
+    }
+
+
 def attempts():
     """[(kalit, model)] — asosiy modeldan boshlab, xatolar soni bo'yicha tartibda."""
     keys = ai_pool.keys(active_only=True)
@@ -202,11 +213,25 @@ async def stream_reply(system, prompt, history=None, on_text=None,
 
     last = ""
     attempts_made = 0
+    # ai_api cooldown'lari bilan bir xil holat: limit tugagan model/kalit va
+    # o'lik tunnel manzili chatda ham qayta sinalmaydi.
+    try:
+        import ai_api
+    except Exception:
+        ai_api = None
     async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=AI_TIMEOUT)) as session:
         for key, model in plan:
-            attempts_made += 1
             key_id = key.get("id")
             label = f"{key.get('label') or key.get('provider')} / {model}"
+            ref = _api_ref(key)
+            if ai_api is not None:
+                try:
+                    if (ai_api._api_is_dead(ref) or ai_api._key_cooling(ref)
+                            or ai_api._model_skipped(ref, model)):
+                        continue
+                except Exception:
+                    pass
+            attempts_made += 1
             try:
                 if str(key.get("provider")) == "google":
                     status, text, error = await _stream_google(session, key, model, body, on_text)
@@ -225,6 +250,18 @@ async def stream_reply(system, prompt, history=None, on_text=None,
 
             last = f"{label}: {error or 'javob kelmadi'}"
             print(f"[ai_chat] ❌ {last}", flush=True)
+            if ai_api is not None:
+                try:
+                    low = str(error or "").lower()
+                    if "manzil API emas" in low:
+                        ai_api._mark_api_dead(ref, error)
+                        ai_pool.deactivate_key(key_id, error)
+                    elif status:
+                        ai_api._note_model_status(ref, model, status, error)
+                        if status == 429 and ("quota" in low or "billing" in low):
+                            ai_api._cool_key(ref, 120, "bepul kvota tugagan")
+                except Exception:
+                    pass
             if status == 404:
                 continue  # model topilmadi → keyingi model/kalit sinaladi
             if status in _CREDENTIAL_CODES:

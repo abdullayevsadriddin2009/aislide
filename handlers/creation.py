@@ -15,7 +15,7 @@ from keyboards import (option_kb_for, confirm_kb, main_kb, option_label,
 from designs import (subject_name, detect_subject_key, lang_full_name, SLIDE_COUNTS,
                      design_name, DESIGNS, DESIGN_KEYS, SUBJECT_KEYS)
 from ai_api import (generate, generate_slides_structured, get_last_error, search_images, download_image,
-                    generate_insho_plan, image_grade, related_keywords)
+                    image_grade, related_keywords)
 from pptx_generator import generate_pptx
 from docx_generator import generate_docx
 from alphabet import slides_to_new_alphabet, to_new_alphabet
@@ -333,6 +333,17 @@ def _to_pdf(docx_bytes, topic, suffix="docx"):
             except Exception as exc:
                 print(f"[creation] LibreOffice PDF conversion error: {exc}", flush=True)
 
+        # LibreOffice bo'lmagan hosting (Render native) uchun reportlab zaxirasi:
+        # aks holda PDF tanlansa ham DOCX qaytib ketardi.
+        try:
+            import pdf_fallback
+            fallback = pdf_fallback.to_pdf(docx_bytes, suffix, topic)
+            if fallback:
+                print("[creation] PDF zaxira usulida yasaldi (LibreOffice yo'q)", flush=True)
+                return fallback
+        except Exception as exc:
+            print(f"[creation] PDF zaxira xatosi: {type(exc).__name__}: {exc}", flush=True)
+
         if suffix != "docx":
             # docx2pdf faqat Word hujjatlari bilan ishlaydi.
             return None
@@ -604,6 +615,7 @@ async def author_received(message: Message, state: FSMContext):
     skip_words = ["-", "—", "yo'q", "yoq", "none", "skip", "o'tkazib yubor", "нет", "пропустить"]
     if author.lower() in skip_words:
         author = ""
+    lang = await _lang(message.from_user.id)
     await state.update_data(author=author)
     data = await state.get_data()
     if data.get("service") == "slide":
@@ -823,27 +835,8 @@ async def cb_confirm(call: CallbackQuery, state: FSMContext):
     new_alphabet = (str(language_code).lower() == "uz"
                     and data.get("alphabet") == "new")
     
-    # ===== INSHO UCHUN MAXSUS: REJA =====
-    # Inshoda reja majburiy va u hujjat boshida (mavzudan keyin) yoziladi.
-    if service == "insho":
-        language_code = data.get("language", lang)
-        try:
-            pages = int(options.get("pages", 3) or 3)
-        except (TypeError, ValueError):
-            pages = 3
-        pages = pages if pages in (3, 4, 5) else min((3, 4, 5), key=lambda n: abs(n - pages))
-        options["pages"] = pages
-        await state.update_data(options=options)
-        plan = await generate_insho_plan(generation_topic, language_code, pages)
-        await state.update_data(essay_outline=plan)
-        kb = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text=t("btn_write_essay", lang), callback_data="essay:go")],
-            [InlineKeyboardButton(text=t("btn_cancel", lang), callback_data="cancel")],
-        ])
-        await msg.edit_text(t("essay_outline", lang, outline=plan[:3000]), reply_markup=kb)
-        await state.set_state(Creation.essay_outline)
-        return
-        
+    # Esse/insho rejasiz yoziladi: alohida reja qadami mavzuni o'zgartirib
+    # yuborardi va foydalanuvchi boshqa mavzudagi ish olardi.
     safe_topic = "".join(c for c in topic[:25] if c.isalnum() or c in " _-").strip() or "document"
     
     if service == "slide":

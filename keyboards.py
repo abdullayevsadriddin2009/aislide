@@ -23,7 +23,9 @@ def main_kb(lang="uz"):
         mini_row = [[KeyboardButton(text=t("btn_app", lang),
                                     web_app=WebAppInfo(url=config.WEBAPP_URL + "/app"))]]
     return ReplyKeyboardMarkup(keyboard=[
-        [KeyboardButton(text=t("btn_create", lang))]] + mini_row + [
+        [KeyboardButton(text=t("btn_create", lang))],
+        # Esse tekshiruvi asosiy menyuda — /start dan keyin darhol ko'rinadi.
+        [KeyboardButton(text=t("btn_check_essay", lang))]] + mini_row + [
         [KeyboardButton(text=t("btn_chat", lang)), KeyboardButton(text=t("btn_balance", lang))],
         [KeyboardButton(text=t("btn_referral", lang)), KeyboardButton(text=t("btn_help", lang))],
         [KeyboardButton(text=t("btn_lang", lang))],

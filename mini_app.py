@@ -228,7 +228,8 @@ def _services_payload(lang):
             "price": _price(code),
             "title_fields": code in TITLE_SERVICES,
             "author_only": code in COMPACT_AUTHOR_SERVICES,
-            "needs_plan": code == "insho",
+            # Reja qadami olib tashlandi: u mavzuni o'zgartirib yuborardi.
+            "needs_plan": False,
         })
     return {
         "services": items,

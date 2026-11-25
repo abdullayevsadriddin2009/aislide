@@ -298,8 +298,8 @@ def _menu_actions():
     actions = {}
     pairs = (
         ("balance", "btn_balance"), ("referral", "btn_referral"),
-        ("create", "btn_create"), ("help", "btn_help"),
-        ("chat", "btn_chat"), ("lang", "btn_lang"),
+        ("create", "btn_create"), ("check", "btn_check_essay"),
+        ("help", "btn_help"), ("chat", "btn_chat"), ("lang", "btn_lang"),
     )
     for code in ALL_LANGS:
         for action, key in pairs:
@@ -467,6 +467,9 @@ async def handle_menu_action(message: Message, state: FSMContext) -> bool:
         await cmd_referral(message, state)
     elif action == "create":
         await btn_create(message, state)
+    elif action == "check":
+        from handlers import checker as checker_handlers
+        await checker_handlers.start_check(message, state)
     elif action == "help":
         await cmd_help(message)
     elif action == "chat":
@@ -564,6 +567,16 @@ async def chat_handle(message: Message, state: FSMContext):
 
     for index, (chunk, part) in enumerate(zip(chunks, parts)):
         await deliver(chunk, part, first=(index == 0))
+
+
+@router.message(F.text.func(lambda text: _menu_action_for(text) == "check"))
+async def btn_check_essay(message: Message, state: FSMContext):
+    """Asosiy menyudagi «Esse tekshirish» tugmasi."""
+    if not await _is_subscribed(message.bot, message.from_user.id):
+        lang = await _lang(message.from_user.id)
+        await _sub_message(message.bot, message, lang); return
+    from handlers import checker as checker_handlers
+    await checker_handlers.start_check(message, state)
 
 
 @router.message(F.text.func(lambda text: _menu_action_for(text) == "balance"))

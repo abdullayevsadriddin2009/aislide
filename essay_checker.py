@@ -13,10 +13,12 @@ ham hisobga olinadi:
 Foydalanuvchi DOCX/TXT fayl, rasm yoki matn yuboradi; rasm Gemini vision orqali
 o'qiladi. Hisobotda har bir band bo'yicha ball, aniq xatolar va taqriz qaytadi.
 """
+import asyncio
 import base64
 import io
 import json
 import re
+import time
 
 import aiohttp
 
@@ -282,8 +284,8 @@ def _vision_config(model, max_tokens):
     uchun «57 so'z» ko'rgan holat). Shuning uchun o'ylashni o'chiramiz.
     """
     config = {"temperature": 0, "maxOutputTokens": max_tokens}
-    name = str(model or "")
-    if "2.0" not in name and "gemma" not in name.lower():
+    name = str(model or "").lower()
+    if "2.0" not in name and "gemma" not in name:
         config["thinkingConfig"] = {"thinkingBudget": 0}
     return config
 
@@ -300,6 +302,43 @@ def _vision_text(raw):
     reason = candidate.get("finishReason")
     truncated = str(reason).upper() == "MAX_TOKENS" or reason == 2
     return text, truncated
+
+
+# Bepul kvota tugagan modelni har bir sahifada qayta sinash 5-6 varaqli
+# qo'lyozmada o'nlab bekorga so'rov degani. Xato bergan model vaqtincha
+# chetlatiladi, shunda ishlaydigan modelga tezroq yetib boramiz.
+_VISION_SKIP = {}
+
+
+def _vision_key(row, model):
+    return f"{str(row.get('name') or '')}|{str(model or '')}"
+
+
+def _vision_skipped(row, model):
+    entry = _VISION_SKIP.get(_vision_key(row, model))
+    if not entry:
+        return False
+    if time.time() >= entry[0]:
+        _VISION_SKIP.pop(_vision_key(row, model), None)
+        return False
+    return True
+
+
+def _vision_fail(row, model, status, body):
+    low = str(body or "").lower()
+    if status == 429:
+        seconds = 1800 if ("quota" in low or "billing" in low) else 90
+        reason = "bepul kvota tugagan" if seconds > 100 else "so'rov limiti"
+    elif status in (404, 410) or "no longer available" in low:
+        seconds, reason = 6 * 3600, "model mavjud emas"
+    elif status in (400, 401, 403):
+        seconds, reason = 900, "model yoki kalit javob bermadi"
+    elif status in (500, 502, 503, 504, 529):
+        seconds, reason = 120, "model vaqtincha band"
+    else:
+        return
+    _VISION_SKIP[_vision_key(row, model)] = (time.time() + seconds, reason)
+    print(f"[check] ⏭ {row.get('name')} / {model}: {reason}", flush=True)
 
 
 async def _vision_post(url, payload, total=90):
@@ -334,9 +373,16 @@ async def _vision_call(row, model, image_data, mime, prompt, total=90):
             return "", False
         if status == 200:
             return _vision_text(body)
-        if attempt == 0 and "thinking" in str(body).lower():
+        # 400 har doim thinkingConfig aybi bo'lmasa ham, sozlamasiz qayta
+        # so'rash arzon va ko'p holatda aynan shu sabab bo'ladi.
+        if attempt == 0 and status == 400:
+            continue
+        # 5xx — provayder vaqtincha band, bir marta qayta so'raymiz.
+        if attempt == 0 and status in (500, 502, 503, 504, 529):
+            await asyncio.sleep(0.6)
             continue
         print(f"[check] vision {model}: HTTP {status}: {str(body)[:180]}", flush=True)
+        _vision_fail(row, model, status, body)
         return "", False
     return "", False
 
@@ -407,14 +453,24 @@ async def ocr_image(image_data, lang="uz"):
         return ""
     data, mime = prepare_image(image_data)
     best = ""
-    for row in rows[:2]:
+    # Har bir kalitdagi barcha Google kalitlarini sinaymiz, lekin jami urinish
+    # byudjeti cheklangan: bitta sahifa uchun 5-6 ta so'rovdan ko'proq ketmaydi.
+    budget = 6
+    for row in rows[:3]:
         models = [m.strip() for m in str(row["models"] or "").split(",") if m.strip()]
-        for model in _vision_candidates(models)[:3]:
+        for model in _vision_candidates(models):
+            if budget <= 0:
+                break
+            if _vision_skipped(row, model):
+                continue
+            budget -= 1
             text = await _read_full_page(row, model, data, mime, OCR_PROMPT)
             if word_count(text) > word_count(best):
                 best = text
             if word_count(best) >= OCR_ENOUGH_WORDS:
                 return best
+        if budget <= 0 or word_count(best) >= OCR_ENOUGH_WORDS:
+            break
     return best
 
 
@@ -766,6 +822,30 @@ async def _request_report(body, topic, lang, retry=False):
             last = getattr(ai_api, "LAST_ERROR", None)
             if last:
                 print(f"[check] AI sababi: {last}", flush=True)
+
+    # Zaif model to'liq hisobotni (izohlar, xatolar, taqriz) yozib tugata
+    # olmaydi va javob yarmida uziladi. Ballar esa qisqa javobda ham yetib
+    # keladi, shuning uchun faqat baholarni so'rab ko'ramiz.
+    compact = (
+        "Faqat JSON qaytaring, izoh va boshqa matn yozmang."
+        " Ballarni 0, 1 yoki 2 qilib bering.\n"
+        '{"scores": {"uslub": 0, "qarashlar": 0, "dalillar": 0, "qismlar": 0, '
+        '"mantiq": 0, "izchillik": 0, "imlo": 0, "tinish": 0, "qoshimchalar": 0, '
+        '"soz": 0, "paremiya": 0, "adabiy": 0}, '
+        '"sections": {"kirish": true, "asosiy": true, "xulosa": true}, '
+        '"topic_match": true, "plagiarism_suspected": false, '
+        '"has_plan": false, "has_epigraph": false}\n\n'
+        f"Mavzu: {topic or 'ko\'rsatilmagan'}\nESSE MATNI:\n" + body[:8000]
+    )
+    try:
+        raw = await ai_api._chat_complete(compact, system=system, max_tokens=700,
+                                          temperature=0.1)
+        data = _parse_json_object(raw)
+        if data:
+            print("[check] qisqa (faqat ballar) javob ishlatildi", flush=True)
+            return data
+    except Exception as exc:
+        print(f"[check] qisqa baholash xatosi: {type(exc).__name__}: {exc}", flush=True)
     return None
 
 
