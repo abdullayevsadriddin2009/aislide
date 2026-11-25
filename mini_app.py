@@ -689,6 +689,16 @@ async def _generate(job_id):
                 except Exception:
                     pass
             content, ext = buffer.read(), "pptx"
+            if fmt == "pdf":
+                # Taqdimot PDF tanlangan bo'lsa, PDF bo'lib tushadi (bot bilan bir xil).
+                job["stage"] = "convert"
+                try:
+                    from handlers.creation import _to_pdf
+                    pdf = _to_pdf(content, topic, "pptx")
+                    if pdf:
+                        content, ext = pdf, "pdf"
+                except Exception:
+                    pass
         else:
             from ai_api import generate as generate_content
             from docx_generator import generate_docx

@@ -524,7 +524,8 @@ function renderConfirm(){
       <div class="kv"><span>${esc(t("pages"))}</span><b>${esc(orderOptionText(item, options))}</b></div>
       <div class="kv"><span>${esc(t("lang"))}</span><b>${esc(langName)}</b></div>
       ${item.code === "slide"
-        ? `<div class="kv"><span>${esc(t("design"))}</span><b>${esc(design)}</b></div>`
+        ? `<div class="kv"><span>${esc(t("design"))}</span><b>${esc(design)}</b></div>
+           <div class="kv"><span>${esc(t("format"))}</span><b>${esc((state.form.format || "pptx").toUpperCase())}</b></div>`
         : `<div class="kv"><span>${esc(t("format"))}</span><b>${esc((state.form.format || "docx").toUpperCase())}</b></div>`}
       ${extra}
       <div class="kv"><span>${esc(t("priceLabel"))}</span><b>${esc(price)}</b></div>
@@ -592,7 +593,10 @@ function renderForm(){
           `<button type="button" class="design-card ${state.form.design_key===d.key?"sel":""}" data-design="${esc(d.key)}">
             <img src="/design-preview/${esc(d.key)}.jpg?lang=${encodeURIComponent(state.lang)}" alt="${esc(d.name)}" loading="lazy">
             <span>${i + 1}. ${esc(d.name)}</span>
-          </button>`).join("")}</div>`
+          </button>`).join("")}</div>
+        <label>${esc(t("format"))}</label><div class="chips" id="formats">
+            <div class="chip ${state.form.format==="pptx"?"sel":""}" data-fmt="pptx">PPTX</div>
+            <div class="chip ${state.form.format==="pdf"?"sel":""}" data-fmt="pdf">PDF</div></div>`
         : `<label>${esc(t("format"))}</label><div class="chips" id="formats">
             <div class="chip ${state.form.format==="docx"?"sel":""}" data-fmt="docx">DOCX</div>
             <div class="chip ${state.form.format==="pdf"?"sel":""}" data-fmt="pdf">PDF</div></div>`}

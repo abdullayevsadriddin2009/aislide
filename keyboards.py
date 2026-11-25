@@ -223,6 +223,14 @@ def format_kb(lang="uz"):
         [InlineKeyboardButton(text=t("btn_cancel", lang), callback_data="cancel")],
     ])
 
+def slide_format_kb(lang="uz"):
+    """Taqdimotning o'zi PPTX yoki PDF bo'lib yuboriladi."""
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text=t("pptx_format", lang), callback_data="fmt:pptx"),
+         InlineKeyboardButton(text=t("pdf_format", lang), callback_data="fmt:pdf")],
+        [InlineKeyboardButton(text=t("btn_cancel", lang), callback_data="cancel")],
+    ])
+
 # ===== Kanal obunasi (admin) =====
 def channel_sub_kb(lang="uz"):
     return InlineKeyboardMarkup(inline_keyboard=[

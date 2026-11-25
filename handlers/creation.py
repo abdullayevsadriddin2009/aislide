@@ -11,7 +11,7 @@ from services import (SERVICES, service_name, ALL_LANGS, document_pages,
                       slide_body_count, slide_image_total)
 from keyboards import (option_kb_for, confirm_kb, main_kb, option_label,
                        languages_kb, format_kb, template_kb, slide_count_kb, subjects_kb,
-                       alphabet_kb)
+                       alphabet_kb, slide_format_kb)
 from designs import (subject_name, detect_subject_key, lang_full_name, SLIDE_COUNTS,
                      design_name, DESIGNS, DESIGN_KEYS, SUBJECT_KEYS)
 from ai_api import (generate, generate_slides_structured, get_last_error, search_images, download_image,
@@ -302,16 +302,17 @@ async def _lang(uid):
     u = await db.get_user(uid)
     return u["lang"] if u and u["lang"] in ALL_LANGS else "uz"
 
-def _to_pdf(docx_bytes, topic):
-    """Convert DOCX to PDF on Linux/Windows when a supported converter exists."""
+def _to_pdf(docx_bytes, topic, suffix="docx"):
+    """Convert DOCX/PPTX to PDF on Linux/Windows when a converter exists."""
     import os
     import shutil
     import subprocess
     import tempfile
 
+    suffix = "pptx" if str(suffix).lower() == "pptx" else "docx"
     safe = "".join(c for c in str(topic or "")[:40] if c.isalnum() or c in " _-").strip() or "document"
     with tempfile.TemporaryDirectory(prefix="aislide_pdf_") as tmpdir:
-        docx_path = os.path.join(tmpdir, f"{safe}.docx")
+        docx_path = os.path.join(tmpdir, f"{safe}.{suffix}")
         pdf_path = os.path.join(tmpdir, f"{safe}.pdf")
         with open(docx_path, "wb") as f:
             f.write(docx_bytes)
@@ -332,6 +333,9 @@ def _to_pdf(docx_bytes, topic):
             except Exception as exc:
                 print(f"[creation] LibreOffice PDF conversion error: {exc}", flush=True)
 
+        if suffix != "docx":
+            # docx2pdf faqat Word hujjatlari bilan ishlaydi.
+            return None
         # Windows local fallback if Microsoft Word is installed.
         try:
             from docx2pdf import convert
@@ -601,6 +605,12 @@ async def author_received(message: Message, state: FSMContext):
     if author.lower() in skip_words:
         author = ""
     await state.update_data(author=author)
+    data = await state.get_data()
+    if data.get("service") == "slide":
+        # Taqdimot ham PPTX, ham PDF bo'lib yuboriladi — foydalanuvchi tanlaydi.
+        await state.set_state(Creation.format)
+        await message.answer(t("slide_format_question", lang), reply_markup=slide_format_kb(lang))
+        return
     await _show_confirm(message, state)
 
 # ===== 8.1 TITUL VARAQ MA'LUMOTLARI: REFERAT / KURS / DIPLOM =====
@@ -727,7 +737,10 @@ async def _show_confirm(event, state):
         slide_count = data.get("slide_count", 10)
         template_name = data.get("template_name", design_name(data.get("design_key", DESIGN_KEYS[0]), lang))
         subj_name = data.get("subject_custom") or subject_name(subject_key, language_code)
-        param = f"{subj_name} • {language_name} • {template_name} • {t('slides_label', lang, n=slide_count)}"
+        fmt = str(data.get("file_format") or "pptx").lower()
+        fmt_label = t("pdf_format", lang) if fmt == "pdf" else t("pptx_format", lang)
+        param = (f"{subj_name} • {language_name} • {template_name} • "
+                 f"{t('slides_label', lang, n=slide_count)} • {fmt_label}")
         price = data.get("slide_price", await db.get_price(service))
     else:
         u = await db.get_user(user_id)
@@ -880,15 +893,30 @@ async def cb_confirm(call: CallbackQuery, state: FSMContext):
                 pass
 
         prefix = t("fname_slide", language_code)
-        fname = f"{prefix}_{safe_topic}.pptx".replace(" ", "_")
-        doc = BufferedInputFile(buf.read(), filename=fname)
+        pptx_bytes = buf.read()
+        slide_fmt = str(data.get("file_format") or "pptx").lower()
+        pdf_bytes = None
+        if slide_fmt == "pdf":
+            # LibreOffice taqdimotni ham PDF qilib beradi; oqimni bloklamaymiz.
+            pdf_bytes = await asyncio.to_thread(_to_pdf, pptx_bytes, topic, "pptx")
+            if not pdf_bytes:
+                print("[creation] PPTX→PDF konvertatsiya ishlamadi, PPTX yuboriladi", flush=True)
+        pdf_failed = slide_fmt == "pdf" and not pdf_bytes
+        if pdf_bytes:
+            fname = f"{prefix}_{safe_topic}.pdf".replace(" ", "_")
+            doc = BufferedInputFile(pdf_bytes, filename=fname)
+        else:
+            fname = f"{prefix}_{safe_topic}.pptx".replace(" ", "_")
+            doc = BufferedInputFile(pptx_bytes, filename=fname)
         
         if real:
             caption = t("gen_done", lang)
         else:
             err = get_last_error() or "n/a"
             caption = t("gen_failed", lang) + f"\n\n🔍 {err}"
-            
+        if pdf_failed:
+            caption += "\n\n" + t("pdf_fallback_note", lang)
+
         await msg.answer_document(doc, caption=caption, reply_markup=main_kb(lang))
         
     else:
