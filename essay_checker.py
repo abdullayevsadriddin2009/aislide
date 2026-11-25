@@ -76,6 +76,7 @@ _LABELS = {
             "copied": "Ish boshqa manbadan ko'chirilgan deb baholandi — 2 ball.",
             "notask": "Faqat kirish qismi yozilgan — topshiriq bajarilmagan, 0 ball.",
             "cyrillic": "Ish to'liq kirill alifbosida — tekshirilmaydi, 0 ball.",
+            "estimated": "AI to'liq baholay olmadi; ballar matn tahlili asosida taxminiy qo'yildi. Qayta tekshirib ko'ring.",
         },
         "crit": {
             "uslub": "Publitsistik uslub",
@@ -116,6 +117,7 @@ _LABELS = {
             "copied": "Работа оценена как списанная — 2 балла.",
             "notask": "Написано только вступление — задание не выполнено, 0 баллов.",
             "cyrillic": "Работа полностью на кириллице — не проверяется, 0 баллов.",
+            "estimated": "AI не смог полностью оценить работу; баллы выставлены приблизительно. Проверьте ещё раз.",
         },
         "crit": {
             "uslub": "Публицистический стиль",
@@ -156,6 +158,7 @@ _LABELS = {
             "copied": "The work was judged copied — 2 points.",
             "notask": "Only the introduction is written — task not done, 0 points.",
             "cyrillic": "The work is fully in Cyrillic — not checked, 0 points.",
+            "estimated": "The AI could not grade the whole work; the scores are approximate. Please check it again.",
         },
         "crit": {
             "uslub": "Publicistic style",
@@ -334,14 +337,26 @@ def _clean_list(values, limit=5, size=180):
     return out
 
 
+def _score_value(value):
+    """AI 2, "2", "2/2" yoki "2 ball" qaytarishi mumkin — hammasidan raqam oladi."""
+    if isinstance(value, bool) or value is None:
+        return 0
+    if isinstance(value, (int, float)):
+        return int(round(float(value)))
+    match = re.search(r"-?\d+(?:[.,]\d+)?", str(value))
+    if not match:
+        return 0
+    try:
+        return int(round(float(match.group(0).replace(",", "."))))
+    except ValueError:
+        return 0
+
+
 def band_scores(raw_scores):
     """Har bir bandni 0..2 oralig'iga keltiradi."""
     scores = {}
     for key in CRITERIA_KEYS:
-        try:
-            value = int(round(float((raw_scores or {}).get(key, 0))))
-        except (TypeError, ValueError):
-            value = 0
+        value = _score_value((raw_scores or {}).get(key, 0))
         scores[key] = max(0, min(MAX_PER_BAND, value))
     return scores
 
@@ -354,6 +369,21 @@ def to_scale_75(total):
         value = 0.0
     value = max(0.0, min(float(MAX_TOTAL), value))
     return int(round(value * SCALE_MAX / float(MAX_TOTAL)))
+
+
+def baseline_scores(text):
+    """AI baholay olmagan holat uchun ehtiyot bahosi.
+
+    Rasmiy qoidada yaroqli ish 0 ball olmaydi (0 — bo'sh varaq, faqat kirish
+    qismi yoki to'liq kirill alifbasi uchun). Shuning uchun matn mavjud bo'lsa
+    har bir bandga pastki (1) baho qo'yiladi, «qismlar» esa xatboshilar soniga
+    qarab aniqlanadi. Hisobotda bu taxminiy ekani ogohlantiriladi.
+    """
+    paragraphs = [part for part in re.split(r"\n+", str(text or ""))
+                  if word_count(part) >= 5]
+    scores = {key: 1 for key in CRITERIA_KEYS}
+    scores["qismlar"] = 2 if len(paragraphs) >= 3 else 1
+    return scores
 
 
 def normalize_report(data, text, lang="uz", topic=""):
@@ -385,6 +415,7 @@ def normalize_report(data, text, lang="uz", topic=""):
     sections = {key: raw_sections.get(key) is True for key in ("kirish", "asosiy", "xulosa")}
     flags = []
     total = sum(scores.values())
+    estimated = data.get("estimated") is True
 
     # 0 ball: varaq bo'sh, faqat kirish yozilgan yoki to'liq kirill alifbosida.
     if words == 0:
@@ -405,6 +436,9 @@ def normalize_report(data, text, lang="uz", topic=""):
         total = 0
     elif flags:
         total = 2
+    if estimated:
+        # Taxminiy ballar hisobotda alohida ogohlantirish bilan ko'rsatiladi.
+        flags.append("estimated")
 
     return {
         "scores": scores,
@@ -413,6 +447,7 @@ def normalize_report(data, text, lang="uz", topic=""):
         "max_total": MAX_TOTAL,
         "scale_75": to_scale_75(total),
         "sections": sections,
+        "estimated": estimated,
         "plan_written": data.get("has_plan") is True,
         "epigraph_written": data.get("has_epigraph") is True,
         "flags": flags,
@@ -427,10 +462,15 @@ def normalize_report(data, text, lang="uz", topic=""):
     }
 
 
-def build_prompt(text, topic="", lang="uz"):
+def build_prompt(text, topic="", lang="uz", retry=False):
     """Rasmiy mezon asosidagi tekshirish topshirig'i."""
     bands = "\n".join(f"- {key} ({band}): {name}" for band, (key, name) in
                       enumerate(CRITERIA, 1))
+    retry_block = (
+        "QAYTA BAHOLASH: oldingi javobda barcha bandlarga 0 qo'yilgan, bu rasmiy "
+        "qoidaga zid. Matnni qayta o'qib, har bir bandga 0, 1 yoki 2 dan mos "
+        "qiymat qo'ying.\n\n" if retry else ""
+    )
     topic_block = (f"ESSE MAVZUSI / TOPSHIRIQ:\n\"\"\"\n{topic}\n\"\"\"\n\n"
                    if topic else
                    "ESSE MAVZUSI: berilmagan — mavzuga moslikni matnning o'zidan baholang.\n\n")
@@ -444,6 +484,10 @@ def build_prompt(text, topic="", lang="uz"):
         "- 2 — talab to'liq bajarilgan;\n"
         "- 1 — qisman bajarilgan (ayrim kamchiliklar bor);\n"
         "- 0 — bajarilmagan.\n\n"
+        "Muhim: quyidagi JSON sxemasidagi 0 lar — shunchaki namuna, ularni nusxa "
+        "ko'chirmang. Har bir bandni matnga qarab baholang. Matn mavjud bo'lsa, "
+        "barcha bandlarga birdan 0 qo'yish mumkin emas.\n\n"
+        f"{retry_block}"
         "Qat'iy qoidalar: matnda yo'q xatoni o'ylab topmang; bir xil xato bir necha "
         "joyda takrorlansa — bitta xato; quote — matndagi aniq parcha; imlo va tinish "
         "bo'yicha o'zbek lotin alifbosi qoidalariga tayaning. Eng ko'pi bilan 20 ta "
@@ -481,13 +525,9 @@ def build_prompt(text, topic="", lang="uz"):
     )
 
 
-async def analyze_essay(text, lang="uz", topic=""):
-    """Esseni 12 band bo'yicha tekshiradi. AI ishlamasa None qaytaradi."""
+async def _request_report(body, topic, lang, retry=False):
+    """AI'dan JSON hisobot so'raydi; xato bo'lsa None."""
     import ai_api
-    body = str(text or "").strip()
-    if len(body) < 40:
-        return None
-    body = body[:MAX_CHARS]
     system = (
         "Siz ona tili va adabiyot fanidan yozma ishni baholovchi ekspertsiz. "
         "Faqat JSON obyekt qaytarasiz, ballarni 0, 1 yoki 2 dan boshqa qiymatda "
@@ -495,16 +535,53 @@ async def analyze_essay(text, lang="uz", topic=""):
     )
     try:
         raw = await ai_api._chat_complete(
-            build_prompt(body, topic, lang), system=system, max_tokens=3000,
-            temperature=0.2, frequency_penalty=0.2, presence_penalty=0.0)
+            build_prompt(body, topic, lang, retry), system=system, max_tokens=3000,
+            temperature=0.35 if retry else 0.2,
+            frequency_penalty=0.2, presence_penalty=0.0)
     except Exception as exc:
         print(f"[check] tahlil xatosi: {type(exc).__name__}: {exc}", flush=True)
         return None
     data = _parse_json_object(raw)
     if not data:
         print(f"[check] JSON o'qilmadi: {str(raw)[:200]}", flush=True)
+    return data
+
+
+def _unscored(report):
+    """Matn yaroqli, lekin AI barcha bandlarga 0 qo'ygan — ishonchsiz natija."""
+    return (int(report.get("total") or 0) == 0
+            and not report.get("flags")
+            and int(report.get("word_count") or 0) >= MIN_WORDS)
+
+
+async def analyze_essay(text, lang="uz", topic=""):
+    """Esseni 12 band bo'yicha tekshiradi. AI ishlamasa None qaytaradi."""
+    body = str(text or "").strip()
+    if len(body) < 40:
         return None
-    return normalize_report(data, body, lang, topic)
+    body = body[:MAX_CHARS]
+    data = await _request_report(body, topic, lang)
+    if not data:
+        return None
+    report = normalize_report(data, body, lang, topic)
+    if _unscored(report):
+        # 100+ so'zli lotin matniga barcha bandlar 0 — model sxemadagi nollarni
+        # ko'chirgan bo'lishi mumkin. Bir marta qayta so'raymiz.
+        print("[check] barcha bandlar 0 — qayta baholash so'raladi", flush=True)
+        retry_data = await _request_report(body, topic, lang, retry=True)
+        if retry_data:
+            retry_report = normalize_report(retry_data, body, lang, topic)
+            if retry_report["total"] > report["total"]:
+                report = retry_report
+        if _unscored(report):
+            # Ikkinchi urinish ham nol bo'lsa, noto'g'ri 0 o'rniga ehtiyot
+            # bahosini beramiz va buni hisobotda ochiq ogohlantiramiz.
+            print("[check] AI baholay olmadi — taxminiy ballar qo'llanadi", flush=True)
+            fallback = dict(retry_data or data)
+            fallback["scores"] = baseline_scores(body)
+            fallback["estimated"] = True
+            report = normalize_report(fallback, body, lang, topic)
+    return report
 
 
 # ===== Hisobot matni (Telegram uchun oddiy matn) =====

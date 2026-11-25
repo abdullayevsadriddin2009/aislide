@@ -450,27 +450,39 @@ async def cmd_new_chat(message: Message, state: FSMContext):
     await message.answer(chat_labels(lang)["cleared"], reply_markup=chat_kb(lang))
 
 
+async def handle_menu_action(message: Message, state: FSMContext) -> bool:
+    """Asosiy menyu tugmasi bosilsa, joriy oqimni to'xtatib shu bo'limni ochadi.
+
+    Har qanday FSM holatidagi handler shu funksiyani chaqiradi: aks holda
+    «🚀 Yaratishni boshlash» kabi tugma matni mavzu yoki esse matni bo'lib
+    qolib ketadi.
+    """
+    action = _menu_action_for((message.text or "").strip())
+    if not action:
+        return False
+    await state.clear()
+    if action == "balance":
+        await cmd_balance(message)
+    elif action == "referral":
+        await cmd_referral(message, state)
+    elif action == "create":
+        await btn_create(message, state)
+    elif action == "help":
+        await cmd_help(message)
+    elif action == "chat":
+        await btn_chat(message, state)
+    elif action == "lang":
+        await btn_change_lang(message)
+    return True
+
+
 @router.message(Chat.active)
 async def chat_handle(message: Message, state: FSMContext):
     txt = (message.text or "").strip()
     lang = await _lang(message.from_user.id)
 
     # An exact menu button press leaves chat mode; everything else is a question.
-    action = _menu_action_for(txt) if txt else None
-    if action:
-        await state.clear()
-        if action == "balance":
-            await cmd_balance(message); return
-        if action == "referral":
-            await cmd_referral(message, state); return
-        if action == "create":
-            await btn_create(message, state); return
-        if action == "help":
-            await cmd_help(message); return
-        if action == "chat":
-            await btn_chat(message, state); return
-        if action == "lang":
-            await btn_change_lang(message); return
+    if await handle_menu_action(message, state):
         return
 
     if not txt:

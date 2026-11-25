@@ -42,6 +42,20 @@ def _topic_kb(lang):
     ])
 
 
+async def _redirect_menu(message, state):
+    """Asosiy menyu tugmasi kelsa tekshiruvni to'xtatib, o'sha bo'limni ochadi.
+
+    Tekshiruv holatida «🚀 Yaratishni boshlash» yuborilsa, u mavzu yoki esse
+    matni sifatida qabul qilinmasligi kerak.
+    """
+    try:
+        from handlers import user as user_handlers
+        return await user_handlers.handle_menu_action(message, state)
+    except Exception as exc:
+        print(f"[check] menyu tugmasi xatosi: {type(exc).__name__}: {exc}", flush=True)
+        return False
+
+
 @router.callback_query(F.data == "check:start")
 async def cb_check_start(call: CallbackQuery, state: FSMContext):
     """«Yaratishni boshlash» ichidagi tekshirish bo'limi — 1-qadam: mavzu."""
@@ -107,12 +121,20 @@ async def _read_work(message: Message, lang):
 async def topic_received(message: Message, state: FSMContext):
     """Mavzuni qabul qiladi; fayl/rasm kelsa — mavzusiz tekshirishga o'tadi."""
     lang = await _lang(message.from_user.id)
+    if await _redirect_menu(message, state):
+        return
     if message.document or message.photo:
         await state.update_data(check_topic="")
         await state.set_state(Check.essay)
         await _run_check(message, state, lang)
         return
     topic = (message.text or "").strip()
+    # Mavzu o'rniga ishning o'zi yuborilgan bo'lsa (uzun matn), uni yo'qotmaymiz.
+    if len(topic) >= 400:
+        await state.update_data(check_topic="")
+        await state.set_state(Check.essay)
+        await _run_check(message, state, lang)
+        return
     if len(topic) < 3:
         await message.answer(t("check_prompt", lang), reply_markup=_topic_kb(lang))
         return
@@ -123,6 +145,8 @@ async def topic_received(message: Message, state: FSMContext):
 
 @router.message(Check.essay)
 async def check_received(message: Message, state: FSMContext):
+    if await _redirect_menu(message, state):
+        return
     lang = await _lang(message.from_user.id)
     await _run_check(message, state, lang)
 

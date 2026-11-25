@@ -1,6 +1,9 @@
+import asyncio
 import io
+import json
 import unittest
 
+import ai_api
 import essay_checker as ec
 
 LONG_TEXT = " ".join(["Bugungi kunda ta'lim tizimi jamiyat taraqqiyotining asosiy omili"] * 15)
@@ -37,6 +40,12 @@ class EssayCheckerTest(unittest.TestCase):
         self.assertEqual(len(ec.CRITERIA), 12)
         self.assertEqual(report["total"], 24)
         self.assertEqual(report["max_total"], 24)
+
+    def test_scores_written_as_text_are_parsed(self):
+        scores = ec.band_scores({"imlo": "2/2", "tinish": "1 ball", "soz": None})
+        self.assertEqual(scores["imlo"], 2)
+        self.assertEqual(scores["tinish"], 1)
+        self.assertEqual(scores["soz"], 0)
 
     def test_band_scores_are_clamped_to_official_range(self):
         report = ec.normalize_report({"scores": {"imlo": 7, "tinish": -3}}, LONG_TEXT, "uz")
@@ -140,6 +149,52 @@ class EssayCheckerTest(unittest.TestCase):
 
     def test_labels_fallback_for_unknown_language(self):
         self.assertEqual(ec.labels("de")["total"], "Total")
+
+    def test_prompt_forbids_copying_the_zero_example(self):
+        prompt = ec.build_prompt("Matn.", "Mavzu")
+        self.assertIn("nusxa ko'chirmang", prompt)
+        self.assertNotIn("QAYTA BAHOLASH", prompt)
+        self.assertIn("QAYTA BAHOLASH", ec.build_prompt("Matn.", "Mavzu", retry=True))
+
+    def test_all_zero_answer_is_retried_then_estimated(self):
+        calls = []
+        zeros = json.dumps({"scores": {key: 0 for key in ec.CRITERIA_KEYS},
+                            "sections": {"kirish": False, "asosiy": False, "xulosa": False}})
+
+        async def fake_complete(prompt, **kwargs):
+            calls.append(prompt)
+            return zeros
+
+        original = ai_api._chat_complete
+        ai_api._chat_complete = fake_complete
+        try:
+            report = asyncio.run(ec.analyze_essay(LONG_TEXT, "uz", "Ta'lim"))
+        finally:
+            ai_api._chat_complete = original
+        self.assertEqual(len(calls), 2)
+        self.assertIn("QAYTA BAHOLASH", calls[1])
+        self.assertIn("estimated", report["flags"])
+        self.assertGreaterEqual(report["total"], 12)
+        self.assertGreater(report["scale_75"], 0)
+        self.assertIn("taxminiy", ec.format_report(report, "uz"))
+
+    def test_good_first_answer_is_not_retried(self):
+        calls = []
+
+        async def fake_complete(prompt, **kwargs):
+            calls.append(prompt)
+            return json.dumps({"scores": {key: 2 for key in ec.CRITERIA_KEYS},
+                               "sections": {"kirish": True, "asosiy": True, "xulosa": True}})
+
+        original = ai_api._chat_complete
+        ai_api._chat_complete = fake_complete
+        try:
+            report = asyncio.run(ec.analyze_essay(LONG_TEXT, "uz", ""))
+        finally:
+            ai_api._chat_complete = original
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(report["total"], 24)
+        self.assertNotIn("estimated", report["flags"])
 
 
 if __name__ == "__main__":
