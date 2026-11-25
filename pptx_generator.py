@@ -307,6 +307,57 @@ def _add_image_source(slide, source, x, y, width, height):
 _IMG_CACHE: dict[Any, bytes] = {}
 
 
+def _smart_centering(image, target_ratio):
+    """Where to cut the photo so its subject stays in the frame.
+
+    Fixed centre cropping cut heads off portrait photos and left the interesting
+    half outside a wide frame. The image is reduced to a small grid, the grid cell
+    with the most detail (edge energy) is looked for, and the crop window is moved
+    onto it — a portrait keeps the face in the middle, a landscape keeps its busy
+    side instead of empty sky.
+    """
+    try:
+        from PIL import Image
+        width, height = image.size
+        if not width or not height:
+            return (0.5, 0.5)
+        ratio = width / float(height)
+        if abs(ratio - float(target_ratio)) < 0.12:
+            return (0.5, 0.5)
+        grid = 64
+        small = image.convert("L").resize((grid, grid), Image.Resampling.BILINEAR)
+        pixels = small.tobytes()
+        cols = [0] * grid
+        rows = [0] * grid
+        for y in range(grid):
+            row = y * grid
+            for x in range(1, grid):
+                energy = abs(pixels[row + x] - pixels[row + x - 1])
+                cols[x] += energy
+                rows[y] += energy
+        def best_start(scores, span):
+            """Detail block, and the middle one when the photo is plain."""
+            top = max(scores) if scores else 0
+            candidates = [i for i, score in enumerate(scores) if score >= top * 0.98]
+            return min(candidates, key=lambda i: abs((i + span / 2.0) - grid / 2.0))
+
+        if ratio > float(target_ratio):
+            # Crop the sides: keep the block of columns with the most detail.
+            span = max(1, int(round(grid * float(target_ratio) / ratio)))
+            scores = [sum(cols[start:start + span]) for start in range(grid - span + 1)]
+            start = best_start(scores, span)
+            leftover = grid - span
+            return ((start / leftover if leftover else 0.5) * 0.8 + 0.1, 0.5)
+        # Crop top/bottom: keep the block of rows with the most detail.
+        span = max(1, int(round(grid * ratio / float(target_ratio))))
+        scores = [sum(rows[start:start + span]) for start in range(grid - span + 1)]
+        start = best_start(scores, span)
+        leftover = grid - span
+        return (0.5, (start / leftover if leftover else 0.5) * 0.8 + 0.1)
+    except Exception:
+        return (0.5, 0.4)
+
+
 def _crop_stream(source, w_in, h_in, circle=False):
     """Cover-crop an image to the target box so photos are never stretched."""
     key = (source if isinstance(source, str) else hash(bytes(source)), round(w_in, 2), round(h_in, 2), circle)
@@ -321,7 +372,8 @@ def _crop_stream(source, w_in, h_in, circle=False):
     px_w = max(480, int(w_in * 210))
     px_h = max(270, int(h_in * 210))
     image = image.convert("RGBA" if circle else "RGB")
-    image = ImageOps.fit(image, (px_w, px_h), method=Image.Resampling.LANCZOS, centering=(0.5, 0.4))
+    image = ImageOps.fit(image, (px_w, px_h), method=Image.Resampling.LANCZOS,
+                         centering=_smart_centering(image, px_w / px_h))
     out = io.BytesIO()
     if circle:
         mask = Image.new("L", (px_w, px_h), 0)

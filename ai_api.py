@@ -2973,6 +2973,46 @@ async def _unsplash_images(query):
     except Exception: return []
 
 
+_EN_TITLE_CACHE: dict[str, str] = {}
+
+
+async def _english_article_title(qid):
+    """English Wikipedia title of a Wikidata item, from its sitelink.
+
+    The English article is what actually holds many photos for a subject whose
+    Uzbek/Russian article carries one. The sitelink points at the very same item,
+    so this never jumps to a different subject the way a name search could.
+    """
+    qid = str(qid or "").strip()
+    if not qid.startswith("Q"):
+        return ""
+    if qid in _EN_TITLE_CACHE:
+        return _EN_TITLE_CACHE[qid]
+    title = ""
+    try:
+        params = {"action": "wbgetentities", "ids": qid, "props": "sitelinks",
+                  "sitefilter": "enwiki", "format": "json"}
+        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=12),
+                                         headers={"User-Agent": USER_AGENT}) as session:
+            async with session.get("https://www.wikidata.org/w/api.php", params=params) as resp:
+                if resp.status == 200:
+                    entity = ((await resp.json(content_type=None)).get("entities") or {}).get(qid) or {}
+                    title = str(((entity.get("sitelinks") or {}).get("enwiki") or {})
+                                .get("title") or "")
+    except Exception as exc:
+        _log(f"English sitelink lookup failed ({qid}): {type(exc).__name__}")
+    _EN_TITLE_CACHE[qid] = title
+    return title
+
+
+async def _english_article_images(qid, count=20):
+    """Photos from the same subject's English article — usually many more."""
+    title = await _english_article_title(qid)
+    if not title:
+        return []
+    return await _wiki_page_images(title, "en", count=count)
+
+
 async def search_images(query, count=5, keywords=None, use_wiki=True, lang="en"):
     """Return only images whose own tags really match the requested subject.
 
@@ -3001,6 +3041,12 @@ async def search_images(query, count=5, keywords=None, use_wiki=True, lang="en")
         tasks.append(_wiki_image(q, speaker))
     if article_title:
         tasks.append(_wiki_page_images(article_title, speaker, count=20))
+    if qid:
+        # Boshqa tillardagi maqolada bitta-ikkita rasm bo'ladi; ayni mavzuning
+        # ingliz maqolasi (sitelink orqali, ya'ni o'sha Wikidata itemi) ko'proq
+        # tasdiqlangan rasm beradi. Nom bo'yicha qidiruv emas, shuning uchun
+        # boshqa mavzuga tushib qolmaydi.
+        tasks.append(_english_article_images(qid, count=20))
     if not abstract:
         tasks.extend([
             _commons_depicts_images(qid, count=20),
@@ -3164,6 +3210,12 @@ async def download_image(url, save_path):
             image = ImageOps.exif_transpose(source).convert("RGB")
             if image.width < 240 or image.height < 160:
                 return False
+            # Bo'm-bo'sh yoki bitta rangli fayl — rasm emas, joy egallovchi
+            # «placeholder». Uni slaydga qo'ysak, bo'sh kulrang ramka chiqadi.
+            colours = image.resize((48, 48)).getcolors(48 * 48)
+            if colours is not None and len(colours) < 16:
+                _log(f"Image rejected as blank: {url}")
+                return False
             image.save(save_path, format="JPEG", quality=88, optimize=True)
         # Keep the attribution next to the file so the deck can print it.
         credit = image_credit(url)
@@ -3229,11 +3281,47 @@ def _mark_api_alive(api):
     _DEAD_APIS.pop(_api_dead_key(api), None)
 
 
-def _failure(api, status, body):
+# Provayder katalogi o'zi endi bermaydigan modellarni ham sanab turadi (Google:
+# "no longer available to new users"), ba'zilari esa vaqtincha to'lgan bo'ladi.
+# Ularni har so'rovda qayta sinash bekorga urinish sarflaydi.
+_MODEL_SKIP = {}
+
+
+def _model_skip_key(api, model):
+    return f"{str(api.get('name') or '')}|{str(model or '')}"
+
+
+def _model_skipped(api, model):
+    entry = _MODEL_SKIP.get(_model_skip_key(api, model))
+    if not entry:
+        return False
+    if time.time() >= entry[0]:
+        _MODEL_SKIP.pop(_model_skip_key(api, model), None)
+        return False
+    return True
+
+
+def _skip_model(api, model, seconds, reason):
+    _MODEL_SKIP[_model_skip_key(api, model)] = (time.time() + seconds, reason)
+    _log(f"⏭ {api.get('name', 'API')} / {model}: {reason}")
+
+
+def _note_model_status(api, model, status, detail):
+    """Modelni vaqtincha ro'yxatdan chiqarish: yopilgan yoki band bo'lsa."""
+    low = str(detail or "").lower()
+    if status in (404, 410) or "no longer available" in low:
+        _skip_model(api, model, 6 * 3600, "model mavjud emas")
+    elif status in (503, 529) or "high demand" in low or "overloaded" in low:
+        _skip_model(api, model, 120, "model vaqtincha band")
+
+
+def _failure(api, status, body, model=""):
     """HTTP xatosini matnga aylantiradi va o'lik manzilni belgilaydi."""
     detail = _error_detail(status, body)
     if "manzil API emas" in detail:
         _mark_api_dead(api, detail)
+    if model:
+        _note_model_status(api, model, status, detail)
     return status, None, detail
 
 
@@ -3308,35 +3396,46 @@ async def _try_post(api, model, payload):
                         if attempt == 0 and resp.status == 400 and \
                                 "thinkingConfig" in data["generationConfig"]:
                             continue
-                        return _failure(api, resp.status, body)
-            return _failure(api, 400, "thinkingConfig qabul qilinmadi")
+                        # 503 — model vaqtincha to'lgan; bir marta qayta so'raymiz.
+                        if attempt == 0 and resp.status in (500, 502, 503, 504):
+                            await asyncio.sleep(0.8)
+                            continue
+                        return _failure(api, resp.status, body, model)
+            return _failure(api, 400, "thinkingConfig qabul qilinmadi", model)
         else:
             headers = {"Content-Type": "application/json", "Authorization": f"Bearer {api['api_key']}"}
             url = f"{api['base_url']}/chat/completions"
             p = dict(payload); p["model"] = model
             async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=AI_TIMEOUT)) as session:
-                async with session.post(url, headers=headers, json=p, timeout=AI_TIMEOUT) as resp:
-                    body = await resp.text()
-                    if resp.status == 200:
-                        LAST_ERROR = None
-                        try:
-                            message = json.loads(body)["choices"][0]["message"]
-                        except Exception as e:
-                            return resp.status, None, str(e)
-                        content = message.get("content")
-                        if content and str(content).strip():
-                            return 200, content, None
-                        reasoning = message.get("reasoning") or message.get("reasoning_content")
-                        if reasoning:
-                            # gpt-oss style models sometimes finish the whole answer
-                            # inside the reasoning channel and leave content empty;
-                            # when we asked for JSON, the answer is still usable.
-                            salvaged = _salvage_json(reasoning) if _payload_expects_json(payload) else None
-                            if salvaged:
-                                return 200, salvaged, None
-                            return resp.status, None, "faqat reasoning qaytardi (content bo'sh)"
-                        return resp.status, None, "bo'sh javob (HTTP 200)"
-                    return _failure(api, resp.status, body)
+                for attempt in range(2):
+                    async with session.post(url, headers=headers, json=p, timeout=AI_TIMEOUT) as resp:
+                        body = await resp.text()
+                        if resp.status == 200:
+                            LAST_ERROR = None
+                            try:
+                                message = json.loads(body)["choices"][0]["message"]
+                            except Exception as e:
+                                return resp.status, None, str(e)
+                            content = message.get("content")
+                            if content and str(content).strip():
+                                return 200, content, None
+                            reasoning = message.get("reasoning") or message.get("reasoning_content")
+                            if reasoning:
+                                # gpt-oss style models sometimes finish the whole answer
+                                # inside the reasoning channel and leave content empty;
+                                # when we asked for JSON, the answer is still usable.
+                                salvaged = _salvage_json(reasoning) if _payload_expects_json(payload) else None
+                                if salvaged:
+                                    return 200, salvaged, None
+                                return resp.status, None, "faqat reasoning qaytardi (content bo'sh)"
+                            return resp.status, None, "bo'sh javob (HTTP 200)"
+                        # 5xx — provayder vaqtincha band; qisqa tanaffusdan keyin
+                        # o'sha modelni yana bir marta so'rab ko'ramiz.
+                        if attempt == 0 and resp.status in (500, 502, 503, 504, 529):
+                            await asyncio.sleep(0.8)
+                            continue
+                        return _failure(api, resp.status, body, model)
+            return _failure(api, 503, "provayder javob bermadi", model)
     except Exception as e: return None, None, str(e)
 
 def _payload_expects_json(payload):
@@ -3613,6 +3712,9 @@ async def _chat_complete(prompt, system=None, max_tokens=2500, temperature=0.5,
         # it as key-level and moving on to the next configured provider.
         consecutive_rate_limits = 0
         for model_index, model in enumerate(models):
+            if _model_skipped(api, model):
+                # Model yopilgan yoki hozir band — navbatdagi modelni sinaymiz.
+                continue
             attempts += 1
             status, answer, error = await _try_post(api, model, _model_payload(payload, model))
             if status == 200 and answer and answer.strip():
@@ -4183,6 +4285,12 @@ async def test_api(timeout=20, concurrency=6):
         for model, ok, detail in rows:
             if ok:
                 lines.append(f"   ✅ {model}")
+            elif _model_skipped(api, model):
+                # Provayderning o'zi bermaydigan yoki hozir band model: navbatdagi
+                # so'rovlarda o'tkazib yuboriladi, shuning uchun ❌ emas ⏭.
+                reason = (_MODEL_SKIP.get(_model_skip_key(api, model)) or (0, ""))[1]
+                reason = reason or "vaqtincha o'tkazib yuboriladi"
+                lines.append(f"   ⏭ {model} — {reason}")
             else:
                 lines.append(f"   ❌ {model} — {detail}" if detail else f"   ❌ {model}")
     return "\n".join(lines)
