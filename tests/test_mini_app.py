@@ -132,7 +132,7 @@ class MiniAppTests(unittest.TestCase):
         token = self._token_for(560)
         original = essay_checker.analyze_essay
 
-        async def fake_analyze(text, lang="uz", topic=""):
+        async def fake_analyze(text, lang="uz", topic="", from_image=False):
             return essay_checker.normalize_report(
                 {"scores": {key: 2 for key in essay_checker.CRITERIA_KEYS},
                  "sections": {"kirish": True, "asosiy": True, "xulosa": True}},

@@ -57,14 +57,14 @@ API_LIST = [
             # Fastest first: a slow model at the top of the list eats the whole
             # request budget before the working ones are ever tried.
             "@cf/meta/llama-3.2-3b-instruct",
-            "@cf/meta/llama-3.2-1b-instruct",
-            "@cf/google/gemma-7b-it-lora",
             "@cf/mistral/mistral-7b-instruct-v0.2-lora",
-            "@cf/deepseek-ai/deepseek-r1-distill-qwen-32b",
             "@cf/google/gemma-2b-it-lora",
             "@cf/openai/gpt-oss-120b",
             "@cf/qwen/qwen3.8-27b",
             # @cf/meta/llama-3.1-8b-instruct was retired on 2026-05-30 (HTTP 410).
+            # @cf/meta/llama-3.2-1b-instruct, @cf/google/gemma-7b-it-lora and
+            # @cf/deepseek-ai/deepseek-r1-distill-qwen-32b were retired on
+            # 2026-11-20 (HTTP 410) — they only wasted an attempt per request.
         ]
     },
     {
@@ -73,11 +73,14 @@ API_LIST = [
         "api_key": os.getenv("GOOGLE_KEY_1", ""),
         "type": "google",
         "models": [
-            "gemini-3.6-flash", "gemini-3.5-flash", "gemini-2.5-flash",
-            "gemini-flash-lite-latest", "gemini-3-flash-preview",
-            "gemini-3.5-flash-lite", "gemini-3.1-flash-lite",
-            "gemini-3.1-flash-lite-preview", "gemma-4-26b-a4b-it",
-            # gemma-4-31b-it answers far too slowly to be worth an attempt.
+            # Tekshirilgan tez modellar birinchi: sekin model ro'yxat boshida
+            # bo'lsa, butun so'rov byudjetini yeb qo'yadi.
+            "gemini-2.5-flash", "gemini-flash-lite-latest",
+            "gemini-3-flash-preview", "gemini-3.5-flash-lite",
+            "gemini-3.1-flash-lite", "gemini-3.6-flash", "gemini-3.5-flash",
+            # gemma-4-26b-a4b-it answers with HTTP 503 ("high demand") most of
+            # the time and gemini-3.1-flash-lite-preview does the same, so they
+            # are not worth an attempt.
         ]
     },
     {
@@ -94,11 +97,9 @@ API_LIST = [
         "api_key": os.getenv("GOOGLE_KEY_2", ""),
         "type": "google",
         "models": [
-            "gemini-3.6-flash", "gemini-3.5-flash", "gemini-2.5-flash",
-            "gemini-flash-lite-latest", "gemini-3-flash-preview",
-            "gemini-3.5-flash-lite", "gemini-3.1-flash-lite",
-            "gemini-3.1-flash-lite-preview", "gemma-4-26b-a4b-it",
-            # gemma-4-31b-it answers far too slowly to be worth an attempt.
+            "gemini-2.5-flash", "gemini-flash-lite-latest",
+            "gemini-3-flash-preview", "gemini-3.5-flash-lite",
+            "gemini-3.1-flash-lite", "gemini-3.6-flash", "gemini-3.5-flash",
         ]
     },
     {
@@ -3198,6 +3199,44 @@ def _error_detail(status, body):
         return f"HTTP {status}"
     return f"HTTP {status}: {text[:200]}"
 
+# A closed tunnel or a wrong host answers HTML instead of JSON, which used to be
+# tried first on every single request and left the user waiting. Such endpoints
+# are skipped for a while instead of being probed again each time.
+_DEAD_APIS = {}
+_DEAD_API_TTL = 600
+
+
+def _api_dead_key(api):
+    return f"{str(api.get('base_url') or '').rstrip('/')}|{str(api.get('api_key') or '')[-6:]}"
+
+
+def _api_is_dead(api):
+    stamp = _DEAD_APIS.get(_api_dead_key(api))
+    if not stamp:
+        return False
+    if time.time() - stamp > _DEAD_API_TTL:
+        _DEAD_APIS.pop(_api_dead_key(api), None)
+        return False
+    return True
+
+
+def _mark_api_dead(api, reason=""):
+    _DEAD_APIS[_api_dead_key(api)] = time.time()
+    _log(f"⏸ {api.get('name', 'API')} vaqtincha chetlatildi: {str(reason)[:120]}")
+
+
+def _mark_api_alive(api):
+    _DEAD_APIS.pop(_api_dead_key(api), None)
+
+
+def _failure(api, status, body):
+    """HTTP xatosini matnga aylantiradi va o'lik manzilni belgilaydi."""
+    detail = _error_detail(status, body)
+    if "manzil API emas" in detail:
+        _mark_api_dead(api, detail)
+    return status, None, detail
+
+
 async def _try_post(api, model, payload):
     global LAST_ERROR
     if not api["api_key"]:
@@ -3233,7 +3272,7 @@ async def _try_post(api, model, payload):
                         LAST_ERROR = None
                         try: return 200, json.loads(body)["candidates"][0]["content"]["parts"][0]["text"], None
                         except Exception as e: return resp.status, None, str(e)
-                    return resp.status, None, _error_detail(resp.status, body)
+                    return _failure(api, resp.status, body)
         else:
             headers = {"Content-Type": "application/json", "Authorization": f"Bearer {api['api_key']}"}
             url = f"{api['base_url']}/chat/completions"
@@ -3260,7 +3299,7 @@ async def _try_post(api, model, payload):
                                 return 200, salvaged, None
                             return resp.status, None, "faqat reasoning qaytardi (content bo'sh)"
                         return resp.status, None, "bo'sh javob (HTTP 200)"
-                    return resp.status, None, _error_detail(resp.status, body)
+                    return _failure(api, resp.status, body)
     except Exception as e: return None, None, str(e)
 
 def _payload_expects_json(payload):
@@ -3497,7 +3536,14 @@ async def _chat_complete(prompt, system=None, max_tokens=2500, temperature=0.5,
         LAST_ERROR = "AI kalitlari sozlanmagan (admin panel → AI)"
         return "⚠️ AI serverga ulanib bo'lmadi."
 
-    start_api = CURRENT_API_INDEX % len(apis)
+    # Ishlamayotgan manzil (masalan, yopilgan ngrok tunneli) ro'yxat boshida
+    # turib har so'rovni kutdirardi — ularni oxiriga suramiz.
+    dead = [api for api in apis if _api_is_dead(api)]
+    if dead and len(dead) < len(apis):
+        apis = [api for api in apis if not _api_is_dead(api)] + dead
+        start_api = 0
+    else:
+        start_api = CURRENT_API_INDEX % len(apis)
     errors = []
     attempts = 0
     for api_offset in range(len(apis)):
@@ -3525,6 +3571,7 @@ async def _chat_complete(prompt, system=None, max_tokens=2500, temperature=0.5,
             if status == 200 and answer and answer.strip():
                 CURRENT_API_INDEX = api_index
                 CURRENT_MODEL_INDEX = 0
+                _mark_api_alive(api)
                 _save_good_model(api, model)
                 try:
                     ai_pool.mark_result(api.get("key_id"), True)
@@ -4049,6 +4096,7 @@ async def test_api(timeout=12, concurrency=6):
             except Exception as exc:
                 return api["name"], model, False, type(exc).__name__
             if status == 200 and text:
+                _mark_api_alive(api)
                 return api["name"], model, True, ""
             return api["name"], model, False, str(err or (f"HTTP {status}" if status else "javob yo'q"))
 

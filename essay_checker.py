@@ -24,10 +24,13 @@ import ai_pool
 
 MAX_CHARS = 15000          # bir marta tekshiriladigan matn hajmi
 MAX_ERRORS = 20
-MAX_IMAGE_SIDE = 1600
+MAX_IMAGE_SIDE = 2200      # qo'lyozma ingichka: kichik rasmda harflar yo'qoladi
 MAX_PER_BAND = 2
 MAX_TOTAL = 24
 MIN_WORDS = 100
+MIN_OCR_WORDS = 25         # bundan kam o'qilgan rasm — to'liq o'qilmagan bo'lishi mumkin
+OCR_ENOUGH_WORDS = 100     # shu hajmdan keyin boshqa modelni sinash shart emas
+VISION_MAX_TOKENS = 8192
 SCALE_MAX = 75             # rasmiy: 24 ballik natija 75 ballik shkalaga o'tkaziladi
 
 # Rasmiy mezon: 12 band, har biri 0..2. Kalit — hisobot va JSON uchun.
@@ -48,8 +51,10 @@ CRITERIA = (
 
 CRITERIA_KEYS = tuple(key for key, _ in CRITERIA)
 
+# Tekshirilgan, tez javob beradigan vision modellari (tartib muhim).
 VISION_MODELS = ("gemini-2.5-flash", "gemini-flash-lite-latest",
-                 "gemini-3.5-flash-lite", "gemini-2.0-flash")
+                 "gemini-3-flash-preview", "gemini-3.5-flash-lite",
+                 "gemini-2.0-flash")
 
 _LABELS = {
     "uz": {
@@ -71,6 +76,7 @@ _LABELS = {
         "epigraph_written": "Matnda epigraf yozilgan — rasmiy talabda epigraf yozilmaydi.",
         "flags": {
             "blank": "Varaq bo'sh — ish yozilmagan, 0 ball.",
+            "ocr_short": "Rasmdan matn to'liq o'qilmadi shekilli — jami 100 so'zdan kam chiqdi. Yorug'roq, to'liq sahifa rasmini yuboring yoki matnni yozib yuboring (hozirgi ballar to'liq matnga mos kelmasligi mumkin).",
             "short": "Ish hajmi 100 so'zdan kam — rasmiy qoidaga ko'ra 2 ball qo'yiladi.",
             "offtopic": "Ish mavzuga mos emas — rasmiy qoidaga ko'ra 2 ball qo'yiladi.",
             "copied": "Ish boshqa manbadan ko'chirilgan deb baholandi — 2 ball.",
@@ -112,6 +118,7 @@ _LABELS = {
         "epigraph_written": "В работе есть эпиграф — по официальным требованиям эпиграф не пишется.",
         "flags": {
             "blank": "Лист пуст — работа не написана, 0 баллов.",
+            "ocr_short": "Текст с фото прочитан не полностью — вышло меньше 100 слов. Отправьте более чёткое фото всей страницы или пришлите текст (текущие баллы могут не соответствовать полному тексту).",
             "short": "Объём меньше 100 слов — по официальному правилу ставится 2 балла.",
             "offtopic": "Работа не соответствует теме — по официальному правилу 2 балла.",
             "copied": "Работа оценена как списанная — 2 балла.",
@@ -153,6 +160,7 @@ _LABELS = {
         "epigraph_written": "The work contains an epigraph — the official rules do not allow one.",
         "flags": {
             "blank": "The page is blank — nothing was written, 0 points.",
+            "ocr_short": "The photo was probably not read in full — fewer than 100 words came through. Send a sharper photo of the whole page or paste the text (these scores may not match the full essay).",
             "short": "Fewer than 100 words — the official rule gives 2 points.",
             "offtopic": "The work is off topic — the official rule gives 2 points.",
             "copied": "The work was judged copied — 2 points.",
@@ -226,8 +234,29 @@ def cyrillic_ratio(text):
 
 
 # ===== Rasmdan matn (OCR) — Gemini vision =====
+OCR_PROMPT = (
+    "Bu rasmda qo'lyozma yoki bosma matn (o'quvchi daftari yoki varaq) bor. "
+    "Sahifadagi BARCHA matnni to'liq va tartib bilan yozib bering.\n"
+    "- Hech narsani qisqartirmang va tashlab ketmang; qatorlar va xatboshilarni saqlang.\n"
+    "- Imlo va tinish belgilaridagi xatolarni TUZATMANG: so'z qanday yozilgan bo'lsa, "
+    "aynan shunday yozing — tekshiruv uchun bu muhim.\n"
+    "- So'z o'ylab topmang, izoh, sarlavha yoki tarjima qo'shmang.\n"
+    "- Faqat matnning o'zini qaytaring. Rasmda matn bo'lmasa, bo'sh javob bering."
+)
+
+_CONTINUE_PROMPT = (
+    "Sahifadagi matn to'liq yozilmadi. Quyida hozir yozilgan matnning oxiri berilgan. "
+    "SHU JOYDAN davom etib, qolgan barcha matnni yozib bering. Faqat davomini "
+    "yozing, avval yozilganini takrorlamang va izoh qo'shmang."
+)
+
+
 def prepare_image(data):
-    """Rasmni kichraytirib JPEG'ga o'giradi (yuklash tez bo'lsin)."""
+    """Rasmni kichraytirib JPEG'ga o'giradi.
+
+    Qo'lyozma uchun o'lcham muhim: juda kichik rasmda ingichka harflar yo'qoladi va
+    model sahifaning faqat bir qismini o'qib qo'yadi.
+    """
     try:
         from PIL import Image
         with Image.open(io.BytesIO(data)) as source:
@@ -238,72 +267,155 @@ def prepare_image(data):
                 size = (max(1, int(image.width * ratio)), max(1, int(image.height * ratio)))
                 image = image.resize(size, Image.LANCZOS)
             buffer = io.BytesIO()
-            image.save(buffer, format="JPEG", quality=88, optimize=True)
+            image.save(buffer, format="JPEG", quality=90, optimize=True)
         return buffer.getvalue(), "image/jpeg"
     except Exception as exc:
         print(f"[check] rasm tayyorlanmadi: {type(exc).__name__}: {exc}", flush=True)
         return data, "image/jpeg"
 
 
-async def _vision_call(row, model, image_data, mime, prompt):
-    base = str(row["base_url"] or ai_pool.PROVIDER_BASE.get("google", "")).rstrip("/")
-    key = str(row["api_key"] or "")
-    if not base or not key:
-        return ""
-    url = f"{base}/models/{model}:generateContent?key={key}"
-    payload = {
-        "contents": [{"role": "user", "parts": [
-            {"text": prompt},
-            {"inlineData": {"mimeType": mime,
-                            "data": base64.b64encode(image_data).decode("ascii")}},
-        ]}],
-        "generationConfig": {"temperature": 0, "maxOutputTokens": 4096},
-    }
+def _vision_config(model, max_tokens):
+    """So'rov sozlamalari.
+
+    Gemini 2.5+ «o'ylash» byudjetini aynan shu javob tokenlaridan oladi: yoqilgan
+    bo'lsa OCR matni yarmida uzilib qoladi (foydalanuvchi 300 so'zli qo'lyozma
+    uchun «57 so'z» ko'rgan holat). Shuning uchun o'ylashni o'chiramiz.
+    """
+    config = {"temperature": 0, "maxOutputTokens": max_tokens}
+    name = str(model or "")
+    if "2.0" not in name and "gemma" not in name.lower():
+        config["thinkingConfig"] = {"thinkingBudget": 0}
+    return config
+
+
+def _vision_text(raw):
+    """Javobdan matn va «tugallanmagan» belgisini ajratadi."""
     try:
-        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=120)) as session:
-            async with session.post(url, json=payload) as resp:
-                if resp.status != 200:
-                    body = await resp.text()
-                    print(f"[check] vision {model}: HTTP {resp.status}: {str(body)[:180]}", flush=True)
-                    return ""
-                data = await resp.json(content_type=None)
-        parts = (((data.get("candidates") or [{}])[0].get("content") or {}).get("parts") or [])
-        return "".join(str(part.get("text") or "") for part in parts).strip()
-    except Exception as exc:
-        print(f"[check] vision xatosi: {type(exc).__name__}: {exc}", flush=True)
-        return ""
+        data = json.loads(raw)
+    except Exception:
+        return "", False
+    candidate = (data.get("candidates") or [{}])[0]
+    parts = ((candidate.get("content") or {}).get("parts") or [])
+    text = "".join(str(part.get("text") or "") for part in parts).strip()
+    reason = candidate.get("finishReason")
+    truncated = str(reason).upper() == "MAX_TOKENS" or reason == 2
+    return text, truncated
+
+
+async def _vision_post(url, payload, total=90):
+    async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=total)) as session:
+        async with session.post(url, json=payload) as resp:
+            return resp.status, await resp.text()
+
+
+async def _vision_call(row, model, image_data, mime, prompt, total=90):
+    """Bitta modeldan matnni o'qiydi. (matn, tugallanmaganmi) qaytaradi."""
+    base = str(row.get("base_url") or ai_pool.PROVIDER_BASE.get("google", "")).rstrip("/")
+    key = str(row.get("api_key") or "")
+    if not base or not key:
+        return "", False
+    url = f"{base}/models/{model}:generateContent?key={key}"
+    parts = [
+        {"text": prompt},
+        {"inlineData": {"mimeType": mime,
+                        "data": base64.b64encode(image_data).decode("ascii")}},
+    ]
+    for attempt in range(2):
+        config = _vision_config(model, VISION_MAX_TOKENS)
+        if attempt:
+            # Eski modellar thinkingConfig'ni bilmaydi — usiz qayta urinamiz.
+            config.pop("thinkingConfig", None)
+        payload = {"contents": [{"role": "user", "parts": parts}],
+                   "generationConfig": config}
+        try:
+            status, body = await _vision_post(url, payload, total)
+        except Exception as exc:
+            print(f"[check] vision xatosi: {type(exc).__name__}: {exc}", flush=True)
+            return "", False
+        if status == 200:
+            return _vision_text(body)
+        if attempt == 0 and "thinking" in str(body).lower():
+            continue
+        print(f"[check] vision {model}: HTTP {status}: {str(body)[:180]}", flush=True)
+        return "", False
+    return "", False
+
+
+def _join_continuation(head, tail):
+    """Davomiy javobni bosh matnga qo'shadi, takrorlangan joyni kesib tashlaydi."""
+    head = str(head or "").rstrip()
+    tail = str(tail or "").strip()
+    if not head:
+        return tail
+    if not tail:
+        return head
+    overlap = 0
+    for size in range(min(len(tail), 240), 0, -1):
+        if head.endswith(tail[:size]):
+            overlap = size
+            break
+    if overlap:
+        tail = tail[overlap:]
+        return (head + tail).strip() if tail.strip() else head
+    return (head + "\n" + tail).strip()
+
+
+async def _read_full_page(row, model, data, mime, prompt):
+    """Sahifani to'liq o'qiydi; javob uzilsa davomini so'raydi."""
+    text, truncated = await _vision_call(row, model, data, mime, prompt)
+    rounds = 0
+    while truncated and text and rounds < 3:
+        rounds += 1
+        tail_prompt = (f"{OCR_PROMPT}\n\n{_CONTINUE_PROMPT}\n\n"
+                       f"HOZIR YOZILGAN MATNNING OXIRI:\n{text[-1200:]}")
+        extra, truncated = await _vision_call(row, model, data, mime, tail_prompt)
+        if not extra:
+            break
+        joined = _join_continuation(text, extra)
+        if word_count(joined) <= word_count(text):
+            break
+        text = joined
+    return text
+
+
+def _vision_candidates(models):
+    """Sinash tartibi: sinalgan tez modellar birinchi, keyin kalitdagi qolganlar."""
+    ordered = [model for model in VISION_MODELS if not models or model in models]
+    ordered += [model for model in models if model not in ordered]
+    return ordered
 
 
 async def ocr_image(image_data, lang="uz"):
-    """Rasmdagi matnni o'qib beradi; Google kaliti bo'lmasa bo'sh satr."""
+    """Rasmdagi matnni to'liq o'qib beradi; Google kaliti bo'lmasa bo'sh satr.
+
+    Bir nechta model sinaladi va eng to'liq (eng ko'p so'zli) natija olinadi:
+    qo'lyozmani bitta model faqat qisman o'qib qo'yishi mumkin, o'shanda butun
+    tekshiruv «matn juda qisqa» degan noto'g'ri xulosaga keladi.
+    """
     if not image_data:
         return ""
-    row = None
+    rows = []
     try:
         for item in ai_pool.keys(active_only=True):
             if str(item["provider"] or "") == "google" or \
                     "generativelanguage" in str(item["base_url"] or ""):
-                row = item
-                break
+                rows.append(item)
     except Exception as exc:
         print(f"[check] AI kalitlari olinmadi: {exc}", flush=True)
         return ""
-    if row is None:
+    if not rows:
         return ""
-    models = [m.strip() for m in str(row["models"] or "").split(",") if m.strip()]
-    if not models:
-        models = list(VISION_MODELS)
     data, mime = prepare_image(image_data)
-    prompt = (
-        "Bu rasmda qo'lyozma yoki bosma matn bor. Rasmdagi matnni to'liq, "
-        "hech narsa qo'shmasdan va izohsiz yozib bering. Qatorlarni va "
-        "xatboshilarni saqlang. Agar rasmda matn bo'lmasa, bo'sh javob bering."
-    )
-    for model in models[:4]:
-        text = await _vision_call(row, model, data, mime, prompt)
-        if text:
-            return text
-    return ""
+    best = ""
+    for row in rows[:2]:
+        models = [m.strip() for m in str(row["models"] or "").split(",") if m.strip()]
+        for model in _vision_candidates(models)[:3]:
+            text = await _read_full_page(row, model, data, mime, OCR_PROMPT)
+            if word_count(text) > word_count(best):
+                best = text
+            if word_count(best) >= OCR_ENOUGH_WORDS:
+                return best
+    return best
 
 
 # ===== AI tahlili =====
@@ -335,6 +447,33 @@ def _clean_list(values, limit=5, size=180):
         if len(out) >= limit:
             break
     return out
+
+
+# AI ba'zan to'g'ri so'zni «xato» deb ko'rsatib, tuzatish o'rniga o'sha so'zni
+# qaytaradi («Insho» → «Insho»). Bunday yozuvlar hisobotga chiqmasligi kerak.
+_PLACEHOLDER_FIXES = ("to'g'ri yozilishi kerak", "to‘g‘ri yozilishi kerak",
+                      "to'g'ri varianti", "to‘g‘ri varianti", "to'g'ri variant",
+                      "xato yo'q", "o'zgartirish shart emas")
+
+
+def _plain_cell(value):
+    text = str(value or "").casefold()
+    # «xato → tuzatish» ko'rinishida kelgan bo'lsa, faqat tuzatish qismi olinadi.
+    for arrow in ("→", "->", "=>"):
+        if arrow in text:
+            text = text.split(arrow)[-1]
+    text = re.sub(r"[«»\"'‘’ʻʼ`.,;:!?()\[\]—–-]", " ", text)
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def _is_fake_error(quote, fix):
+    """Xato deb ko'rsatilgan, lekin aslida tuzatish bermagan yozuv."""
+    raw = str(fix or "").casefold()
+    if not raw.strip():
+        return True
+    if any(marker in raw for marker in _PLACEHOLDER_FIXES):
+        return True
+    return bool(quote) and _plain_cell(fix) == _plain_cell(quote)
 
 
 def _score_value(value):
@@ -386,8 +525,13 @@ def baseline_scores(text):
     return scores
 
 
-def normalize_report(data, text, lang="uz", topic=""):
-    """AI javobini rasmiy qoidalar bilan tekshirilgan hisobotga aylantiradi."""
+def normalize_report(data, text, lang="uz", topic="", from_image=False):
+    """AI javobini rasmiy qoidalar bilan tekshirilgan hisobotga aylantiradi.
+
+    ``from_image`` — matn rasm (qo'lyozma) dan o'qilgani. Bunday matn to'liq
+    o'qilmagan bo'lishi mumkin, shuning uchun hajm bo'yicha «2 ball» qoidasi
+    o'rniga foydalanuvchiga qayta yuborish taklif qilinadi.
+    """
     scores = band_scores(data.get("scores"))
     notes = {}
     raw_notes = data.get("notes") if isinstance(data.get("notes"), dict) else {}
@@ -402,6 +546,8 @@ def normalize_report(data, text, lang="uz", topic=""):
         quote = str(item.get("quote") or "").strip()[:160]
         fix = str(item.get("fix") or "").strip()[:160]
         if not quote and not fix:
+            continue
+        if _is_fake_error(quote, fix):
             continue
         errors.append({
             "quote": quote,
@@ -426,7 +572,11 @@ def normalize_report(data, text, lang="uz", topic=""):
         flags.append("cyrillic")
     # 2 ball: hajm, mavzu, ko'chirma.
     elif words < MIN_WORDS:
-        flags.append("short")
+        # Rasm to'liq o'qilmagan bo'lsa, «2 ball» o'rniga qayta yuborish so'raladi.
+        if from_image and words >= MIN_OCR_WORDS:
+            flags.append("ocr_short")
+        else:
+            flags.append("short")
     elif topic and data.get("topic_match") is False:
         flags.append("offtopic")
     elif data.get("plagiarism_suspected") is True:
@@ -434,7 +584,7 @@ def normalize_report(data, text, lang="uz", topic=""):
 
     if flags and flags[0] in ("blank", "notask", "cyrillic"):
         total = 0
-    elif flags:
+    elif flags and flags[0] != "ocr_short":
         total = 2
     if estimated:
         # Taxminiy ballar hisobotda alohida ogohlantirish bilan ko'rsatiladi.
@@ -554,7 +704,7 @@ def _unscored(report):
             and int(report.get("word_count") or 0) >= MIN_WORDS)
 
 
-async def analyze_essay(text, lang="uz", topic=""):
+async def analyze_essay(text, lang="uz", topic="", from_image=False):
     """Esseni 12 band bo'yicha tekshiradi. AI ishlamasa None qaytaradi."""
     body = str(text or "").strip()
     if len(body) < 40:
@@ -563,14 +713,15 @@ async def analyze_essay(text, lang="uz", topic=""):
     data = await _request_report(body, topic, lang)
     if not data:
         return None
-    report = normalize_report(data, body, lang, topic)
+    report = normalize_report(data, body, lang, topic, from_image=from_image)
     if _unscored(report):
         # 100+ so'zli lotin matniga barcha bandlar 0 — model sxemadagi nollarni
         # ko'chirgan bo'lishi mumkin. Bir marta qayta so'raymiz.
         print("[check] barcha bandlar 0 — qayta baholash so'raladi", flush=True)
         retry_data = await _request_report(body, topic, lang, retry=True)
         if retry_data:
-            retry_report = normalize_report(retry_data, body, lang, topic)
+            retry_report = normalize_report(retry_data, body, lang, topic,
+                                            from_image=from_image)
             if retry_report["total"] > report["total"]:
                 report = retry_report
         if _unscored(report):
@@ -580,7 +731,8 @@ async def analyze_essay(text, lang="uz", topic=""):
             fallback = dict(retry_data or data)
             fallback["scores"] = baseline_scores(body)
             fallback["estimated"] = True
-            report = normalize_report(fallback, body, lang, topic)
+            report = normalize_report(fallback, body, lang, topic,
+                                      from_image=from_image)
     return report
 
 

@@ -72,6 +72,25 @@ class AiPoolTests(unittest.TestCase):
         self.assertEqual(len(again), 1)
         self.assertEqual(again[0]["active"], 0)
 
+    def test_retired_provider_models_are_dropped(self):
+        self.pool.add_key("cf", "cf-key-111111", "cloudflare",
+                          models="@cf/meta/llama-3.2-1b-instruct,@cf/meta/llama-3.2-3b-instruct")
+        self.pool._SYNCED_PATHS.clear()
+        self.pool.ensure()
+        key = [item for item in self.pool.keys() if item["api_key"] == "cf-key-111111"][0]
+        self.assertEqual(key["models"], "@cf/meta/llama-3.2-3b-instruct")
+
+    def test_dead_endpoint_is_skipped_then_revived(self):
+        import ai_api
+        api = {"name": "Asosiy AI (AI_BASE_URL)", "base_url": "https://dead.ngrok.io/v1",
+               "api_key": "primary-key-123456", "type": "openai"}
+        ai_api._mark_api_alive(api)
+        self.assertFalse(ai_api._api_is_dead(api))
+        ai_api._mark_api_dead(api, "manzil API emas")
+        self.assertTrue(ai_api._api_is_dead(api))
+        ai_api._mark_api_alive(api)
+        self.assertFalse(ai_api._api_is_dead(api))
+
     def test_chat_settings_are_clamped(self):
         self.pool.set_setting("temperature", "9")
         self.pool.set_setting("history_limit", "500")

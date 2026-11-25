@@ -152,6 +152,8 @@ async def check_received(message: Message, state: FSMContext):
 
 
 async def _run_check(message: Message, state: FSMContext, lang):
+    from_image = bool(message.photo) or bool(
+        message.document and (message.document.file_name or "").lower().endswith(_IMAGES))
     try:
         text, error_key = await _read_work(message, lang)
     except Exception as exc:
@@ -171,7 +173,8 @@ async def _run_check(message: Message, state: FSMContext, lang):
     data = await state.get_data()
     topic = str(data.get("check_topic") or "")
     thinking = await message.answer(t("check_waiting", lang))
-    report = await essay_checker.analyze_essay(text, lang, topic)
+    print(f"[check] matn: {essay_checker.word_count(text)} so'z (rasm={from_image})", flush=True)
+    report = await essay_checker.analyze_essay(text, lang, topic, from_image=from_image)
     if not report:
         try:
             await thinking.edit_text(t("check_error", lang))

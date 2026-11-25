@@ -45,11 +45,24 @@ _PROVIDER_BASE = {
     "openai": "",
 }
 
+# Provayder butunlay yopgan modellar (HTTP 410). Bazadagi eski yozuvlarda qolib
+# ketsa, har so'rovda behuda urinish bo'ladi — ishga tushishda olib tashlanadi.
+RETIRED_MODELS = (
+    "@cf/meta/llama-3.2-1b-instruct",
+    "@cf/google/gemma-7b-it-lora",
+    "@cf/deepseek-ai/deepseek-r1-distill-qwen-32b",
+    "@cf/meta/llama-3.1-8b-instruct",
+)
+
 _PROVIDER_MODELS = {
     "groq": ("qwen/qwen3.8-27b", "allam-2-7b", "openai/gpt-oss-120b", "openai/gpt-oss-20b"),
-    "google": ("gemini-2.5-flash", "gemini-flash-lite-latest", "gemini-3.5-flash",
-               "gemini-2.0-flash"),
-    "cloudflare": ("@cf/meta/llama-3.2-3b-instruct", "@cf/meta/llama-3.2-1b-instruct",
+    "google": ("gemini-2.5-flash", "gemini-flash-lite-latest", "gemini-3-flash-preview",
+               "gemini-3.5-flash-lite", "gemini-3.1-flash-lite"),
+    # Retired Cloudflare models (HTTP 410 since 2026-11-20) are not listed: they
+    # only wasted one attempt on every request.
+    "cloudflare": ("@cf/meta/llama-3.2-3b-instruct",
+                   "@cf/mistral/mistral-7b-instruct-v0.2-lora",
+                   "@cf/google/gemma-2b-it-lora",
                    "@cf/openai/gpt-oss-120b", "@cf/qwen/qwen3.8-27b"),
     "openai": (),
 }
@@ -122,6 +135,10 @@ def ensure():
                     added += 1
                 if added:
                     print(f"[ai_pool] muhitdan {added} ta AI kalit qo'shildi", flush=True)
+                dropped = _drop_retired_models(con)
+                if dropped:
+                    print(f"[ai_pool] {dropped} ta eskirgan model ro'yxatdan olib tashlandi",
+                          flush=True)
                 _SYNCED_PATHS.add(path)
             for key, value in CHAT_DEFAULTS.items():
                 con.execute("INSERT OR IGNORE INTO ai_settings(k,v) VALUES(?,?)", (key, value))
@@ -132,6 +149,18 @@ def ensure():
             con.commit()
         finally:
             con.close()
+
+
+def _drop_retired_models(con):
+    """Kalitlar ro'yxatidan provayder yopgan modellarni olib tashlaydi."""
+    dropped = 0
+    for row in con.execute("SELECT id, models FROM ai_keys WHERE models<>''").fetchall():
+        names = [name.strip() for name in str(row["models"]).split(",") if name.strip()]
+        kept = [name for name in names if name not in RETIRED_MODELS]
+        if len(kept) != len(names):
+            con.execute("UPDATE ai_keys SET models=? WHERE id=?", (",".join(kept), row["id"]))
+            dropped += len(names) - len(kept)
+    return dropped
 
 
 def _env_keys():

@@ -494,6 +494,7 @@ def api_check():
         lang = "uz"
     topic = re.sub(r"\s+", " ", str(request.form.get("topic") or "")).strip()[:300]
     body = str(request.form.get("text") or "").strip()
+    from_image = False
     upload = request.files.get("file")
     if upload and upload.filename:
         name = str(upload.filename).lower()
@@ -510,6 +511,7 @@ def api_check():
             elif name.endswith(CHECK_TXT):
                 body = essay_checker.decode_text(data)
             elif name.endswith(CHECK_IMAGES):
+                from_image = True
                 body = asyncio.run(essay_checker.ocr_image(data, lang)) or ""
                 if not body.strip():
                     return jsonify({"ok": False, "error": "image",
@@ -526,7 +528,10 @@ def api_check():
         return jsonify({"ok": False, "error": "empty",
                         "message": text_of("check_empty", lang)}), 400
     try:
-        report = asyncio.run(essay_checker.analyze_essay(body, lang, topic))
+        print(f"[mini] check matn: {essay_checker.word_count(body)} so'z "
+              f"(rasm={from_image})", flush=True)
+        report = asyncio.run(essay_checker.analyze_essay(body, lang, topic,
+                                                        from_image=from_image))
     except Exception as exc:
         print(f"[mini] check xatosi: {type(exc).__name__}: {exc}", flush=True)
         report = None

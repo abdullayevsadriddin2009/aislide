@@ -57,6 +57,56 @@ class EssayCheckerTest(unittest.TestCase):
         self.assertIn("short", report["flags"])
         self.assertEqual(report["total"], 2)
 
+    def test_partial_ocr_does_not_force_two_points(self):
+        # Qo'lyozma rasm to'liq o'qilmagan bo'lsa, rasmiy «100 so'z» qoidasi
+        # qo'llanmaydi: foydalanuvchidan aniqroq rasm so'raladi.
+        text = " ".join(["Bugungi kunda ta'lim tizimi jamiyat taraqqiyotining omili"] * 6)
+        self.assertLess(ec.word_count(text), ec.MIN_WORDS)
+        report = ec.normalize_report({"scores": {key: 2 for key in ec.CRITERIA_KEYS}},
+                                     text, "uz", "", from_image=True)
+        self.assertIn("ocr_short", report["flags"])
+        self.assertNotIn("short", report["flags"])
+        self.assertEqual(report["total"], 24)
+        self.assertIn("to'liq o'qilmadi", ec.format_report(report, "uz"))
+
+    def test_image_with_a_few_words_still_gets_two_points(self):
+        report = ec.normalize_report({"scores": {key: 2 for key in ec.CRITERIA_KEYS}},
+                                     "Ikki so'z", "uz", "", from_image=True)
+        self.assertIn("short", report["flags"])
+        self.assertEqual(report["total"], 2)
+
+    def test_fake_errors_are_dropped(self):
+        # AI to'g'ri so'zni «xato» deb, tuzatish o'rniga o'sha so'zni qaytargan.
+        report = self._report({"errors": [
+            {"quote": "Insho", "fix": "Insho", "type": "imlo"},
+            {"quote": "universitetlari", "fix": "universitetlari → universitetlari",
+             "type": "imlo"},
+            {"quote": "ta'lim", "fix": "to'g'ri yozilishi kerak", "type": "imlo"},
+            {"quote": "universitetlari", "fix": "universitetlarida", "type": "imlo"},
+        ]})
+        self.assertEqual(len(report["errors"]), 1)
+        self.assertEqual(report["errors"][0]["fix"], "universitetlarida")
+
+    def test_ocr_continuation_does_not_repeat_text(self):
+        head = "Birinchi xatbosh. Ikkinchi jumla shu yerda boshlanadi"
+        tail = "boshlanadi va davom etadi."
+        self.assertEqual(ec._join_continuation(head, tail),
+                         "Birinchi xatbosh. Ikkinchi jumla shu yerda boshlanadi va davom etadi.")
+        self.assertEqual(ec._join_continuation("Salom", "dunyo"), "Salom\ndunyo")
+
+    def test_vision_config_disables_thinking_for_new_models(self):
+        config = ec._vision_config("gemini-2.5-flash", 4096)
+        self.assertEqual(config["thinkingConfig"], {"thinkingBudget": 0})
+        self.assertNotIn("thinkingConfig", ec._vision_config("gemini-2.0-flash", 4096))
+
+    def test_vision_text_reports_truncation(self):
+        body = json.dumps({"candidates": [{"content": {"parts": [{"text": "matn"}]},
+                                           "finishReason": "MAX_TOKENS"}]})
+        self.assertEqual(ec._vision_text(body), ("matn", True))
+        done = json.dumps({"candidates": [{"content": {"parts": [{"text": "matn"}]},
+                                           "finishReason": "STOP"}]})
+        self.assertEqual(ec._vision_text(done), ("matn", False))
+
     def test_off_topic_essay_gets_two_points(self):
         report = self._report({"topic_match": False}, topic="Ta'limdagi islohotlar")
         self.assertIn("offtopic", report["flags"])
@@ -98,7 +148,7 @@ class EssayCheckerTest(unittest.TestCase):
         self.assertIn("epigraf yozilgan", body)
 
     def test_report_lists_every_band_and_total(self):
-        report = self._report({"errors": [{"quote": "kelmagan", "fix": "kelmagan",
+        report = self._report({"errors": [{"quote": "kelmagan", "fix": "kelgan",
                                             "type": "imlo", "rule": "imlo qoidasi"}],
                                "review": "Yaxshi ish."})
         text = ec.format_report(report, "uz")
