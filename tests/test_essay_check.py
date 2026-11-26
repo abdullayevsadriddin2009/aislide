@@ -78,13 +78,15 @@ class EssayCheckerTest(unittest.TestCase):
 
     def test_fake_errors_are_dropped(self):
         # AI to'g'ri so'zni «xato» deb, tuzatish o'rniga o'sha so'zni qaytargan.
+        text = ("Insho mavzusida ta'lim tizimi haqida yozildi. "
+                "Universitetlari bugun keng imkoniyat yaratmoqda. ") * 8
         report = self._report({"errors": [
             {"quote": "Insho", "fix": "Insho", "type": "imlo"},
             {"quote": "universitetlari", "fix": "universitetlari → universitetlari",
              "type": "imlo"},
             {"quote": "ta'lim", "fix": "to'g'ri yozilishi kerak", "type": "imlo"},
             {"quote": "universitetlari", "fix": "universitetlarida", "type": "imlo"},
-        ]})
+        ]}, text=text)
         self.assertEqual(len(report["errors"]), 1)
         self.assertEqual(report["errors"][0]["fix"], "universitetlarida")
 
@@ -188,14 +190,14 @@ class EssayCheckerTest(unittest.TestCase):
         self.assertIn("epigraf yozilgan", body)
 
     def test_report_lists_every_band_and_total(self):
-        report = self._report({"errors": [{"quote": "kelmagan", "fix": "kelgan",
+        report = self._report({"errors": [{"quote": "taraqqiyotining", "fix": "taraqqiyotning",
                                             "type": "imlo", "rule": "imlo qoidasi"}],
                                "review": "Yaxshi ish."})
         text = ec.format_report(report, "uz")
         self.assertIn("24/24 ball (100%)", text)
         self.assertIn("7. Imlo — 2/2", text)
         self.assertIn("12. Adabiy til me'yorlari — 2/2", text)
-        self.assertIn("kelmagan", text)
+        self.assertIn("taraqqiyotining", text)
         self.assertNotIn("<", text)
 
     def test_report_shows_scale_and_structure(self):
@@ -207,7 +209,8 @@ class EssayCheckerTest(unittest.TestCase):
 
     def test_errors_are_capped_at_twenty(self):
         errors = [{"quote": f"xato {i}", "fix": "to'g'ri", "type": "imlo"} for i in range(30)]
-        report = self._report({"errors": errors})
+        report = self._report({"errors": errors},
+                              text=" ".join(f"xato {i}" for i in range(30)))
         self.assertEqual(len(report["errors"]), 20)
 
     def test_payload_for_mini_app(self):
@@ -254,15 +257,47 @@ class EssayCheckerTest(unittest.TestCase):
                   "qoshimchalar": 0, "soz": 0, "paremiya": 0, "adabiy": 0}
         data = {"scores": scores,
                 "sections": {"kirish": True, "asosiy": True, "xulosa": True},
-                "errors": [{"quote": "xato", "fix": "to'g'ri", "type": "imlo"}]}
+                "errors": [{"quote": "tizimi", "fix": "tizim", "type": "imlo"}]}
         image = ec.normalize_report(data, LONG_TEXT, "uz", "AI", from_image=True)
         self.assertEqual(image["scores"]["imlo"], 0)      # xatosi ko'rsatilgan
-        self.assertEqual(image["scores"]["tinish"], 1)
+        self.assertEqual(image["scores"]["tinish"], 2)    # xato ko'rsatilmagan
         self.assertEqual(image["scores"]["paremiya"], 1)
         self.assertGreater(image["total"], 5)
         # Matn faylida bunday yumshoq tuzatish yo'q.
         plain = ec.normalize_report(data, LONG_TEXT, "uz", "AI")
         self.assertEqual(plain["scores"]["tinish"], 0)
+
+    def test_structure_is_detected_from_the_text_not_from_ai(self):
+        """Uch xatboshli esse «kirish/asosiy/xulosa yo'q» bo'lib qolmasin."""
+        body = ("Bugungi kunda avtomobil importi masalasi dolzarb bo'lib qoldi va "
+                "bu haqda ko'p yozilmoqda. Chet el mashinalari sifat va "
+                "texnologiya bilan ajralib turadi. ")
+        last = ("Xulosa qilib aytganda, ikkala yondashuv ham muhim va muvozanat "
+                "kerak. Shu bois mahalliy sanoatni qo'llab-quvvatlash lozim. ")
+        text = body * 2 + "\n\n" + body * 2 + "\n\n" + last * 2
+        data = {"scores": {key: 1 for key in ec.CRITERIA_KEYS},
+                "sections": {"kirish": False, "asosiy": False, "xulosa": False}}
+        report = ec.normalize_report(data, text, "uz")
+        self.assertTrue(all(report["sections"].values()))
+        self.assertEqual(report["scores"]["qismlar"], 2)
+        self.assertNotIn("notask", report["flags"])
+
+    def test_error_quote_missing_from_text_is_dropped(self):
+        """OCR xatosi/to'qib chiqarilgan so'z «xato» sifatida hisoblanmasin."""
+        data = {"scores": {key: 1 for key in ec.CRITERIA_KEYS},
+                "errors": [{"quote": "xamonaviy", "fix": "zamonaviy", "type": "imlo"},
+                           {"quote": "tizimi", "fix": "tizim", "type": "imlo"}]}
+        report = ec.normalize_report(data, LONG_TEXT, "uz")
+        self.assertEqual(len(report["errors"]), 1)
+        self.assertEqual(report["errors"][0]["quote"], "tizimi")
+
+    def test_missing_plan_is_not_reported_as_a_defect(self):
+        data = {"scores": {key: 1 for key in ec.CRITERIA_KEYS},
+                "notes": {"qismlar": "Kirish va xulosa yetarli emas; reja yoki "
+                                     "epigraf ham yo'q."}}
+        report = ec.normalize_report(data, LONG_TEXT, "uz")
+        self.assertNotIn("reja", report["notes"]["qismlar"].lower())
+        self.assertIn("Kirish", report["notes"]["qismlar"])
 
     def test_quota_window_separates_minute_and_daily_limits(self):
         row = {"name": "Google AI 1"}

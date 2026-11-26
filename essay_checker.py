@@ -264,6 +264,90 @@ def clean_ocr_text(text):
     return value
 
 
+# AI «sections» ni ko'p hollarda false qilib qo'yardi: yaxshi yozilgan esse
+# «Kirish ❌ · Asosiy ❌ · Xulosa ❌» bo'lib, «qismlar» bandi 0 olardi. Tuzilma
+# matnning o'zidan aniqlanadi — bu bepul va model xatosiga bog'liq emas.
+_PARAGRAPH_SPLIT_RE = re.compile(r"\n\s*\n")
+_SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+")
+_XULOSA_MARKERS = re.compile(
+    r"(xulosa|shunday\s+qilib|shu\s+asosda|umuman\s+aytganda|yakunlab|yakunida|"
+    r"demak|shu\s+bois|bu\s+fikrlarga\s+asoslanib)", re.IGNORECASE)
+
+
+def paragraphs_of(text, loose=False):
+    """Matn xatboshilari.
+
+    ``loose`` — qo'lyozma (OCR) matni uchun: OCR ba'zan bo'sh qatorlarni
+    tushirib qoldiradi, shunda xatboshilar gaplar bo'yicha ajratiladi.
+    """
+    raw = str(text or "")
+    blocks = [re.sub(r"[ \t]+", " ", part).strip()
+              for part in _PARAGRAPH_SPLIT_RE.split(raw)]
+    blocks = [part for part in blocks if word_count(part) >= 4]
+    if loose and len(blocks) <= 1 and word_count(raw) >= 90:
+        sentences = [s for s in _SENTENCE_SPLIT_RE.split(re.sub(r"\s+", " ", raw).strip()) if s]
+        blocks, chunk = [], []
+        for sentence in sentences:
+            chunk.append(sentence)
+            if word_count(" ".join(chunk)) >= 40:
+                blocks.append(" ".join(chunk))
+                chunk = []
+        if chunk:
+            blocks.append(" ".join(chunk))
+    return blocks
+
+
+def detect_sections(text, loose=False):
+    """Kirish / asosiy qism / xulosa borligini matndan aniqlaydi.
+
+    Qaytaradi: ({'kirish': bool, 'asosiy': bool, 'xulosa': bool}, xatboshilar soni).
+    """
+    blocks = paragraphs_of(text, loose=loose)
+    count = len(blocks)
+    if count == 0:
+        return {"kirish": False, "asosiy": False, "xulosa": False}, 0
+    words = re.sub(r"\s+", " ", str(text or "")).split()
+    tail = blocks[-1]
+    if words:
+        tail += " " + " ".join(words[int(len(words) * 0.75):])
+    has_conclusion = bool(_XULOSA_MARKERS.search(tail))
+    if count >= 3:
+        return {"kirish": True, "asosiy": True, "xulosa": True}, count
+    if count == 2:
+        return {"kirish": True, "asosiy": True, "xulosa": has_conclusion}, count
+    # Bitta xatbosh — asosiy qism alohida ajratilmagan; xulosa belgisi bo'lsa, bor.
+    return {"kirish": True, "asosiy": False, "xulosa": has_conclusion}, count
+
+
+# AI keltirgan «xato» matnda umuman bo'lmasligi mumkin (OCR xatosi yoki
+# to'qib chiqarilgan so'z). Bunday yozuv ballni asossiz tushirardi.
+_QUOTE_STRIP_RE = re.compile(r"[^0-9a-z\u00c0-\u024f\u0400-\u04ff]+")
+_APOSTROPHE_MAP = str.maketrans({"\u2018": "'", "\u2019": "'", "\u02bb": "'",
+                                 "\u02bc": "'", "`": "'", "\u00b4": "'"})
+
+
+def _flat_text(value):
+    return _QUOTE_STRIP_RE.sub("", str(value or "").translate(_APOSTROPHE_MAP).casefold())
+
+
+def _quote_in_text(quote, text):
+    """Keltirilgan parcha haqiqatan matnda bormi (tinish/apostrof farqi bilan)."""
+    needle = _flat_text(quote)
+    if len(needle) < 3:
+        return True
+    return needle in _flat_text(text)
+
+
+# Model xato turini turlicha yozadi: «qo'shimcha», «leksika», «punktuatsiya».
+_TYPE_ALIASES = {
+    "qoshimcha": "qoshimchalar", "qo'shimcha": "qoshimchalar",
+    "qosimcha": "qoshimchalar", "affiks": "qoshimchalar",
+    "so'z": "soz", "soz qo'llash": "soz", "leksika": "soz", "leksik": "soz",
+    "orfografiya": "imlo", "imlo xatosi": "imlo",
+    "punktuatsiya": "tinish", "tinish belgisi": "tinish",
+}
+
+
 def cyrillic_ratio(text):
     """Matndagi harflarning qancha qismi kirill ekani (0..1)."""
     cyrillic = len(_CYRILLIC_RE.findall(str(text or "")))
@@ -299,6 +383,9 @@ OCR_PROMPT = (
     "- Daftar chizig'iga yozilgan mayda harflarni ham o'qing; qator chetidagi, "
     "sarlavha va sana kabi yozuvlarni ham qo'shing.\n"
     "- So'z chizilgan yoki ustidan tuzatilgan bo'lsa, oxirgi (tuzatilgan) variantni yozing.\n"
+    "- Har bir so'zni qator kontekstida tekshiring: o'qilgan so'z o'zbek tilida "
+    "mantiqiy bo'lmasa, uni qayta o'qing (masalan «bormoqda» ni «mogda» deb "
+    "yozmang). o', g', sh, ch, ng birikmalari va nuqtali harflarni aniq ajrating.\n"
     "- Hech narsani qisqartirmang va tashlab ketmang; qatorlar va xatboshilarni saqlang.\n"
     "- Imlo va tinish belgilaridagi xatolarni TUZATMANG: so'z qanday yozilgan bo'lsa, "
     "aynan shunday yozing — tekshiruv uchun bu muhim.\n"
@@ -797,16 +884,34 @@ def normalize_report(data, text, lang="uz", topic="", from_image=False):
             continue
         if _is_fake_error(quote, fix):
             continue
+        # Matnda bo'lmagan parcha — OCR xatosi yoki to'qib chiqarilgan so'z.
+        if quote and not _quote_in_text(quote, text):
+            continue
+        kind = _flat_text(item.get("type") or "imlo")[:24] or "imlo"
+        kind = _TYPE_ALIASES.get(kind, kind)
         errors.append({
             "quote": quote,
             "fix": fix,
-            "type": str(item.get("type") or "imlo").strip().lower()[:24],
+            "type": kind,
             "rule": str(item.get("rule") or "").strip()[:180],
         })
 
     words = word_count(text)
     raw_sections = data.get("sections") if isinstance(data.get("sections"), dict) else {}
-    sections = {key: raw_sections.get(key) is True for key in ("kirish", "asosiy", "xulosa")}
+    detected, para_count = detect_sections(text, loose=from_image)
+    # Tuzilma matndan aniqlanadi; AI faqat qo'shimcha tasdiq bera oladi.
+    sections = {key: bool(detected.get(key)) or raw_sections.get(key) is True
+                for key in ("kirish", "asosiy", "xulosa")}
+    # «Faqat kirish yozilgan» degan 0-ball qoidasi AI xulosasiga tayanadi:
+    # xatboshilar soni bu yerda dalil emas.
+    # «Reja yo'q» / «epigraf yo'q» — rasmiy talabda kamchilik emas, izohdan olib
+    # tashlanadi (model buni baribir qismlar izohiga qo'shib qo'yardi).
+    for key, note in list(notes.items()):
+        cleaned = re.sub(r"[^.;!?]*\b(reja|epigraf)\b[^.;!?]*(yo'q|emas|yozilmagan)[^.;!?]*[.;!?]?",
+                         " ", note, flags=re.IGNORECASE)
+        cleaned = re.sub(r"\s+", " ", cleaned).strip(" .")
+        if cleaned != note:
+            notes[key] = cleaned
     flags = []
     total = sum(scores.values())
     estimated = data.get("estimated") is True
@@ -814,7 +919,8 @@ def normalize_report(data, text, lang="uz", topic="", from_image=False):
     # 0 ball: varaq bo'sh, faqat kirish yozilgan yoki to'liq kirill alifbosida.
     if words == 0:
         flags.append("blank")
-    elif sections["kirish"] and not (sections["asosiy"] or sections["xulosa"]):
+    elif raw_sections.get("kirish") is True and not (
+            raw_sections.get("asosiy") is True or raw_sections.get("xulosa") is True):
         flags.append("notask")
     elif cyrillic_ratio(text) >= 0.6:
         flags.append("cyrillic")
@@ -845,6 +951,21 @@ def normalize_report(data, text, lang="uz", topic="", from_image=False):
         for key in ("imlo", "tinish", "qoshimchalar", "soz", "paremiya", "adabiy"):
             if scores[key] == 0 and key not in error_types:
                 scores[key] = 1
+        total = sum(scores.values())
+    # Ko'rsatilgan xato bo'lmasa, til bandi «o'rtacha» deb 1 ga tushirilmaydi:
+    # qo'lyozmada OCR xatosi ko'p, shuning uchun faqat aniqlangan xatoga ball
+    # tushiriladi. «Qismlar» esa matnda uch qism haqiqatan bo'lsa 2 oladi —
+    # buning uchun AI'ning «bo'limlar yo'q» degan xulosasi asos bo'lmaydi.
+    if not flags and sum(scores.values()) > 0:
+        if words >= MIN_WORDS and all(sections.values()) and scores["qismlar"] < 2:
+            scores["qismlar"] = 2
+            notes["qismlar"] = ""
+        if from_image and words >= MIN_WORDS:
+            error_types = {item["type"] for item in errors}
+            for key in ("imlo", "tinish", "qoshimchalar", "soz"):
+                if key not in error_types and scores[key] < 2:
+                    scores[key] = 2
+                    notes[key] = ""
         total = sum(scores.values())
     if estimated:
         # Taxminiy ballar hisobotda alohida ogohlantirish bilan ko'rsatiladi.
@@ -890,10 +1011,23 @@ def build_prompt(text, topic="", lang="uz", retry=False, from_image=False):
         "belgilari imlo xatosi emas. Faqat yozuvchining haqiqiy imlo "
         "xatolarini ko'rsating.\n\n" if from_image else ""
     )
+    detected, para_count = detect_sections(text, loose=from_image)
+    structure_block = (
+        "MATN TUZILISHI (avtomatik aniqlandi — shu ma'lumotga tayaning):\n"
+        f"- xatboshilar soni: {para_count}\n"
+        f"- kirish: {'bor' if detected['kirish'] else 'yoq'}\n"
+        f"- asosiy qism: {'bor' if detected['asosiy'] else 'yoq'}\n"
+        f"- xulosa: {'bor' if detected['xulosa'] else 'yoq'}\n"
+        f"- so'zlar soni: {word_count(text)}\n\n"
+    )
     return (
         "Siz O'zbekiston Bilim va malakalarni baholash agentligining ona tili va "
         "adabiyot fanidan yozma ish (esse) bo'yicha ekspertisiz. Quyidagi esseni "
         "rasmiy mezon bo'yicha tekshiring.\n\n"
+        "ISH TARTIBI: avval butun matnni boshidan oxirigacha o'qib chiqing — "
+        "har bir xatboshini, kirish va xulosani alohida belgilang; shundan keyingina "
+        "12 ta bandni birma-bir baholang.\n\n"
+        f"{structure_block}"
         "RASMIY MEZON — 12 ta band, HAR BIRIGA FAQAT 0, 1 yoki 2 ball:\n"
         f"{bands}\n\n"
         "Ball qo'yish tartibi:\n"
@@ -908,6 +1042,15 @@ def build_prompt(text, topic="", lang="uz", retry=False, from_image=False):
         "belgilari to'g'ri qo'llangan bo'lsa, tinish 0 bo'lmaydi; matnda atama "
         "yoki tasviriy ifoda bo'lsa, paremiya 0 bo'lmaydi. O'rtacha, lekin "
         "yaroqli ish odatda 1 ball oladi.\n\n"
+        "BALLARNI ADOLATLI QO'YING: yaxshi yozilgan esse (aniq kirish, mantiqiy "
+        "asosiy qism, xulosa, dalillar va shaxsiy fikr) odatda har bir bandda 2 ball "
+        "oladi. 1 ball — faqat izohda aniq aytilgan va matndan parcha bilan "
+        "tasdiqlangan kamchilik bo'lsa. Xato ro'yxatida ko'rsatilmagan band uchun "
+        "ballni tushirmang: imlo/tinish/qo'shimcha/so'z bo'yicha xato keltirmagan "
+        "bo'lsangiz, o'sha bandga 2 qo'ying. 1 yoki 0 qo'ysangiz, izohda matndan "
+        "aniq parcha keltiring; parcha keltira olmasangiz — 2 qo'ying. "
+        "Tuzilma va so'zlar soni yuqorida "
+        "berilgan; ularga zid xulosa yozmang (masalan «kirish yo'q», «reja yo'q»).\n\n"
         f"{retry_block}"
         f"{ocr_block}"
         "Qat'iy qoidalar: matnda yo'q xatoni o'ylab topmang; bir xil xato bir necha "
@@ -922,6 +1065,16 @@ def build_prompt(text, topic="", lang="uz", retry=False, from_image=False):
         "qiling va bu kamchilikni «qismlar» bandida hisobga oling.\n"
         "- matnda reja yoki epigraf YO'Q bo'lsa, bu kamchilik emas: buning uchun "
         "ballni tushirmang va izohda «reja yo'q» deb yozmang.\n\n"
+        "Ba'zi bandlarni baholashda ko'p uchraydigan xato:\n"
+        "- dalillar: matnda misol, fakt, raqam yoki hayotiy holat keltirilgan bo'lsa — 2; "
+        "adabiyot/manba ko'rsatilishi shart emas.\n"
+        "- paremiya: maqol yoki topishmoq bo'lishi shart emas; vaziyatga mos atama, "
+        "ilmiy-ommabop ibora yoki tasviriy ifoda bo'lsa — 2.\n"
+        "- adabiy: sheva, vulgarizm va varvarizm bo'lmasa — 2.\n"
+        "- uslub: esse (fikr bildirish, munozara) ohangida yozilgan bo'lsa — 2; "
+        "ilmiy maqola darajasidagi isbot talab qilinmaydi.\n"
+        "- qarashlar: muqobil fikr va o'z munosabati (masalan «mening fikrimcha») "
+        "bo'lsa — 2.\n\n"
         "Istisno qoidalar (o'zingiz qo'llamang, faqat hisobga oling): 100 so'zdan kam — "
         "2 ball, mavzuga mos emas — 2 ball, ko'chirilgan — 2 ball; faqat kirish "
         "yozilgan yoki to'liq kirill alifbosida — 0 ball.\n\n"
