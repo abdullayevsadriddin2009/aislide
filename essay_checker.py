@@ -811,6 +811,45 @@ def _is_fake_error(quote, fix):
     return bool(quote) and _plain_cell(fix) == _plain_cell(quote)
 
 
+# Qo'lyozmada so'z qator oxirida bo'linadi va OCR uni «standart--larga» yoki
+# «standart¬larga» qilib qaytaradi. Bu imlo ham, tinish ham xatosi emas.
+_BROKEN_HYPHEN_RE = re.compile(r"-{1,2}|\u00ac|\u00ad")
+
+
+def _broken_word_break(quote, fix):
+    """Parcha tuzatishdan faqat bo'g'in ko'chirish chiziqchasi bilan farq qilsa."""
+    raw = str(quote or "")
+    if not raw or not _BROKEN_HYPHEN_RE.search(raw):
+        return False
+    return _plain_cell(_BROKEN_HYPHEN_RE.sub("", raw)) == _plain_cell(fix)
+
+
+# Promptda aytilgan: paremiya uchun maqol shart emas, dalil uchun statistika
+# shart emas. Model esa shu sabab bilan bandni 1 ga tushiradi — bunday
+# tushirish asossiz, shuning uchun qabul qilinmaydi.
+_EVIDENCE_BANDS = ("uslub", "dalillar", "mantiq", "izchillik", "paremiya", "adabiy")
+_INVALID_LOWERING = {
+    "paremiya": re.compile(r"(maqol|topishmoq|paremiya)[^.;!?]*"
+                           r"(yo'q|emas|keltirilmagan|ishlatilmagan)", re.IGNORECASE),
+    "dalillar": re.compile(r"(statistik|raqam|manba|adabiyot)[^.;!?]*"
+                           r"(yetarli emas|keltirilmagan|yo'q)", re.IGNORECASE),
+}
+
+
+def _note_evidence(note, text):
+    """Izohda matndan olingan parcha bormi (qo'shtirnoqli yoki so'zma-so'z)."""
+    note = re.sub(r"\s+", " ", str(note or "")).strip()
+    if not note:
+        return False
+    for fragment in re.findall(r"[«\"“„'‘]([^«»\"“”„'‘’]{12,})[»\"“”'’]", note):
+        if _quote_in_text(fragment, text):
+            return True
+    words = re.findall(r"[\w'’ʻ]+", note)
+    for index in range(len(words) - 3):
+        if _quote_in_text(" ".join(words[index:index + 4]), text):
+            return True
+    return False
+
 def _score_value(value):
     """AI 2, "2", "2/2" yoki "2 ball" qaytarishi mumkin — hammasidan raqam oladi."""
     if isinstance(value, bool) or value is None:
@@ -875,6 +914,13 @@ def normalize_report(data, text, lang="uz", topic="", from_image=False):
         notes[key] = re.sub(r"\s+", " ", note)[:200]
 
     errors = []
+    # Model aslida qaysi turdagi xatoni ko'rsatgan. Parcha OCR matnidan
+    # tasdiqlanmasa ham, band «xato yo'q» deb 2 ga ko'tarilmasligi kerak.
+    faulted = set()
+    for item in (data.get("errors") or [])[:MAX_ERRORS]:
+        if isinstance(item, dict):
+            raw_kind = _flat_text(item.get("type") or "imlo")[:24] or "imlo"
+            faulted.add(_TYPE_ALIASES.get(raw_kind, raw_kind))
     for item in (data.get("errors") or [])[:MAX_ERRORS]:
         if not isinstance(item, dict):
             continue
@@ -882,7 +928,7 @@ def normalize_report(data, text, lang="uz", topic="", from_image=False):
         fix = str(item.get("fix") or "").strip()[:160]
         if not quote and not fix:
             continue
-        if _is_fake_error(quote, fix):
+        if _is_fake_error(quote, fix) or _broken_word_break(quote, fix):
             continue
         # Matnda bo'lmagan parcha — OCR xatosi yoki to'qib chiqarilgan so'z.
         if quote and not _quote_in_text(quote, text):
@@ -947,9 +993,8 @@ def normalize_report(data, text, lang="uz", topic="", from_image=False):
     # baho bo'lishi mumkin. Barcha bandlar 0 bo'lsa ham tegilmaydi (sxema
     # nusxasi) — u holat `_unscored` orqali qayta baholanadi.
     if from_image and not flags and words >= MIN_WORDS and sum(scores.values()) > 0:
-        error_types = {item["type"] for item in errors}
         for key in ("imlo", "tinish", "qoshimchalar", "soz", "paremiya", "adabiy"):
-            if scores[key] == 0 and key not in error_types:
+            if scores[key] == 0 and key not in faulted:
                 scores[key] = 1
         total = sum(scores.values())
     # Ko'rsatilgan xato bo'lmasa, til bandi «o'rtacha» deb 1 ga tushirilmaydi:
@@ -961,11 +1006,21 @@ def normalize_report(data, text, lang="uz", topic="", from_image=False):
             scores["qismlar"] = 2
             notes["qismlar"] = ""
         if from_image and words >= MIN_WORDS:
-            error_types = {item["type"] for item in errors}
             for key in ("imlo", "tinish", "qoshimchalar", "soz"):
-                if key not in error_types and scores[key] < 2:
+                if key not in faulted and scores[key] < 2:
                     scores[key] = 2
                     notes[key] = ""
+        # Prompt talab qiladi: 1 yoki 0 faqat matndan keltirilgan parcha bilan
+        # tasdiqlangan kamchilik uchun. Model esa «ba'zi joylarda...»,
+        # «takrorlanadi» kabi umumiy gaplar bilan bandni tushiradi. Dalil
+        # bo'lmasa band 2 bo'ladi — asossiz past ball chiqmasin.
+        for key in _EVIDENCE_BANDS:
+            if scores[key] >= 2:
+                continue
+            invalid = _INVALID_LOWERING.get(key)
+            if (invalid and invalid.search(notes[key])) or not _note_evidence(notes[key], text):
+                scores[key] = 2
+                notes[key] = ""
         total = sum(scores.values())
     if estimated:
         # Taxminiy ballar hisobotda alohida ogohlantirish bilan ko'rsatiladi.

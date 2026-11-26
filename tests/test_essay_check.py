@@ -261,7 +261,7 @@ class EssayCheckerTest(unittest.TestCase):
         image = ec.normalize_report(data, LONG_TEXT, "uz", "AI", from_image=True)
         self.assertEqual(image["scores"]["imlo"], 0)      # xatosi ko'rsatilgan
         self.assertEqual(image["scores"]["tinish"], 2)    # xato ko'rsatilmagan
-        self.assertEqual(image["scores"]["paremiya"], 1)
+        self.assertEqual(image["scores"]["paremiya"], 2)  # dalilsiz tushirilmaydi
         self.assertGreater(image["total"], 5)
         # Matn faylida bunday yumshoq tuzatish yo'q.
         plain = ec.normalize_report(data, LONG_TEXT, "uz", "AI")
@@ -290,6 +290,48 @@ class EssayCheckerTest(unittest.TestCase):
         report = ec.normalize_report(data, LONG_TEXT, "uz")
         self.assertEqual(len(report["errors"]), 1)
         self.assertEqual(report["errors"][0]["quote"], "tizimi")
+
+    def test_line_break_hyphen_is_not_a_punctuation_error(self):
+        """«standart--larga» — qator oxiridagi ko'chirish chizig'i, tinish xatosi emas."""
+        data = {"scores": {key: 2 for key in ec.CRITERIA_KEYS},
+                "errors": [{"quote": "standart--larga", "fix": "standartlarga",
+                            "type": "tinish"}]}
+        report = ec.normalize_report(data, LONG_TEXT, "uz")
+        self.assertEqual(report["errors"], [])
+        self.assertEqual(report["scores"]["tinish"], 2)
+
+    def test_bands_lowered_without_quoted_defect_are_not_lowered(self):
+        """Umumiy gap («ba'zi joylarda...») bilan band tushirilmaydi."""
+        scores = {key: 2 for key in ec.CRITERIA_KEYS}
+        scores.update({"uslub": 1, "izchillik": 1})
+        data = {"scores": scores,
+                "notes": {"uslub": "Matn uslubga yaqin, lekin ba'zi joylarda "
+                                   "chetga chiqadi",
+                          "izchillik": "Mavzular takrorlanadi, izchil oqim yo'q"}}
+        report = ec.normalize_report(data, LONG_TEXT, "uz")
+        self.assertEqual(report["scores"]["uslub"], 2)
+        self.assertEqual(report["scores"]["izchillik"], 2)
+        self.assertEqual(report["notes"]["uslub"], "")
+
+    def test_quoted_defect_still_lowers_the_band(self):
+        scores = {key: 2 for key in ec.CRITERIA_KEYS}
+        scores["izchillik"] = 1
+        data = {"scores": scores,
+                "notes": {"izchillik": "«Bugungi kunda ta'lim tizimi» fikri har "
+                                       "gapda takrorlangan"}}
+        report = ec.normalize_report(data, LONG_TEXT, "uz")
+        self.assertEqual(report["scores"]["izchillik"], 1)
+
+    def test_paremiya_and_dalillar_are_not_lowered_for_missing_extras(self):
+        """Maqol va statistika talab qilinmaydi: shu sabab bilan ball tushmaydi."""
+        scores = {key: 2 for key in ec.CRITERIA_KEYS}
+        scores.update({"paremiya": 1, "dalillar": 1})
+        data = {"scores": scores,
+                "notes": {"paremiya": "Atamalar bor, lekin aniq maqol yoki paremiya yo'q",
+                          "dalillar": "Misollar bor, lekin aniq statistik ma'lumot yetarli emas"}}
+        report = ec.normalize_report(data, LONG_TEXT, "uz")
+        self.assertEqual(report["scores"]["paremiya"], 2)
+        self.assertEqual(report["scores"]["dalillar"], 2)
 
     def test_missing_plan_is_not_reported_as_a_defect(self):
         data = {"scores": {key: 1 for key in ec.CRITERIA_KEYS},
