@@ -210,10 +210,37 @@ class EssayCheckerTest(unittest.TestCase):
         self.assertEqual(report["total"], 0)
         self.assertEqual(report["scale_75"], 0)
 
-    def test_full_cyrillic_gets_zero(self):
+    def test_cyrillic_essay_is_graded_by_old_alphabet_rules(self):
+        # Eski (kirill) alifboda yozilgan ish 0 ball olmaydi: imlo va tinish shu
+        # alifbo qoidalari bo'yicha tekshiriladi, alifbo tanlovi kamchilik emas.
         report = self._report(text=CYRILLIC_TEXT)
-        self.assertIn("cyrillic", report["flags"])
-        self.assertEqual(report["total"], 0)
+        self.assertNotIn("cyrillic", report["flags"])
+        self.assertEqual(report["script"], "cyrillic")
+        self.assertEqual(report["total"], 24)
+        prompt = ec.build_prompt(CYRILLIC_TEXT, "Mavzu")
+        self.assertIn("kirill", prompt)
+        self.assertIn("lotin harflariga o'girmang", prompt)
+
+    def test_latin_essay_keeps_latin_rules(self):
+        report = self._report()
+        self.assertEqual(report["script"], "latin")
+        self.assertIn("lotin yozuvidagi o'zbek alifbosida", ec.build_prompt(LONG_TEXT, "Mavzu"))
+
+    def test_alphabet_swap_is_not_a_spelling_error(self):
+        # «мактаб» → «maktab» — bu imlo xatosi emas, alifbo almashtirish.
+        data = {"scores": {key: 1 for key in ec.CRITERIA_KEYS},
+                "errors": [{"quote": "мактаб", "fix": "maktab", "type": "imlo"}]}
+        text = CYRILLIC_TEXT + " Мактаб таълими жуда муҳим."
+        report = ec.normalize_report(data, text, "uz", "", from_image=True)
+        self.assertEqual(report["errors"], [])
+        self.assertEqual(report["scores"]["imlo"], 2)
+
+    def test_prompt_asks_for_a_full_spelling_check(self):
+        prompt = ec.build_prompt(LONG_TEXT, "Mavzu")
+        self.assertIn("IMLO TEKSHIRUVI", prompt)
+        self.assertIn("har bir so'zning yozilishini tekshiring", prompt)
+        self.assertIn("to'g'ri yozilgan so'zni «xato» deb yozmang", prompt)
+        self.assertIn(str(ec.MAX_ERRORS), prompt)
 
     def test_scale_75_conversion(self):
         self.assertEqual(ec.to_scale_75(24), 75)
@@ -247,11 +274,13 @@ class EssayCheckerTest(unittest.TestCase):
         self.assertIn("Tuzilma", body)
         self.assertIn("Xulosa ❌", body)
 
-    def test_errors_are_capped_at_twenty(self):
-        errors = [{"quote": f"xato {i}", "fix": "to'g'ri", "type": "imlo"} for i in range(30)]
+    def test_errors_are_capped(self):
+        total = ec.MAX_ERRORS + 10
+        errors = [{"quote": f"xato {i}", "fix": "to'g'ri", "type": "imlo"}
+                  for i in range(total)]
         report = self._report({"errors": errors},
-                              text=" ".join(f"xato {i}" for i in range(30)))
-        self.assertEqual(len(report["errors"]), 20)
+                              text=" ".join(f"xato {i}" for i in range(total)))
+        self.assertEqual(len(report["errors"]), ec.MAX_ERRORS)
 
     def test_payload_for_mini_app(self):
         report = self._report({"notes": {"imlo": "Ikki imlo xatosi bor."},

@@ -8,7 +8,10 @@ ham hisobga olinadi:
 * mavzuga mos bo'lmagan ish — 2 ball;
 * 100 so'zdan kam ish — 2 ball;
 * boshqa manbadan ko'chirilgan ish — 2 ball;
-* faqat kirish qismi yozilgani yoki to'liq kirill alifbosida yozilgani — 0 ball.
+* faqat kirish qismi yozilgani — 0 ball.
+
+Ish lotin yoki kirill alifbosida yozilgan bo'lishi mumkin: alifbo tanlovi
+kamchilik emas, imlo va tinish shu alifbo qoidalari bo'yicha baholanadi.
 
 Foydalanuvchi DOCX/TXT fayl, rasm yoki matn yuboradi; rasm Gemini vision orqali
 o'qiladi. Hisobotda har bir band bo'yicha ball, aniq xatolar va taqriz qaytadi.
@@ -27,7 +30,7 @@ import aiohttp
 import ai_pool
 
 MAX_CHARS = 15000          # bir marta tekshiriladigan matn hajmi
-MAX_ERRORS = 20
+MAX_ERRORS = 30            # imlo to'liq ko'rib chiqilsin: har bir xato alohida
 MAX_IMAGE_SIDE = 2600      # qo'lyozma ingichka: kichik rasmda harflar yo'qoladi
 MIN_IMAGE_SIDE = 1700      # bundan kichik suratni kattalashtiramiz (ingichka harflar)
 MAX_PER_BAND = 2
@@ -51,7 +54,7 @@ CRITERIA = (
     ("qismlar", "Matn uch qismdan iboratligi: kirish, asosiy qism, xulosa"),
     ("mantiq", "Mantiqiy qurilish: gap bo'laklari, sintaktik birliklar, xatboshilar"),
     ("izchillik", "Mazmuniy-mantiqiy izchillik, fikr takrorlanmasligi"),
-    ("imlo", "Imlo qoidalariga rioya (lotin yozuvidagi o'zbek alifbosi)"),
+    ("imlo", "Imlo qoidalariga rioya (ishning o'z alifbosida)"),
     ("tinish", "Tinish belgilarining to'g'ri qo'llanishi"),
     ("qoshimchalar", "So'z va shakl yasovchi qo'shimchalarning o'rinli qo'llanishi"),
     ("soz", "So'z qo'llash: leksik birliklarning o'rinli tanlanishi"),
@@ -91,7 +94,6 @@ _LABELS = {
             "offtopic": "Ish mavzuga mos emas — rasmiy qoidaga ko'ra 2 ball qo'yiladi.",
             "copied": "Ish boshqa manbadan ko'chirilgan deb baholandi — 2 ball.",
             "notask": "Faqat kirish qismi yozilgan — topshiriq bajarilmagan, 0 ball.",
-            "cyrillic": "Ish to'liq kirill alifbosida — tekshirilmaydi, 0 ball.",
             "estimated": "AI to'liq baholay olmadi; ballar matn tahlili asosida taxminiy qo'yildi. Qayta tekshirib ko'ring.",
             "not_graded": "Hozircha AI baholab bo'lmadi — bepul limitlar vaqtincha band. Ballar o'ylab topilmaydi: bir daqiqadan so'ng «Qayta tekshirish»ni bosing.",
         },
@@ -136,7 +138,6 @@ _LABELS = {
             "offtopic": "Работа не соответствует теме — по официальному правилу 2 балла.",
             "copied": "Работа оценена как списанная — 2 балла.",
             "notask": "Написано только вступление — задание не выполнено, 0 баллов.",
-            "cyrillic": "Работа полностью на кириллице — не проверяется, 0 баллов.",
             "estimated": "AI не смог полностью оценить работу; баллы выставлены приблизительно. Проверьте ещё раз.",
             "not_graded": "Сейчас AI не смог оценить работу — бесплатные лимиты временно заняты. Баллы не выдумываются: нажмите «Проверить ещё раз» через минуту.",
         },
@@ -181,7 +182,6 @@ _LABELS = {
             "offtopic": "The work is off topic — the official rule gives 2 points.",
             "copied": "The work was judged copied — 2 points.",
             "notask": "Only the introduction is written — task not done, 0 points.",
-            "cyrillic": "The work is fully in Cyrillic — not checked, 0 points.",
             "estimated": "The AI could not grade the whole work; the scores are approximate. Please check it again.",
             "not_graded": "The AI could not grade the work right now — free limits are temporarily used up. No scores are invented: press “Check again” in a minute.",
         },
@@ -429,6 +429,15 @@ def _criterion_key(raw):
     return None
 
 
+def detect_script(text):
+    """Matn qaysi alifboda yozilgan: «cyrillic» yoki «latin».
+
+    Ikkala alifbo ham qabul qilinadi — imlo va tinish shu alifbo qoidalari
+    bo'yicha tekshiriladi, alifbo tanlovi uchun ball tushirilmaydi.
+    """
+    return "cyrillic" if cyrillic_ratio(text) >= 0.6 else "latin"
+
+
 def cyrillic_ratio(text):
     """Matndagi harflarning qancha qismi kirill ekani (0..1)."""
     cyrillic = len(_CYRILLIC_RE.findall(str(text or "")))
@@ -459,8 +468,10 @@ def _gate(name, limit):
 OCR_PROMPT = (
     "Bu rasmda qo'lyozma yoki bosma matn (o'quvchi daftari yoki varaq) bor. "
     "Sahifadagi BARCHA matnni to'liq va tartib bilan yozib bering.\n"
-    "- Matn o'zbek lotin alifbosida qo'lda yozilgan bo'lishi mumkin: o', g', sh, ch, "
-    "ng harflari va apostroflar (o', g') ni aniq saqlang, ularni tushirib qoldirmang.\n"
+    "- Matn o'zbek lotin yoki kirill alifbosida qo'lda yozilgan bo'lishi mumkin. "
+    "Qaysi alifboda yozilgan bo'lsa, o'sha alifbodagi harflarni aniq saqlang: lotinda "
+    "o', g', sh, ch, ng harflari va apostroflar (o', g'), kirillda ў, қ, ғ, ҳ, "
+    "ш, ч, нг harflari. Hech bir harfni tushirib qoldirmang va alifboni almashtirmang.\n"
     "- Daftar chizig'iga yozilgan mayda harflarni ham o'qing; qator chetidagi, "
     "sarlavha va sana kabi yozuvlarni ham qo'shing.\n"
     "- So'z chizilgan yoki ustidan tuzatilgan bo'lsa, oxirgi (tuzatilgan) variantni yozing.\n"
@@ -900,11 +911,21 @@ _FOREIGN_LETTER_RE = re.compile(r"[ğəıöüşçâêîôûñ]")
 
 
 def _bad_correction(quote, fix):
-    """Tuzatish so'zni o'zgartirmasa yoki begona alifbo harfini qo'shsa."""
+    """Tuzatish so'zni o'zgartirmasa, alifboni almashtirsa yoki begona harf qo'shsa."""
     fix_text = str(fix or "")
     quote_text = str(quote or "")
     if quote_text and _plain_cell(fix_text) == _plain_cell(quote_text):
         return True
+    # «мактаб» → «maktab» — bu imlo xatosi emas, alifbo almashtirish.
+    quote_cyr = bool(_CYRILLIC_RE.search(quote_text))
+    fix_cyr = bool(_CYRILLIC_RE.search(fix_text))
+    if quote_cyr != fix_cyr:
+        other = fix_text if quote_cyr else quote_text
+        swapped = quote_text if quote_cyr else fix_text
+        if _LATIN_RE.search(other) and not _CYRILLIC_RE.search(other):
+            return True
+        if _CYRILLIC_RE.search(swapped) and not _LATIN_RE.search(swapped):
+            return True
     foreign = _FOREIGN_LETTER_RE.search(fix_text)
     return bool(foreign) and not _FOREIGN_LETTER_RE.search(quote_text)
 
@@ -1080,8 +1101,8 @@ def to_scale_75(total):
 def baseline_scores(text):
     """AI baholay olmagan holat uchun ehtiyot bahosi.
 
-    Rasmiy qoidada yaroqli ish 0 ball olmaydi (0 — bo'sh varaq, faqat kirish
-    qismi yoki to'liq kirill alifbasi uchun). Shuning uchun matn mavjud bo'lsa
+    Rasmiy qoidada yaroqli ish 0 ball olmaydi (0 — bo'sh varaq yoki faqat
+    kirish qismi uchun). Shuning uchun matn mavjud bo'lsa
     har bir bandga pastki (1) baho qo'yiladi, «qismlar» esa xatboshilar soniga
     qarab aniqlanadi. Hisobotda bu taxminiy ekani ogohlantiriladi.
     """
@@ -1165,14 +1186,13 @@ def normalize_report(data, text, lang="uz", topic="", from_image=False):
     total = sum(scores.values())
     estimated = data.get("estimated") is True
 
-    # 0 ball: varaq bo'sh, faqat kirish yozilgan yoki to'liq kirill alifbosida.
+    # 0 ball: varaq bo'sh yoki faqat kirish yozilgan. Alifbo (lotin/kirill)
+    # tanlovi kamchilik emas — imlo shu alifbo qoidalari bo'yicha baholanadi.
     if words == 0:
         flags.append("blank")
     elif raw_sections.get("kirish") is True and not (
             raw_sections.get("asosiy") is True or raw_sections.get("xulosa") is True):
         flags.append("notask")
-    elif cyrillic_ratio(text) >= 0.6:
-        flags.append("cyrillic")
     # 2 ball: hajm, mavzu, ko'chirma.
     elif words < MIN_WORDS:
         # Rasm to'liq o'qilmagan bo'lsa, «2 ball» o'rniga qayta yuborish so'raladi.
@@ -1185,7 +1205,7 @@ def normalize_report(data, text, lang="uz", topic="", from_image=False):
     elif data.get("plagiarism_suspected") is True:
         flags.append("copied")
 
-    if flags and flags[0] in ("blank", "notask", "cyrillic"):
+    if flags and flags[0] in ("blank", "notask"):
         total = 0
     elif flags and flags[0] != "ocr_short":
         total = 2
@@ -1243,6 +1263,7 @@ def normalize_report(data, text, lang="uz", topic="", from_image=False):
     return {
         "scores": scores,
         "notes": notes,
+        "script": detect_script(text),
         "total": total,
         "max_total": MAX_TOTAL,
         "scale_75": to_scale_75(total),
@@ -1275,11 +1296,20 @@ def build_prompt(text, topic="", lang="uz", retry=False, from_image=False):
     topic_block = (f"ESSE MAVZUSI / TOPSHIRIQ:\n\"\"\"\n{topic}\n\"\"\"\n\n"
                    if topic else
                    "ESSE MAVZUSI: berilmagan — mavzuga moslikni matnning o'zidan baholang.\n\n")
+    script = detect_script(text)
     ocr_block = (
         "MATN QO'LYOZMADAN O'QILGAN (OCR): qator oxiridagi bo'g'in ko'chirish "
         "chiziqchalari, harf uzilishlari va ʼ/’/ʻ ko'rinishidagi apostrof "
         "belgilari imlo xatosi emas. Faqat yozuvchining haqiqiy imlo "
         "xatolarini ko'rsating.\n\n" if from_image else ""
+    )
+    script_block = (
+        "ALIFBO: esse eski o'zbek (kirill) alifbosida yozilgan. Imlo va tinish "
+        "belgilarini kirill alifbosidagi o'zbek tili qoidalari bo'yicha baholang; "
+        "so'zlarni lotin harflariga o'girmang va alifbo tanlovini kamchilik deb "
+        "hisoblamang (buning uchun ball tushirmang).\n\n" if script == "cyrillic"
+        else "ALIFBO: esse lotin yozuvidagi o'zbek alifbosida yozilgan. Imlo va "
+             "tinish belgilarini shu alifbo qoidalari bo'yicha baholang.\n\n"
     )
     detected, para_count = detect_sections(text, loose=from_image)
     structure_block = (
@@ -1328,12 +1358,19 @@ def build_prompt(text, topic="", lang="uz", retry=False, from_image=False):
         "berilgan; ularga zid xulosa yozmang (masalan «kirish yo'q», «reja yo'q»).\n\n"
         f"{retry_block}"
         f"{ocr_block}"
+        f"{script_block}"
+        "IMLO TEKSHIRUVI: imlo bandini to'liq ko'rib chiqing — matndagi har bir "
+        "so'zning yozilishini tekshiring: harf almashinuvi, tushib qolgan yoki "
+        "ortiqcha harf, qo'shimchaning noto'g'ri yozilishi, so'zning qo'shilib "
+        "ketishi yoki ajralib ketishi. Har bir topilgan xatoni alohida yozing "
+        "(bir xil xato bir necha joyda bo'lsa — bitta). Faqat haqiqiy xatoni "
+        "ko'rsating: to'g'ri yozilgan so'zni «xato» deb yozmang.\n\n"
         "Qat'iy qoidalar: matnda yo'q xatoni o'ylab topmang; bir xil xato bir necha "
-        "joyda takrorlansa — bitta xato; quote — matndagi aniq parcha; imlo va tinish "
-        "bo'yicha o'zbek lotin alifbosi qoidalariga tayaning. Eng ko'pi bilan 20 ta "
-        "aniq xato ko'rsatiladi.\n\n"
+        f"joyda takrorlansa — bitta xato; quote — matndagi aniq parcha; eng ko'pi "
+        f"bilan {MAX_ERRORS} ta aniq xato ko'rsatiladi.\n\n"
         "Rasmiy talablar (buzilishi ballni tushiradi):\n"
-        "- esse lotin yozuvidagi o'zbek alifbosida yoziladi;\n"
+        "- esse o'zbek tilida yoziladi; lotin yoki kirill alifbosi — ikkalasi ham "
+        "qabul qilinadi, alifbo tanlovi kamchilik emas;\n"
         "- uslub publitsistik (argumentli, munozarali) bo'ladi;\n"
         "- kirish, asosiy qism va xulosa bo'ladi;\n"
         "- reja va epigraf yozilmaydi — matnda bo'lsa, has_plan/has_epigraph ni true "
@@ -1352,7 +1389,7 @@ def build_prompt(text, topic="", lang="uz", retry=False, from_image=False):
         "bo'lsa — 2.\n\n"
         "Istisno qoidalar (o'zingiz qo'llamang, faqat hisobga oling): 100 so'zdan kam — "
         "2 ball, mavzuga mos emas — 2 ball, ko'chirilgan — 2 ball; faqat kirish "
-        "yozilgan yoki to'liq kirill alifbosida — 0 ball.\n\n"
+        "yozilgan — 0 ball.\n\n"
         f"{topic_block}"
         "Javob faqat shu JSON sxemasida bo'lsin (boshqa matn yozmang):\n"
         "{\n"
