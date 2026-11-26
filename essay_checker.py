@@ -274,6 +274,33 @@ _XULOSA_MARKERS = re.compile(
     r"demak|shu\s+bois|bu\s+fikrlarga\s+asoslanib)", re.IGNORECASE)
 
 
+# Matn Telegram yoki Word'dan ko'chirilganda xatboshilar bo'sh qator bilan
+# ajratilmaydi — har bir xatbosh faqat chekinish (bo'sh joy) bilan boshlanadi.
+# Shunda butun esse bitta xatbosh bo'lib ko'rinib, «asosiy qism yo'q» deb
+# baholanardi.
+_INDENT_RE = re.compile(r"^[ \t\u00a0]")
+
+
+def _indented_blocks(raw):
+    """Chekinish bilan boshlangan qatorlarni xatbosh deb ajratadi."""
+    lines = [line.rstrip() for line in str(raw or "").split("\n")]
+    starts = [line for line in lines
+              if _INDENT_RE.match(line) and word_count(line) >= 4]
+    if len(starts) < 2:
+        return []
+    blocks, current = [], []
+    for line in lines:
+        if _INDENT_RE.match(line) and current:
+            blocks.append(" ".join(current))
+            current = [line]
+        else:
+            current.append(line)
+    if current:
+        blocks.append(" ".join(current))
+    blocks = [re.sub(r"\s+", " ", part).strip() for part in blocks]
+    return [part for part in blocks if word_count(part) >= 4]
+
+
 def paragraphs_of(text, loose=False):
     """Matn xatboshilari.
 
@@ -284,6 +311,9 @@ def paragraphs_of(text, loose=False):
     blocks = [re.sub(r"[ \t]+", " ", part).strip()
               for part in _PARAGRAPH_SPLIT_RE.split(raw)]
     blocks = [part for part in blocks if word_count(part) >= 4]
+    if len(blocks) <= 1:
+        # Bo'sh qator yo'q, lekin xatboshilar chekinish bilan boshlangan.
+        blocks = _indented_blocks(raw) or blocks
     if loose and len(blocks) <= 1 and word_count(raw) >= 90:
         sentences = [s for s in _SENTENCE_SPLIT_RE.split(re.sub(r"\s+", " ", raw).strip()) if s]
         blocks, chunk = [], []
@@ -862,6 +892,23 @@ def _is_fake_error(quote, fix):
     return bool(quote) and _plain_cell(fix) == _plain_cell(quote)
 
 
+# O'zbek lotin alifbosida bu harflar yo'q. Model ularni qo'shib «tuzatish»
+# bergan bo'lsa (masalan «enagalar» → «enağalar»), demak u to'g'ri yozilgan
+# so'zni xato deb ko'rsatgan — bunday yozuv hisobotga ham, ballga ham
+# ta'sir qilmasligi kerak.
+_FOREIGN_LETTER_RE = re.compile(r"[ğəıöüşçâêîôûñ]")
+
+
+def _bad_correction(quote, fix):
+    """Tuzatish so'zni o'zgartirmasa yoki begona alifbo harfini qo'shsa."""
+    fix_text = str(fix or "")
+    quote_text = str(quote or "")
+    if quote_text and _plain_cell(fix_text) == _plain_cell(quote_text):
+        return True
+    foreign = _FOREIGN_LETTER_RE.search(fix_text)
+    return bool(foreign) and not _FOREIGN_LETTER_RE.search(quote_text)
+
+
 # Qo'lyozmada so'z qator oxirida bo'linadi va OCR uni «standart--larga» yoki
 # «standart¬larga» qilib qaytaradi. Bu imlo ham, tinish ham xatosi emas.
 _BROKEN_HYPHEN_RE = re.compile(r"-{1,2}|\u00ac|\u00ad")
@@ -880,11 +927,82 @@ def _broken_word_break(quote, fix):
 # tushirish asossiz, shuning uchun qabul qilinmaydi.
 _EVIDENCE_BANDS = ("uslub", "dalillar", "mantiq", "izchillik", "paremiya", "adabiy")
 _INVALID_LOWERING = {
-    "paremiya": re.compile(r"(maqol|topishmoq|paremiya)[^.;!?]*"
-                           r"(yo'q|emas|keltirilmagan|ishlatilmagan)", re.IGNORECASE),
+    "paremiya": (re.compile(r"(maqol|topishmoq|paremiya)[^.;!?]*"
+                            r"(yo'q|emas|keltirilmagan|ishlatilmagan)", re.IGNORECASE),
+                 # «Maqol bor, lekin to'liq ifodalanmagan» — baribir asossiz tushirish.
+                 re.compile(r"(maqol|topishmoq|paremiya|tasviriy\s+ifoda|ibora)[^.;!?]*"
+                            r"(to'liq|aniq)[^.;!?]*(emas|ifodalanmagan|kuchsiz)",
+                            re.IGNORECASE)),
     "dalillar": re.compile(r"(statistik|raqam|manba|adabiyot)[^.;!?]*"
-                           r"(yetarli emas|keltirilmagan|yo'q)", re.IGNORECASE),
+                           r"(yetarli emas|keltirilmagan|ko'rsatilmagan|berilmagan|yo'q)",
+                           re.IGNORECASE),
+    "qarashlar": re.compile(r"(shaxsiy|muallif)[^.;!?]*(fikr|munosabat)[^.;!?]*"
+                            r"(aniq ajratil|ifodalanmagan|ko'rsatilmagan|emas|yo'q)",
+                            re.IGNORECASE),
 }
+
+
+# Matnda muallifning o'z munosabati borligi (qarashlar bandi uchun).
+_PERSONAL_VIEW_RE = re.compile(
+    r"(mening\s+fikrimcha|menimcha|mening\s+nazarimda|mening\s+fikrim|bu\s+fikrga\s+qo'shilaman|"
+    r"men\s+shunday\s+o'ylayman|men\s+[^.;!?]{0,60}deb\s+(hisoblayman|o'ylayman)|o'z\s+fikrim)",
+    re.IGNORECASE)
+
+
+def _has_personal_view(text):
+    """Matnda «menimcha/mening fikrimcha» kabi shaxsiy munosabat bormi."""
+    value = str(text or "").translate(_APOSTROPHE_MAP).casefold()
+    return bool(_PERSONAL_VIEW_RE.search(value))
+
+
+def _invalid_lowering(key, note):
+    """Izohdagi tushirish sababi rasmiy qoidaga zidmi."""
+    patterns = _INVALID_LOWERING.get(key)
+    if not patterns:
+        return False
+    if hasattr(patterns, "search"):
+        patterns = (patterns,)
+    return any(pattern.search(str(note or "")) for pattern in patterns)
+
+
+_REPEAT_CLAIM_RE = re.compile(r"(takrorlan|qaytaril)", re.IGNORECASE)
+
+
+def _repeat_claim_unsupported(note, text):
+    """«Takrorlanadi» degan izoh, keltirilgan parcha matnda bir marta bo'lsa."""
+    note = re.sub(r"\s+", " ", str(note or ""))
+    if not _REPEAT_CLAIM_RE.search(note):
+        return False
+    flat = _flat_text(text)
+    fragments = re.findall(r"[«\"“„]([^«»\"“”„]{4,})[»\"“”]", note)
+    if not fragments:
+        words = re.findall(r"[\w'’ʻ]+", note)
+        fragments = [" ".join(words[i:i + 4]) for i in range(len(words) - 3)]
+    present = [_flat_text(fragment) for fragment in fragments
+               if _flat_text(fragment) and _flat_text(fragment) in flat]
+    if not present:
+        return False
+    return all(flat.count(needle) < 2 for needle in present)
+
+
+def _clean_note_claims(note):
+    """Izohdagi o'z-o'zini inkor etuvchi «tuzatish»larni olib tashlaydi.
+
+    Model «azosi» o'rniga «azosi» yoki «intellektual» o'rniga «intellektual»
+    (to'g'ri) deb yozadi — bu xato emas, shunchaki shovqin.
+    """
+    markers = r"o'rniga|o\u2018rniga|o\u02bbrniga|\u2192"
+    pattern = re.compile(r"[«\"‘“]([^«»\"“”‘’]{2,40})[»\"”’]\s*(?:" + markers +
+                         r")\s*[«\"‘“]([^«»\"“”‘’]{2,40})[»\"”’]")
+
+    def _drop_equal(match):
+        if _plain_cell(match.group(1)) == _plain_cell(match.group(2)):
+            return ""
+        return match.group(0)
+
+    cleaned = pattern.sub(_drop_equal, str(note or ""))
+    cleaned = re.sub(r"\(\s*to'g'ri\s*\)", "", cleaned, flags=re.IGNORECASE)
+    return re.sub(r"\s+", " ", cleaned).strip(" ,;").strip()
 
 
 def _note_evidence(note, text):
@@ -992,7 +1110,7 @@ def normalize_report(data, text, lang="uz", topic="", from_image=False):
             mapped_notes[key] = raw_note
     for key in CRITERIA_KEYS:
         note = str(mapped_notes.get(key) or "").strip()
-        notes[key] = re.sub(r"\s+", " ", note)[:200]
+        notes[key] = _clean_note_claims(re.sub(r"\s+", " ", note))[:200]
 
     errors = []
     # Model aslida qaysi turdagi xatoni ko'rsatgan. Parcha OCR matnidan
@@ -1000,6 +1118,9 @@ def normalize_report(data, text, lang="uz", topic="", from_image=False):
     faulted = set()
     for item in (data.get("errors") or [])[:MAX_ERRORS]:
         if isinstance(item, dict):
+            # To'g'ri so'zni «xato» deb ko'rsatgan yozuv bandni tushirmasin.
+            if _bad_correction(item.get("quote"), item.get("fix")):
+                continue
             raw_kind = _flat_text(item.get("type") or "imlo")[:24] or "imlo"
             faulted.add(_TYPE_ALIASES.get(raw_kind, raw_kind))
     for item in (data.get("errors") or [])[:MAX_ERRORS]:
@@ -1009,7 +1130,8 @@ def normalize_report(data, text, lang="uz", topic="", from_image=False):
         fix = str(item.get("fix") or "").strip()[:160]
         if not quote and not fix:
             continue
-        if _is_fake_error(quote, fix) or _broken_word_break(quote, fix):
+        if (_is_fake_error(quote, fix) or _bad_correction(quote, fix)
+                or _broken_word_break(quote, fix)):
             continue
         # Matnda bo'lmagan parcha — OCR xatosi yoki to'qib chiqarilgan so'z.
         if quote and not _quote_in_text(quote, text):
@@ -1091,6 +1213,12 @@ def normalize_report(data, text, lang="uz", topic="", from_image=False):
                 if key not in faulted and scores[key] < 2:
                     scores[key] = 2
                     notes[key] = ""
+        # «Shaxsiy fikr aniq ajratilmagan» degan izoh matnda «Mening
+        # fikrimcha» bo'lsa asossiz: ikkala qarash ham, o'z munosabati ham bor.
+        if (scores["qarashlar"] < 2 and _has_personal_view(text)
+                and _invalid_lowering("qarashlar", notes["qarashlar"])):
+            scores["qarashlar"] = 2
+            notes["qarashlar"] = ""
         # Prompt talab qiladi: 1 yoki 0 faqat matndan keltirilgan parcha bilan
         # tasdiqlangan kamchilik uchun. Model esa «ba'zi joylarda...»,
         # «takrorlanadi» kabi umumiy gaplar bilan bandni tushiradi. Dalil
@@ -1098,8 +1226,9 @@ def normalize_report(data, text, lang="uz", topic="", from_image=False):
         for key in _EVIDENCE_BANDS:
             if scores[key] >= 2:
                 continue
-            invalid = _INVALID_LOWERING.get(key)
-            if (invalid and invalid.search(notes[key])) or not _note_evidence(notes[key], text):
+            if (_invalid_lowering(key, notes[key])
+                    or _repeat_claim_unsupported(notes[key], text)
+                    or not _note_evidence(notes[key], text)):
                 scores[key] = 2
                 notes[key] = ""
         total = sum(scores.values())

@@ -353,6 +353,18 @@ class EssayCheckerTest(unittest.TestCase):
         self.assertEqual(report["scores"]["izchillik"], 2)
         self.assertEqual(report["notes"]["uslub"], "")
 
+    def test_repetition_claim_with_a_single_occurrence_is_ignored(self):
+        # AI «takrorlanadi» deb bir marta uchraydigan jumlani keltirsa, bu
+        # tasdiqlangan kamchilik emas.
+        scores = {key: 2 for key in ec.CRITERIA_KEYS}
+        scores["mantiq"] = 1
+        text = LONG_TEXT + " Mening fikrimcha, bu masala jiddiy o'rganishni talab qiladi."
+        data = {"scores": scores,
+                "notes": {"mantiq": "Ba'zi jumlalar takrorlanadi "
+                                    "(«Mening fikrimcha, bu masala jiddiy»)"}}
+        report = ec.normalize_report(data, text, "uz")
+        self.assertEqual(report["scores"]["mantiq"], 2)
+
     def test_quoted_defect_still_lowers_the_band(self):
         scores = {key: 2 for key in ec.CRITERIA_KEYS}
         scores["izchillik"] = 1
@@ -460,6 +472,85 @@ class EssayCheckerTest(unittest.TestCase):
         self.assertIn("QAYTA BAHOLASH", calls[1])
         self.assertEqual(report["missing_criteria"], [])
         self.assertEqual(report["total"], 24)
+
+    def test_correction_with_foreign_letters_is_not_a_spelling_error(self):
+        # «enagalar» to'g'ri yozilgan; AI uni «enağalar» ga «tuzatgan». O'zbek
+        # lotin alifbosida ğ yo'q — bu imlo xatosi emas.
+        data = {"scores": {key: 1 for key in ec.CRITERIA_KEYS},
+                "errors": [{"quote": "enagalar", "fix": "enağalar", "type": "imlo"},
+                           {"quote": "enapalar", "fix": "enağalar", "type": "imlo"}]}
+        report = ec.normalize_report(data, LONG_TEXT + " enagalar", "uz", "",
+                                     from_image=True)
+        self.assertEqual(report["errors"], [])
+        self.assertEqual(report["scores"]["imlo"], 2)
+
+    def test_self_cancelling_spelling_claim_is_removed_from_the_note(self):
+        data = {"scores": {key: 2 for key in ec.CRITERIA_KEYS},
+                "notes": {"qoshimchalar": "Qo'shimcha xatolari: «azosi» o'rniga «azosi», "
+                                          "«tazieyqqa» → «tazyiqqa»."}}
+        report = ec.normalize_report(data, "azosi tazieyqqa", "uz")
+        self.assertNotIn("azosi", report["notes"]["qoshimchalar"])
+        self.assertIn("tazyiqqa", report["notes"]["qoshimchalar"])
+
+    def test_pasted_paragraphs_with_indentation_are_detected(self):
+        # Telegramdan ko'chirilganda xatboshilar bo'sh qator bilan emas, faqat
+        # chekinish bilan boshlanadi — esse bitta xatbosh bo'lib qolmasin.
+        body = ("Bugungi kunda oila tinchligi jamiyat taraqqiyotining asosidir va bu "
+                "haqda ko'p yozilmoqda, biroq ba'zi xonadonlarda o'zaro "
+                "kelishmovchiliklar hamon kuzatilmoqda. Ayrimlar turmush o'rtog'i "
+                "bilan kelishmovchilik chiqsa davlat organlariga murojaat qilish "
+                "tarafdori, boshqalar esa masalani o'zlari hal qilishni ma'qul "
+                "ko'radilar. ")
+        second = ("     Avvalo, juft halol bilan tortishuvlar bo'lganida mahalla va "
+                  "ichki ishlarga murojaat qilish tarafdorlari fikriga to'xtalsak, "
+                  "chunki kichik urushlar jiddiylashib ketishi mumkin. Masalan, "
+                  "jismoniy zo'ravonlikka uchragan ayollar ham afsuski bor. ")
+        third = ("     Endi oilaviy muammolarni uyda hal qilish tarafdorlari "
+                 "qarashiga e'tibor qaratsak, har bir a'zoning xavfsizligini "
+                 "o'zlari himoya qilishi kerak, deb hisoblaydilar. Uydagi gap "
+                 "ko'chaga chiqsa, na uyning fayzi qoladi, na insonning qadri. ")
+        last = ("     Xulosa qilib aytganda, oilaning tinchligi muhim, shuning "
+                "uchun ham bir-birini tushunib yashash lozim, shundagina tinch va "
+                "bunyodkor oila hosil bo'ladi. ")
+        text = body + "\n" + second + "\n" + third + "\n" + last
+        data = {"scores": {key: 1 for key in ec.CRITERIA_KEYS},
+                "sections": {"kirish": True, "asosiy": False, "xulosa": True}}
+        report = ec.normalize_report(data, text, "uz")
+        self.assertGreaterEqual(ec.word_count(text), ec.MIN_WORDS)
+        self.assertTrue(report["sections"]["asosiy"])
+        self.assertEqual(report["scores"]["qismlar"], 2)
+
+    def test_two_sided_views_with_personal_opinion_get_two_points(self):
+        text = LONG_TEXT + " Mening fikrimcha, bu masala jiddiy o'rganishni talab qiladi."
+        scores = {key: 2 for key in ec.CRITERIA_KEYS}
+        scores["qarashlar"] = 1
+        data = {"scores": scores,
+                "notes": {"qarashlar": "Ikkala qarash keltirilgan, lekin shaxsiy fikr "
+                                       "aniq ajratilmagan"}}
+        report = ec.normalize_report(data, text, "uz")
+        self.assertEqual(report["scores"]["qarashlar"], 2)
+        self.assertEqual(report["notes"]["qarashlar"], "")
+
+    def test_missing_sources_is_not_a_reason_to_lower_evidence(self):
+        scores = {key: 2 for key in ec.CRITERIA_KEYS}
+        scores["dalillar"] = 1
+        data = {"scores": scores,
+                "notes": {"dalillar": "Statistik ma'lumotlar «2024-yilda ajrashgan "
+                                      "oilalar soni ortgan» keltirilgan, lekin manbalar "
+                                      "ko'rsatilmagan"}}
+        text = LONG_TEXT + " 2024-yilda ajrashgan oilalar soni ortgan."
+        report = ec.normalize_report(data, text, "uz")
+        self.assertEqual(report["scores"]["dalillar"], 2)
+
+    def test_partly_quoted_proverb_still_earns_the_band(self):
+        scores = {key: 2 for key in ec.CRITERIA_KEYS}
+        scores["paremiya"] = 1
+        data = {"scores": scores,
+                "notes": {"paremiya": "Matnda maqol mavjud: «Oila bu muqaddas dargoh» "
+                                      "lekin u to'liq va aniq ifodalangan emas"}}
+        text = LONG_TEXT + " Oila bu muqaddas dargoh."
+        report = ec.normalize_report(data, text, "uz")
+        self.assertEqual(report["scores"]["paremiya"], 2)
 
     def test_good_first_answer_is_not_retried(self):
         calls = []
