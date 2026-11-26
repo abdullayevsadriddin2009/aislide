@@ -348,6 +348,57 @@ _TYPE_ALIASES = {
 }
 
 
+# AI ba'zan bandni boshqacha nom bilan qaytaradi: «qo'shimchalar», «punktuatsiya»,
+# «so'z qo'llash», «adabiy til». Kalit mos kelmasa, band o'tkazib yuborilgan
+# bo'lib, 0 ball olardi — holbuki 0 faqat ish bajarilmagan holat uchun.
+_CRITERIA_ALIASES = {
+    "uslub": "uslub", "uslubiyat": "uslub", "publitsistikuslub": "uslub",
+    "style": "uslub",
+    "qarash": "qarashlar", "qarashlar": "qarashlar", "ikkalaqarash": "qarashlar",
+    "shaxsiyqarash": "qarashlar", "ikkalaqarashvashaxsiyqarash": "qarashlar",
+    "views": "qarashlar",
+    "dalil": "dalillar", "dalillar": "dalillar", "argumentatsiya": "dalillar",
+    "dalillanganlik": "dalillar", "arguments": "dalillar",
+    "qismlar": "qismlar", "tuzilma": "qismlar", "kompozitsiya": "qismlar",
+    "matntuzilishi": "qismlar", "structure": "qismlar",
+    "mantiq": "mantiq", "mantiqiylik": "mantiq", "mantiqiyqurilish": "mantiq",
+    "logic": "mantiq",
+    "izchillik": "izchillik", "mazmuniyizchillik": "izchillik",
+    "mazmuniymantiqiyizchillik": "izchillik", "izchillikvayaxlitlik": "izchillik",
+    "coherence": "izchillik",
+    "imlo": "imlo", "orfografiya": "imlo", "imloqoidalari": "imlo",
+    "spelling": "imlo",
+    "tinish": "tinish", "punktuatsiya": "tinish", "tinishbelgilari": "tinish",
+    "punctuation": "tinish",
+    "qoshimchalar": "qoshimchalar", "qoshimcha": "qoshimchalar",
+    "sozvashaklyasovchiqoshimchalar": "qoshimchalar", "affixes": "qoshimchalar",
+    "soz": "soz", "sozqollash": "soz", "soztanlash": "soz",
+    "leksika": "soz", "leksikbirliklar": "soz", "vocabulary": "soz",
+    "paremiya": "paremiya", "paremiologizmlar": "paremiya",
+    "tasviriyifoda": "paremiya", "atamalar": "paremiya",
+    "adabiy": "adabiy", "adabiytil": "adabiy", "adabiytilmeyorlari": "adabiy",
+    "adabiytilmeyori": "adabiy", "literarynorms": "adabiy",
+}
+
+
+def _criterion_key(raw):
+    """AI qaytargan band nomini rasmiy kalitga aylantiradi (topilmasa None)."""
+    key = _QUOTE_STRIP_RE.sub("", str(raw or "").translate(_APOSTROPHE_MAP).casefold())
+    key = re.sub(r"^\d+", "", key)
+    if key in CRITERIA_KEYS:
+        return key
+    alias = _CRITERIA_ALIASES.get(key)
+    if alias:
+        return alias
+    # «mazmuniy-mantiqiy izchillik» kabi to'liq nomlar: avval izchillik.
+    if "izchillik" in key:
+        return "izchillik"
+    for name in CRITERIA_KEYS:
+        if name in key:
+            return name
+    return None
+
+
 def cyrillic_ratio(text):
     """Matndagi harflarning qancha qismi kirill ekani (0..1)."""
     cyrillic = len(_CYRILLIC_RE.findall(str(text or "")))
@@ -865,13 +916,37 @@ def _score_value(value):
         return 0
 
 
-def band_scores(raw_scores):
-    """Har bir bandni 0..2 oralig'iga keltiradi."""
-    scores = {}
-    for key in CRITERIA_KEYS:
-        value = _score_value((raw_scores or {}).get(key, 0))
-        scores[key] = max(0, min(MAX_PER_BAND, value))
-    return scores
+def _map_scores(raw_scores):
+    """AI qaytargan ballarni kanonik band kalitlariga bog'laydi."""
+    mapped = {}
+    if not isinstance(raw_scores, dict):
+        return mapped
+    for raw_key, value in raw_scores.items():
+        key = _criterion_key(raw_key)
+        if not key or key in mapped:
+            continue
+        # null yoki bo'sh qiymat — «baholanmagan», 0 emas.
+        if value is None or (isinstance(value, str) and not value.strip()):
+            continue
+        mapped[key] = max(0, min(MAX_PER_BAND, _score_value(value)))
+    return mapped
+
+
+def missing_criteria(raw_scores):
+    """AI javobida umuman baholanmagan bandlar."""
+    mapped = _map_scores(raw_scores)
+    return [key for key in CRITERIA_KEYS if key not in mapped]
+
+
+def band_scores(raw_scores, fallback=1):
+    """Har bir bandni 0..2 oralig'iga keltiradi.
+
+    ``fallback`` — javobda umuman ko'rsatilmagan band uchun ball. Rasmiy
+    qoidaga ko'ra 0 faqat ish bajarilmagan holat uchun, shuning uchun
+    o'tkazib yuborilgan band 0 emas, 1 (o'rtacha) oladi.
+    """
+    mapped = _map_scores(raw_scores)
+    return {key: mapped.get(key, fallback) for key in CRITERIA_KEYS}
 
 
 def to_scale_75(total):
@@ -906,11 +981,17 @@ def normalize_report(data, text, lang="uz", topic="", from_image=False):
     o'qilmagan bo'lishi mumkin, shuning uchun hajm bo'yicha «2 ball» qoidasi
     o'rniga foydalanuvchiga qayta yuborish taklif qilinadi.
     """
+    missing = missing_criteria(data.get("scores"))
     scores = band_scores(data.get("scores"))
     notes = {}
     raw_notes = data.get("notes") if isinstance(data.get("notes"), dict) else {}
+    mapped_notes = {}
+    for raw_key, raw_note in raw_notes.items():
+        key = _criterion_key(raw_key)
+        if key and key not in mapped_notes:
+            mapped_notes[key] = raw_note
     for key in CRITERIA_KEYS:
-        note = str(raw_notes.get(key) or "").strip()
+        note = str(mapped_notes.get(key) or "").strip()
         notes[key] = re.sub(r"\s+", " ", note)[:200]
 
     errors = []
@@ -1022,6 +1103,10 @@ def normalize_report(data, text, lang="uz", topic="", from_image=False):
                 scores[key] = 2
                 notes[key] = ""
         total = sum(scores.values())
+    # Ba'zi bandlar AI javobida umuman yo'q bo'lsa, ular 1 ball bilan
+    # to'ldirildi — bu taxminiy, foydalanuvchi buni bilishi kerak.
+    if missing and not flags:
+        estimated = True
     if estimated:
         # Taxminiy ballar hisobotda alohida ogohlantirish bilan ko'rsatiladi.
         flags.append("estimated")
@@ -1033,6 +1118,7 @@ def normalize_report(data, text, lang="uz", topic="", from_image=False):
         "max_total": MAX_TOTAL,
         "scale_75": to_scale_75(total),
         "sections": sections,
+        "missing_criteria": missing,
         "estimated": estimated,
         "plan_written": data.get("has_plan") is True,
         "epigraph_written": data.get("has_epigraph") is True,
@@ -1092,6 +1178,11 @@ def build_prompt(text, topic="", lang="uz", retry=False, from_image=False):
         "Muhim: quyidagi JSON sxemasidagi 0 lar — shunchaki namuna, ularni nusxa "
         "ko'chirmang. Har bir bandni matnga qarab baholang. Matn mavjud bo'lsa, "
         "barcha bandlarga birdan 0 qo'yish mumkin emas.\n\n"
+        "12 ta bandning HAMMASI baholanadi: \"scores\" obyektida yuqoridagi 12 ta "
+        "kalitning barchasi (uslub, qarashlar, dalillar, qismlar, mantiq, izchillik, "
+        "imlo, tinish, qoshimchalar, soz, paremiya, adabiy) bo'lishi shart. "
+        "Bittasini ham tashlab ketmang va kalit nomlarini o'zgartirmang; "
+        "\"notes\" da ham shu 12 band uchun izoh yozing.\n\n"
         "Adolatli baholang: 0 faqat band umuman bajarilmagan bo'lsa qo'yiladi. "
         "Imlo bo'yicha xato ko'rsatmagan bo'lsangiz, imlo 0 bo'lmaydi; tinish "
         "belgilari to'g'ri qo'llangan bo'lsa, tinish 0 bo'lmaydi; matnda atama "
@@ -1203,7 +1294,7 @@ async def _request_report(body, topic, lang, retry=False, from_image=False):
     # keladi, shuning uchun faqat baholarni so'rab ko'ramiz.
     compact = (
         "Faqat JSON qaytaring, izoh va boshqa matn yozmang."
-        " Ballarni 0, 1 yoki 2 qilib bering.\n"
+        " Ballarni 0, 1 yoki 2 qilib bering; 12 ta bandning hammasini yozing.\n"
         '{"scores": {"uslub": 0, "qarashlar": 0, "dalillar": 0, "qismlar": 0, '
         '"mantiq": 0, "izchillik": 0, "imlo": 0, "tinish": 0, "qoshimchalar": 0, '
         '"soz": 0, "paremiya": 0, "adabiy": 0}, '
@@ -1223,6 +1314,26 @@ async def _request_report(body, topic, lang, retry=False, from_image=False):
     except Exception as exc:
         print(f"[check] qisqa baholash xatosi: {type(exc).__name__}: {exc}", flush=True)
     return None
+
+
+def _merge_reports(first, second):
+    """Ikkinchi javobdan birinchisida yo'q bandlarni to'ldiradi."""
+    scores = _map_scores(first.get("scores"))
+    for key, value in _map_scores((second or {}).get("scores")).items():
+        scores.setdefault(key, value)
+    notes = {}
+    for source in (first, second):
+        raw = (source or {}).get("notes")
+        if not isinstance(raw, dict):
+            continue
+        for raw_key, note in raw.items():
+            key = _criterion_key(raw_key)
+            if key and str(note or "").strip() and key not in notes:
+                notes[key] = note
+    merged = dict(first)
+    merged["scores"] = scores
+    merged["notes"] = notes
+    return merged
 
 
 def _unscored(report):
@@ -1260,6 +1371,20 @@ async def analyze_essay(text, lang="uz", topic="", from_image=False):
         print("[check] AI hisobot bermadi — halol «baholab bo'lmadi» qaytadi", flush=True)
         return not_graded(body, lang, topic, "unavailable")
     report = normalize_report(data, body, lang, topic, from_image=from_image)
+    # 12 ta mezonning barchasi baholanishi shart. AI ba'zi bandlarni tashlab
+    # ketsa (uzilgan JSON, qisqa javob), ular 0 bo'lib qolmasligi uchun faqat
+    # o'sha bandlar qayta so'raladi.
+    blocking = [flag for flag in report.get("flags") or [] if flag != "estimated"]
+    if report.get("missing_criteria") and not blocking:
+        print(f"[check] baholanmagan bandlar: {', '.join(report['missing_criteria'])} — "
+              "qayta so'raladi", flush=True)
+        retry_data = await _request_report(body, topic, lang, retry=True,
+                                          from_image=from_image)
+        if retry_data:
+            merged = normalize_report(_merge_reports(data, retry_data), body, lang, topic,
+                                      from_image=from_image)
+            if len(merged.get("missing_criteria") or []) < len(report["missing_criteria"]):
+                report = merged
     if _unscored(report):
         # 100+ so'zli lotin matniga barcha bandlar 0 — model sxemadagi nollarni
         # ko'chirgan bo'lishi mumkin. Bir marta qayta so'raymiz.
@@ -1393,6 +1518,8 @@ def report_payload(report, lang="uz"):
         "plan_written": bool(report.get("plan_written")),
         "epigraph_written": bool(report.get("epigraph_written")),
         "criteria": criteria_payload(report, lang),
+        "missing_criteria": list(report.get("missing_criteria") or []),
+        "estimated": bool(report.get("estimated")),
         "errors": list(report.get("errors") or []),
         "strengths": list(report.get("strengths") or []),
         "advice": list(report.get("advice") or []),

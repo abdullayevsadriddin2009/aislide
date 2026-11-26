@@ -46,7 +46,47 @@ class EssayCheckerTest(unittest.TestCase):
         scores = ec.band_scores({"imlo": "2/2", "tinish": "1 ball", "soz": None})
         self.assertEqual(scores["imlo"], 2)
         self.assertEqual(scores["tinish"], 1)
-        self.assertEqual(scores["soz"], 0)
+        # Baholanmagan band 0 emas, o'rtacha 1 ball oladi.
+        self.assertEqual(scores["soz"], 1)
+
+    def test_criteria_with_other_names_are_counted(self):
+        # AI bandni «qo'shimchalar», «punktuatsiya», «adabiy til» deb yozsa ham
+        # hisobotda o'sha band baholangan bo'lishi kerak — 0 ga tushmasin.
+        scores = ec.band_scores({"Uslub": 2, "qo'shimchalar": 1, "so'z qo'llash": 2,
+                                 "punktuatsiya": 1, "orfografiya": 2, "adabiy til": 2,
+                                 "tuzilma": 2, "mazmuniy izchillik": 2})
+        self.assertEqual(scores["uslub"], 2)
+        self.assertEqual(scores["qoshimchalar"], 1)
+        self.assertEqual(scores["soz"], 2)
+        self.assertEqual(scores["tinish"], 1)
+        self.assertEqual(scores["imlo"], 2)
+        self.assertEqual(scores["adabiy"], 2)
+        self.assertEqual(scores["qismlar"], 2)
+        self.assertEqual(scores["izchillik"], 2)
+        self.assertEqual(scores["dalillar"], 1)
+
+    def test_notes_with_other_names_are_kept(self):
+        data = {"scores": {key: 1 for key in ec.CRITERIA_KEYS},
+                "notes": {"qo'shimchalar": "«bormoqda» so'zida qo'shimcha noto'g'ri."}}
+        report = ec.normalize_report(data, LONG_TEXT, "uz")
+        self.assertIn("bormoqda", report["notes"]["qoshimchalar"])
+
+    def test_missing_criteria_are_filled_not_scored_zero(self):
+        data = {"scores": {"uslub": 2, "qarashlar": 2}}
+        report = ec.normalize_report(data, LONG_TEXT, "uz")
+        self.assertEqual(len(report["scores"]), 12)
+        for key in ec.CRITERIA_KEYS:
+            self.assertGreaterEqual(report["scores"][key], 1)
+        self.assertEqual(report["missing_criteria"],
+                         [key for key in ec.CRITERIA_KEYS if key not in ("uslub", "qarashlar")])
+        self.assertIn("estimated", report["flags"])
+        self.assertEqual(len(ec.criteria_payload(report, "uz")), 12)
+
+    def test_report_lists_all_twelve_criteria(self):
+        body = ec.format_report(self._report(), "uz")
+        crit = ec.labels("uz")["crit"]
+        for band, key in enumerate(ec.CRITERIA_KEYS, 1):
+            self.assertIn(f"{band}. {crit[key]} — 2/2", body)
 
     def test_band_scores_are_clamped_to_official_range(self):
         report = ec.normalize_report({"scores": {"imlo": 7, "tinish": -3}}, LONG_TEXT, "uz")
@@ -398,6 +438,28 @@ class EssayCheckerTest(unittest.TestCase):
         self.assertEqual(report["word_count"], ec.word_count(LONG_TEXT))
         self.assertIn("Qayta tekshirish", ec.format_report(report, "uz"))
         self.assertEqual(ec.report_payload(report, "uz")["not_graded"], True)
+
+    def test_incomplete_answer_is_asked_again(self):
+        calls = []
+        partial = json.dumps({"scores": {"uslub": 2, "qarashlar": 2},
+                              "sections": {"kirish": True, "asosiy": True, "xulosa": True}})
+        full = json.dumps({"scores": {key: 2 for key in ec.CRITERIA_KEYS},
+                           "sections": {"kirish": True, "asosiy": True, "xulosa": True}})
+
+        async def fake_complete(prompt, **kwargs):
+            calls.append(prompt)
+            return partial if len(calls) == 1 else full
+
+        original = ai_api._chat_complete
+        ai_api._chat_complete = fake_complete
+        try:
+            report = asyncio.run(ec.analyze_essay(LONG_TEXT, "uz", ""))
+        finally:
+            ai_api._chat_complete = original
+        self.assertEqual(len(calls), 2)
+        self.assertIn("QAYTA BAHOLASH", calls[1])
+        self.assertEqual(report["missing_criteria"], [])
+        self.assertEqual(report["total"], 24)
 
     def test_good_first_answer_is_not_retried(self):
         calls = []
