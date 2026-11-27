@@ -14,6 +14,7 @@ import math
 import time
 
 import academic
+import wiki_source
 import os
 import io
 from collections import Counter
@@ -423,58 +424,32 @@ async def _wikipedia_related(topic, lang, max_chars=4000, full=False):
 
 
 async def wikipedia_fetch(topic, max_chars=4000, full=False, gen_lang="uz", allow_related=None):
-    langs = wiki_langs_for_topic(topic, gen_lang)
-    rejected = False
+    """Verified encyclopedia facts for the topic, in any language and any length.
+
+    A long descriptive topic is searched through its own key phrases, a Latin name
+    is tried in Cyrillic for the Russian Wikipedia, and the same subject's article
+    in the deck's language is preferred when it exists. Only when no article can
+    be reached does the caller fall back to the model's own knowledge.
+    """
+    lc = str(gen_lang or "uz").lower()
+    langs = wiki_langs_for_topic(topic, lc)
     _log(f"🔍 Wikipedia qidiruv: {langs} (mavzu: '{topic}')")
-    async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=20), headers={"User-Agent": USER_AGENT}) as session:
-        for lang in langs:
-            try:
-                search_url = f"https://{lang}.wikipedia.org/w/api.php?action=query&list=search&srsearch={aiohttp.helpers.quote(topic)}&format=json&srlimit=1"
-                async with session.get(search_url) as resp:
-                    if resp.status != 200: continue
-                    hits = (await resp.json()).get("query", {}).get("search", [])
-                    if not hits: continue
-                    title = hits[0]["title"]
-                    # A search hit is not proof: "biologiya" ranked the album first.
-                    if (re.fullmatch(r"[A-Za-z\s'\u2019\-\.]+", str(topic))
-                            and not _looks_like_same_name(topic, title)):
-                        _log(f"[WIKI {lang}] '{title}' mavzuga mos emas, keyingisi")
-                        rejected = True
-                        continue
-                exintro = "" if full else "&exintro"
-                page_url = f"https://{lang}.wikipedia.org/w/api.php?action=query&prop=extracts|pageimages{exintro}&explaintext&piprop=original&titles={aiohttp.helpers.quote(title)}&format=json&redirects=1"
-                async with session.get(page_url) as resp:
-                    if resp.status != 200: continue
-                    pages = (await resp.json()).get("query", {}).get("pages", {})
-                    page = next(iter(pages.values()), {})
-                    extract = page.get("extract", "")
-                    image = page.get("original", {}).get("source", "")
-                    if extract and len(extract) > 100:
-                        return {"found": True, "lang": lang, "title": title, "text": extract[:max_chars], "image": image, "url": f"https://{lang}.wikipedia.org/wiki/{title.replace(' ', '_')}"}
-            except Exception as e:
-                _log(f"[WIKI {lang}] xato: {e}"); continue
-    # A misspelled word or a search hit that was clearly about something else must
-    # not be replaced with an unrelated article: the document then came out on a
-    # different topic than the user asked for.
-    if rejected:
-        return {"found": False, "text": "", "image": "", "url": "", "title": "", "lang": ""}
-    # Uzun tavsifiy mavzu (10-20 so'z) maqola sarlavhasi emas, shuning uchun
-    # qidiruv bo'sh qaytardi va slayd/hujjat umumiy gaplarga tayanardi. Mavzuning
-    # o'z so'zlaridan qisqa qidiruv bilan manba izlaymiz: mavzu o'zgarmaydi,
-    # faqat ma'lumot manbasi topiladi.
-    if len(str(topic or "").split()) > 6:
-        short = " ".join(_keyword_words(topic)[:3]).strip()
-        if short and short.casefold() != str(topic or "").casefold():
-            _log(f"[WIKI] uzun mavzu uchun qisqa qidiruv: '{short}'")
-            return await wikipedia_fetch(short, max_chars=max_chars, full=full,
-                                         gen_lang=gen_lang, allow_related=True)
-    # Long descriptive topics (50-100 characters) have no exact article; using the
-    # "closest" one silently switched the subject. Only short, title-like topics
-    # may use the related article fallback.
+    try:
+        page = await wiki_source.fetch(topic, langs, lc, max_chars=max_chars, full=full)
+    except Exception as exc:
+        _log(f"[WIKI] qidiruv xatosi: {type(exc).__name__}: {exc}")
+        page = {}
+    if page.get("found"):
+        _log(f"[WIKI {page.get('lang')}] '{topic}' -> '{page.get('title')}' "
+             f"({page.get('source', 'search')})")
+        return page
+    # Uzun tavsifiy mavzu (50-100 belgi) maqola sarlavhasi emas; "eng yaqin"
+    # maqolani olish mavzuni jimgina almashtirib yuborardi. Faqat qisqa,
+    # sarlavhaga o'xshash mavzu uchun bog'liq maqola ishlatiladi.
     if allow_related is None:
         allow_related = len(str(topic or "").split()) <= 6 and len(str(topic or "")) <= 60
     if allow_related:
-        related = await _wikipedia_related(topic, gen_lang, max_chars=max_chars, full=full)
+        related = await _wikipedia_related(topic, lc, max_chars=max_chars, full=full)
         if related.get("found"):
             return related
     return {"found": False, "text": "", "image": "", "url": "", "title": "", "lang": ""}
@@ -2260,9 +2235,20 @@ def _image_title_usable(title):
 
 def _keyword_words(value):
     # \w keeps Cyrillic and Turkish letters, so a Russian topic is not silently
-    # reduced to an empty keyword list.
-    return [w for w in re.findall(r"[^\W\d_]{4,}", str(value or "").casefold())
-            if w not in STOP_WORDS and w not in _GENERIC_IMAGE_WORDS]
+    # reduced to an empty keyword list. The apostrophe stays inside the word:
+    # splitting it turned "O'zbekistonda" into "zbekistonda", and every search
+    # built from that fragment found nothing.
+    return [w for w in re.findall(r"[^\W\d_]+(?:['’ʻʼ`´][^\W\d_]+)*", str(value or "").casefold())
+            if len(w) >= 4 and w not in STOP_WORDS and w not in _GENERIC_IMAGE_WORDS]
+
+
+def _fold_word(value):
+    """Comparable form of one word: ``Oʻzbekiston`` == ``O'zbekiston``."""
+    return re.sub(r"['’ʻʼ`´]", "", str(value or "")).casefold()
+
+
+def _fold_blob(value):
+    return re.sub(r"\s+", " ", _fold_word(value)).strip()
 
 
 _RELATED_CACHE = {}
@@ -2802,6 +2788,10 @@ async def _commons_category_search(phrase, count=20):
     return out
 
 
+_FILE_NAMESPACE = re.compile(
+    r"^(file|fayl|rasm|файл|изображение|dosya|datei|fichier|ficheiro|arquivo|plik):",
+    re.IGNORECASE)
+
 _ABSTRACT_CACHE = {}
 # Items that are ideas, not things: a concept has no photograph of itself, so the
 # pictures volunteers filed under it show whatever they were thinking of.
@@ -2867,8 +2857,11 @@ async def _wiki_page_images(title, lang="uz", count=20):
             pages = (data.get("query") or {}).get("pages") or []
             page = pages[0] if pages else {}
             names = [str(item.get("title") or "") for item in (page.get("images") or [])]
+            # The file namespace is localized ("Fayl:" on uz.wikipedia, "Файл:" on
+            # ru.wikipedia), so requiring "File:" silently found no article photos
+            # outside the English Wikipedia.
             names = [name for name in names
-                     if name.lower().startswith("file:") and _image_title_usable(name)][:count]
+                     if _FILE_NAMESPACE.match(name) and _image_title_usable(name)][:count]
             if not names:
                 return []
             params = {"action": "query", "titles": "|".join(names[:20]),
@@ -3097,8 +3090,19 @@ async def search_images(query, count=5, keywords=None, use_wiki=True, lang="en")
         return []
     primary = kw_list[0]
     speaker = str(lang or "en").lower()
-    # Resolve the subject once: its Wikidata item proves which files really show it.
-    qid, category = await _wikidata_entity(q, wiki_lang=speaker)
+    # Resolve the subject the same way the deck did: a long phrase or a name
+    # transliterated across scripts has no article under its own spelling, so the
+    # article is found first and its Wikidata item then proves which files really
+    # show the subject.
+    resolved = await wiki_source.resolve(q, wiki_langs_for_topic(q, speaker), speaker)
+    qid, category = "", ""
+    if resolved:
+        qid, category = await _wikidata_entity(resolved["title"], wiki_lang=resolved["lang"])
+        if qid:
+            _ENTITY_TITLE[_entity_key(q)] = resolved["title"]
+    if not qid:
+        # Resolve the subject once: its Wikidata item proves which files really show it.
+        qid, category = await _wikidata_entity(q, wiki_lang=speaker)
     if not qid and speaker != "en":
         qid, category = await _wikidata_entity(q, wiki_lang="en")
     article_title = _ENTITY_TITLE.get(_entity_key(q)) or ""
@@ -3106,7 +3110,11 @@ async def search_images(query, count=5, keywords=None, use_wiki=True, lang="en")
     tasks = []
     if use_wiki:
         tasks.append(_wiki_image(q, speaker))
-    if article_title:
+    if resolved:
+        # The resolved article's own pictures: editors chose them for exactly this
+        # subject, so they are the safest photos when no curated folder exists.
+        tasks.append(_wiki_page_images(resolved["title"], resolved["lang"], count=20))
+    if article_title and not (resolved and article_title == resolved["title"]):
         tasks.append(_wiki_page_images(article_title, speaker, count=20))
     if qid:
         # Boshqa tillardagi maqolada bitta-ikkita rasm bo'ladi; ayni mavzuning
@@ -3126,11 +3134,17 @@ async def search_images(query, count=5, keywords=None, use_wiki=True, lang="en")
             _unsplash_images(phrase),
         ])
     else:
-        # A concept has no picture of itself. Searching its name only reaches
-        # homonyms — the French village called "Vatan", a museum called
-        # "Patriotism" — so only the article's own images are used here; the
-        # caller falls back to the related subjects of the phrase.
-        _log(f"[IMG] '{q}' — tushuncha, faqat maqola rasmlari")
+        # A concept has no picture of itself, and a loose full-text hit on its name
+        # reaches homonyms — the French village called "Vatan", a museum called
+        # "Patriotism". Photos filed by subject (the curated Commons category) are
+        # still about the concept, so they stay; a multi-word phrase is specific
+        # enough for a tagged search as well.
+        _log(f"[IMG] '{q}' — tushuncha, toifalangan rasmlar")
+        tasks.append(_commons_category_search(phrase, count=20))
+        if qid or category:
+            tasks.append(_commons_category_images(category or phrase, count=20))
+        if len(kw_list) >= 2:
+            tasks.append(_commons_images(phrase, count=20))
     if not tasks:
         return []
     results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -3139,13 +3153,12 @@ async def search_images(query, count=5, keywords=None, use_wiki=True, lang="en")
     # so when that folder alone can fill the request, loose full-text hits are
     # skipped: they are what put unrelated pictures into the deck.
     def _describe(candidate):
-        tags = str(candidate.get("tags") or "").casefold()
-        title = str(candidate.get("title") or "").casefold()
+        tags = _fold_blob(candidate.get("tags"))
+        title = _fold_blob(candidate.get("title"))
         title = re.sub(r"^file:", "", title)
         title = re.sub(r"\.(jpe?g|png|webp|gif|tiff?|bmp)$", "", title)
         title_words = set(re.findall(r"[^\W\d_]{3,}", title))
-        matches = sum(1 for word in kw_list
-                      if word in set(re.findall(r"[^\W_]+", tags)) or word in tags)
+        matches = sum(1 for word in kw_list if _fold_word(word) in tags)
         return tags, title, title_words, matches
 
     VERIFIED_SOURCES = ("wikipedia", "wikipedia_article", "commons_depicts", "commons_category")
@@ -3191,7 +3204,7 @@ async def search_images(query, count=5, keywords=None, use_wiki=True, lang="en")
                 # category name is often a different spelling/transliteration.
                 score = 85
             elif src == "openverse":
-                if not matches or primary not in title_words:
+                if not matches or _fold_word(primary) not in title_words:
                     continue
                 score = 35
                 verified = False
@@ -3200,12 +3213,12 @@ async def search_images(query, count=5, keywords=None, use_wiki=True, lang="en")
                 # has to mention the slide's own words, not just one of them.
                 if not matches:
                     continue
-                if len(kw_list) >= 2 and matches < 2 and primary not in tags:
+                if len(kw_list) >= 2 and matches < 2 and _fold_word(primary) not in tags:
                     continue
-                if len(kw_list) == 1 and primary not in title_words:
+                if len(kw_list) == 1 and _fold_word(primary) not in title_words:
                     # "cell" alone also appears in "grape cells" and "prison cell".
                     continue
-                score = 20 + matches * 6 + (10 if primary in tags else 0)
+                score = 20 + matches * 6 + (10 if _fold_word(primary) in tags else 0)
                 # A file named almost exactly like the slide beats one that only
                 # mentions the subject in passing, and a street, school or venue
                 # named after the subject is not the subject itself.
@@ -3221,7 +3234,7 @@ async def search_images(query, count=5, keywords=None, use_wiki=True, lang="en")
                     continue
                 score = 10 + matches * 3
                 verified = False
-            if phrase.casefold() and title.startswith(phrase.casefold()):
+            if phrase and title.startswith(_fold_blob(phrase)):
                 score += 12
             if verified:
                 # Among verified photos, prefer the one whose file name is closest to
@@ -3237,7 +3250,7 @@ async def search_images(query, count=5, keywords=None, use_wiki=True, lang="en")
             # A free-text hit is only kept one step lower when the subject word is
             # in the file name itself ("Dolphin jumping.jpg" for a dolphin topic),
             # so a deck can still be illustrated when Commons has no curated folder.
-            _IMAGE_GRADE[url] = "A" if verified else ("B" if primary in title_words else "")
+            _IMAGE_GRADE[url] = "A" if verified else ("B" if _fold_word(primary) in title_words else "")
             if candidate.get("credit"):
                 _IMAGE_CREDITS[url] = str(candidate["credit"])
             candidates.append((score, url))
