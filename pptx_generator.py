@@ -717,7 +717,7 @@ def _overview_slide(prs, theme, lang, topic, subject, entries, total):
 def _m_photo_right(slide, th, lang, item, index, total, image, gallery, topic, subject):
     _set_bg(slide, (255, 252, 247))
     _shape(slide, 0.0, 0.0, 13.333, 0.06, th["accent"])
-    title, content = _head(slide, th, lang, item, index, subject, th["primary"], th["accent"], big=28)
+    title, content = _head(slide, th, lang, item, index, subject, th["primary"], th["accent"], w=6.6, big=28)
     body = _points(content)
     _text(slide, 0.8, 2.05, 6.5, 4.3, body, size=_body_size(body, base=15), color=th["text"])
     _shape(slide, 7.55, 1.2, 5.0, 5.5, th["cover"])
@@ -866,7 +866,7 @@ def _n_orbit(slide, th, lang, item, index, total, image, gallery, topic, subject
 def _a_light_blocks(slide, th, lang, item, index, total, image, gallery, topic, subject):
     _set_bg(slide, (250, 250, 250))
     _shape(slide, 0.0, 0.0, 0.16, 7.5, th["accent"])
-    title, content = _head(slide, th, lang, item, index, subject, (26, 26, 26), th["accent"], big=28)
+    title, content = _head(slide, th, lang, item, index, subject, (26, 26, 26), th["accent"], w=6.9, big=28)
     body = _points(content)
     _text(slide, 0.85, 2.0, 6.6, 4.3, body, size=_body_size(body, base=14), color=(44, 44, 44))
     _shape(slide, 8.05, 1.55, 4.4, 3.55, (28, 28, 28))
@@ -894,7 +894,7 @@ def _a_hex_photo(slide, th, lang, item, index, total, image, gallery, topic, sub
 def _a_chart(slide, th, lang, item, index, total, image, gallery, topic, subject):
     """Numbered key-point cards beside a squared photo, amber/black styling."""
     _set_bg(slide, (250, 250, 250))
-    title, content = _head(slide, th, lang, item, index, subject, (26, 26, 26), th["accent"], big=27)
+    title, content = _head(slide, th, lang, item, index, subject, (26, 26, 26), th["accent"], w=7.7, big=27)
     rows = content[:3]
     for i, value in enumerate(rows):
         y = 2.05 + i * 1.45
@@ -926,7 +926,7 @@ def _a_duo_cards(slide, th, lang, item, index, total, image, gallery, topic, sub
 
 def _a_number_rows(slide, th, lang, item, index, total, image, gallery, topic, subject):
     _set_bg(slide, (250, 250, 250))
-    title, content = _head(slide, th, lang, item, index, subject, (26, 26, 26), th["accent"], big=27)
+    title, content = _head(slide, th, lang, item, index, subject, (26, 26, 26), th["accent"], w=7.6, big=27)
     rows = content[:4]
     for i, value in enumerate(rows):
         y = 2.05 + i * 1.12
@@ -943,7 +943,7 @@ def _a_number_rows(slide, th, lang, item, index, total, image, gallery, topic, s
 def _p_split_blocks(slide, th, lang, item, index, total, image, gallery, topic, subject):
     _set_bg(slide, (250, 250, 246))
     _shape(slide, 0.0, 0.0, 0.38, 7.5, th["accent"])
-    title, content = _head(slide, th, lang, item, index, subject, (26, 26, 26), th["accent"], big=30)
+    title, content = _head(slide, th, lang, item, index, subject, (26, 26, 26), th["accent"], w=6.9, big=30)
     body = _points(content, "●")
     _text(slide, 0.85, 2.0, 6.2, 4.2, body, size=_body_size(body, base=14), color=(30, 30, 30))
     _photo(slide, th, lang, 8.15, 1.45, 4.3, 3.55, image, frame=th["accent"])
@@ -1018,7 +1018,7 @@ def _p_bar_statement(slide, th, lang, item, index, total, image, gallery, topic,
 def _g_rounded_photo(slide, th, lang, item, index, total, image, gallery, topic, subject):
     _set_bg(slide, (250, 248, 243))
     _shape(slide, 0.0, 0.0, 13.333, 0.07, th["primary"])
-    title, content = _head(slide, th, lang, item, index, subject, th["primary"], th["accent"], big=28)
+    title, content = _head(slide, th, lang, item, index, subject, th["primary"], th["accent"], w=6.7, big=28)
     body = _points(content, "•")
     _text(slide, 0.82, 2.0, 6.5, 4.3, body, size=_body_size(body, base=14), color=th["text"])
     _photo(slide, th, lang, 7.85, 1.3, 4.55, 4.5, image, rounded=True)
@@ -1097,7 +1097,7 @@ def _g_circle_stats(slide, th, lang, item, index, total, image, gallery, topic, 
 
 def _e_photo_offset(slide, th, lang, item, index, total, image, gallery, topic, subject):
     _set_bg(slide, (249, 246, 242))
-    title, content = _head(slide, th, lang, item, index, subject, th["primary"], th["accent"], big=28)
+    title, content = _head(slide, th, lang, item, index, subject, th["primary"], th["accent"], w=7.1, big=28)
     body = _points(content)
     _text(slide, 0.85, 2.0, 6.6, 4.3, body, size=_body_size(body, base=14), color=th["text"])
     _shape(slide, 8.3, 1.65, 3.95, 3.95, th["soft"])
