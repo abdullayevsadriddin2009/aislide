@@ -25,6 +25,11 @@ LAST_ERROR = "hali sinanmadi"
 PIXABAY_KEY  = os.getenv("PIXABAY_KEY", "")
 PEXELS_KEY   = os.getenv("PEXELS_KEY", "")
 UNSPLASH_KEY = os.getenv("UNSPLASH_KEY", "")
+# Hugging Face Inference Providers: bitta token bilan 200+ ochiq model
+# (router.huggingface.co/v1, OpenAI-mos). Eski nomlar ham qabul qilinadi.
+HF_TOKEN = (os.getenv("HF_TOKEN", "").strip()
+            or os.getenv("HUGGINGFACE_KEY", "").strip()
+            or os.getenv("HUGGINGFACEHUB_API_TOKEN", "").strip())
 USER_AGENT = ("TalabaAISlideBot/1.0 (educational presentation image retrieval; "
                "https://github.com/abdullayevsadriddin2009/aislide)")
 
@@ -110,7 +115,33 @@ API_LIST = [
         "models": [
             "gemini-2.5-flash", "gemini-flash-lite-latest", "gemini-2.0-flash",
         ]
-    }
+    },
+    {
+        # Model nomlari `/v1/models` dan jonli olinadi: 0 narxli modellar
+        # ro'yxat boshida turadi va o'sha bepul provayderga qaratiladi.
+        "name": "Hugging Face",
+        "base_url": "https://router.huggingface.co/v1",
+        "api_key": HF_TOKEN,
+        "type": "openai",
+        "models": [],
+    },
+    {
+        # DeepSeek: OpenAI-mos API, arzon va barqaror zaxira.
+        "name": "DeepSeek",
+        "base_url": "https://api.deepseek.com/v1",
+        "api_key": os.getenv("DEEPSEEK_KEY", "").strip(),
+        "type": "openai",
+        "models": ["deepseek-chat", "deepseek-reasoner"],
+    },
+    {
+        # Mistral AI: bepul (Experiment) tarifida ishlaydigan modellar birinchi.
+        "name": "Mistral AI",
+        "base_url": "https://api.mistral.ai/v1",
+        "api_key": os.getenv("MISTRAL_KEY", "").strip(),
+        "type": "openai",
+        "models": ["open-mistral-nemo", "mistral-small-latest",
+                   "open-mistral-7b", "mistral-large-latest"],
+    },
 ]
 
 def _primary_api():
@@ -427,6 +458,16 @@ async def wikipedia_fetch(topic, max_chars=4000, full=False, gen_lang="uz", allo
     # different topic than the user asked for.
     if rejected:
         return {"found": False, "text": "", "image": "", "url": "", "title": "", "lang": ""}
+    # Uzun tavsifiy mavzu (10-20 so'z) maqola sarlavhasi emas, shuning uchun
+    # qidiruv bo'sh qaytardi va slayd/hujjat umumiy gaplarga tayanardi. Mavzuning
+    # o'z so'zlaridan qisqa qidiruv bilan manba izlaymiz: mavzu o'zgarmaydi,
+    # faqat ma'lumot manbasi topiladi.
+    if len(str(topic or "").split()) > 6:
+        short = " ".join(_keyword_words(topic)[:3]).strip()
+        if short and short.casefold() != str(topic or "").casefold():
+            _log(f"[WIKI] uzun mavzu uchun qisqa qidiruv: '{short}'")
+            return await wikipedia_fetch(short, max_chars=max_chars, full=full,
+                                         gen_lang=gen_lang, allow_related=True)
     # Long descriptive topics (50-100 characters) have no exact article; using the
     # "closest" one silently switched the subject. Only short, title-like topics
     # may use the related article fallback.
@@ -3630,6 +3671,35 @@ def _clean_model_id(api, value):
     return model
 
 
+def _is_hf_api(api):
+    """Hugging Face routeri (router.huggingface.co) manzilimi."""
+    text = f"{api.get('base_url') or ''} {api.get('provider') or ''}".lower()
+    return "huggingface" in text
+
+
+def _hf_free_provider(item):
+    """Modelni 0 narxda berayotgan provayder nomi (bo'lmasa bo'sh satr).
+
+    Router katalogi har model uchun provayderlar va ularning narxini beradi.
+    Narx `0/0` bo'lsa, so'rovni aynan o'sha provayderga qaratamiz — shunda
+    token krediti sarflanmaydi.
+    """
+    for entry in item.get("providers") or []:
+        if not isinstance(entry, dict):
+            continue
+        if entry.get("status") not in (None, "", "live"):
+            continue
+        pricing = entry.get("pricing") or {}
+        try:
+            price_in = float(pricing.get("input"))
+            price_out = float(pricing.get("output"))
+        except (TypeError, ValueError):
+            continue
+        if price_in == 0 and price_out == 0:
+            return str(entry.get("provider") or "").strip()
+    return ""
+
+
 async def _discover_models(api):
     """Ask the provider which models it actually serves right now.
 
@@ -3675,10 +3745,13 @@ async def _discover_models(api):
                             pass
                     return []
                 data = await resp.json(content_type=None)
+        huggingface = _is_hf_api(api)
+        free_ids, paid_ids = [], []
         for item in (data.get("data") or data.get("models") or []):
             if isinstance(item, str):
-                model_id = item
+                model_id, entry = item, {}
             else:
+                entry = item
                 methods = item.get("supportedGenerationMethods") or []
                 if methods and "generateContent" not in methods:
                     continue
@@ -3686,7 +3759,17 @@ async def _discover_models(api):
             model_id = _clean_model_id(api, model_id)
             if not model_id or any(word in model_id.lower() for word in _BAD_MODEL_WORDS):
                 continue
+            if huggingface:
+                free_provider = _hf_free_provider(entry)
+                if free_provider:
+                    free_ids.append(f"{model_id}:{free_provider}")
+                else:
+                    paid_ids.append(f"{model_id}:cheapest")
+                continue
             ids.append(model_id)
+        if huggingface:
+            # Bepul modellar birinchi, keyin eng arzonlari.
+            ids = free_ids + paid_ids
     except Exception as exc:
         _DISCOVER_ERRORS[cache_key] = f"{type(exc).__name__}: {exc}"
         _MODEL_FAIL_CACHE[cache_key] = (time.time(), _DISCOVER_ERRORS[cache_key])
@@ -3730,6 +3813,8 @@ def _key_mismatch(api):
     key = str(api.get("api_key") or "").strip()
     if "openrouter.ai" in base and key and not key.startswith("sk-or-"):
         return "kalit OpenRouter uchun emas — OpenRouter kaliti `sk-or-` bilan boshlanadi"
+    if "huggingface" in base and key and not key.startswith("hf_"):
+        return "kalit Hugging Face uchun emas — HF tokeni `hf_` bilan boshlanadi"
     return ""
 
 

@@ -42,6 +42,10 @@ _PROVIDER_BASE = {
     "google": "https://generativelanguage.googleapis.com/v1beta",
     "cloudflare": ("https://api.cloudflare.com/client/v4/accounts/"
                    "283bb72354435f9cfd19a80c3edc93e0/ai/v1"),
+    # Hugging Face Inference Providers: OpenAI-mos router, bitta `hf_` token.
+    "huggingface": "https://router.huggingface.co/v1",
+    "deepseek": "https://api.deepseek.com/v1",
+    "mistral": "https://api.mistral.ai/v1",
     "openai": "",
 }
 
@@ -64,6 +68,12 @@ _PROVIDER_MODELS = {
                    "@cf/mistral/mistral-7b-instruct-v0.2-lora",
                    "@cf/google/gemma-2b-it-lora",
                    "@cf/openai/gpt-oss-120b", "@cf/qwen/qwen3.8-27b"),
+    # Hugging Face katalogi juda katta va tez o'zgaradi: model nomlari
+    # hardcode qilinmaydi, `/v1/models` dan jonli olinadi.
+    "huggingface": (),
+    "deepseek": ("deepseek-chat", "deepseek-reasoner"),
+    "mistral": ("open-mistral-nemo", "mistral-small-latest",
+                "open-mistral-7b", "mistral-large-latest"),
     "openai": (),
 }
 
@@ -215,7 +225,10 @@ def _env_keys():
                 continue
             provider = "google" if "generativelanguage" in base else (
                 "groq" if "groq.com" in base else (
-                    "cloudflare" if "cloudflare" in base else "openai"))
+                    "cloudflare" if "cloudflare" in base else (
+                        "huggingface" if "huggingface.co" in base else (
+                            "deepseek" if "deepseek.com" in base else (
+                                "mistral" if "mistral.ai" in base else "openai")))))
             rows.append({
                 "label": str(api.get("name") or provider)[:60],
                 "provider": provider,
@@ -398,13 +411,15 @@ def runtime_apis():
         if not names:
             names = list(_PROVIDER_MODELS.get(provider, ()))
         if not names:
-            # AI_MODEL=auto bo'lgan OpenAI-mos provayder: model ro'yxati
-            # `/models` manzilidan jonli olinadi (`ai_api._models_for_api`).
-            if provider == "openai" and (row["base_url"] or ""):
+            # Model nomi yo'q provayder (AI_MODEL=auto yoki Hugging Face):
+            # ro'yxat `/models` manzilidan jonli olinadi
+            # (`ai_api._models_for_api`).
+            base = row["base_url"] or _PROVIDER_BASE.get(provider, "")
+            if provider in ("openai", "huggingface") and base:
                 apis.append({
                     "key_id": row["id"],
                     "name": row["label"] or provider,
-                    "base_url": row["base_url"],
+                    "base_url": base,
                     "api_key": row["api_key"],
                     "type": "openai",
                     "models": [],
@@ -430,7 +445,8 @@ PROVIDER_MODELS = _PROVIDER_MODELS
 
 
 def provider_choices():
-    return ("groq", "google", "cloudflare", "openai")
+    return ("groq", "google", "cloudflare", "huggingface", "deepseek",
+            "mistral", "openai")
 
 
 def mask(value):

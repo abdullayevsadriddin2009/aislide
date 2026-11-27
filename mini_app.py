@@ -24,7 +24,7 @@ import time
 import uuid
 from urllib.parse import parse_qsl
 
-from flask import Blueprint, Response, jsonify, request, send_file
+from flask import Blueprint, Response, jsonify, redirect, request, send_file
 
 import config
 from services import ALL_LANGS, SERVICES, service_name
@@ -363,7 +363,7 @@ def api_order():
     stored_path, stored_name = _order_file(uid, order_id)
     return jsonify({
         "ok": True,
-        "download": bool(stored_path),
+        "download": bool(stored_path or _order_url(uid, order_id)),
         "filename": stored_name,
         "order": {
             "id": row["id"],
@@ -789,6 +789,21 @@ def _order_file(uid, order_id):
     return None, None
 
 
+def _order_url(uid, order_id):
+    """HF bucketdagi doimiy nusxa havolasi (bo'lsa)."""
+    try:
+        with _db() as con:
+            row = con.execute(
+                "SELECT file_url FROM orders WHERE id=? AND user_id=?",
+                (int(order_id), int(uid)),
+            ).fetchone()
+    except Exception:
+        return ""
+    if not row or "file_url" not in row.keys():
+        return ""
+    return str(row["file_url"] or "").strip()
+
+
 def _save_order(user_id, service, topic, options):
     try:
         with _db() as con:
@@ -909,6 +924,11 @@ def api_download():
                     break
         if path:
             return send_file(path, as_attachment=True, download_name=name)
+        if order_id:
+            # Lokal nusxa o'chgan bo'lsa — HF bucketdagi doimiy havolaga yo'naltiramiz.
+            remote = _order_url(uid, order_id)
+            if remote:
+                return redirect(remote)
         return jsonify({"ok": False, "error": "file", "message": "Fayl topilmadi."}), 404
 
     job = JOBS.get(str(request.args.get("id") or ""))

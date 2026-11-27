@@ -39,6 +39,23 @@ def _persist_file(order_id, content, filename):
         return None
 
 
+async def _upload_copy(order_id, content, filename):
+    """Hujjatning doimiy nusxasini HF bucketga yuklaydi (sozlangan bo'lsa).
+
+    Lokal disk vaqtinchalik bo'lgani uchun havola bazaga yoziladi va Mini App
+    fayl o'chganidan keyin ham shu havoladan yuklab olish imkonini beradi.
+    """
+    try:
+        import storage
+        if not order_id or not storage.enabled():
+            return ""
+        key = f"documents/{int(order_id)}/{filename}"
+        return await asyncio.to_thread(storage.upload_bytes, content, key) or ""
+    except Exception as exc:
+        print(f"[creation] HF S3 nusxa xatosi: {exc}", flush=True)
+        return ""
+
+
 
 def _slide_count_prompt(lang):
     prompts = {
@@ -100,6 +117,18 @@ async def _collect_images(topic, slides_content, total=5, lang="uz"):
     if not queries:
         queries = [topic_text or str(lang)]
 
+    # Uzun mavzu (10-20 so'z) rasm fayli nomida deyarli aynan uchramaydi, shuning
+    # uchun qidiruv bo'sh qaytib, slaydlar rasmsiz qolardi. Mavzuning o'z
+    # so'zlaridan qisqa birikmalar tuzamiz — tarjima emas, foydalanuvchi
+    # yozgan so'zlarning o'zi.
+    if len(topic_text.split()) > 6:
+        words = [w for w in re.findall(r"[^\W\d_]{4,}", topic_text.casefold())][:9]
+        for start in range(0, max(1, len(words) - 2), 2):
+            part = " ".join(words[start:start + 3]).strip()
+            if len(part) >= 3 and part not in queries:
+                queries.append(part)
+        queries = queries[:18]
+
     # Every photo is searched with exactly the words the user gave us: the topic and
     # the slide titles as they are written, never a translation or an AI paraphrase.
     keywords = list(queries)
@@ -150,7 +179,8 @@ async def _collect_images(topic, slides_content, total=5, lang="uz"):
     # A photo confirmed to show the subject gets the cover; one that carries the
     # topic in its file name is the second choice, themed artwork the last.
     cover_url = (take(cover_urls, ("A",)) or take(topic_pool, ("A",))
-                 or take(cover_urls) or take(topic_pool))
+                 or take(cover_urls) or take(topic_pool)
+                 or take(topic_pool, ("A", "B", "")))
     for group in groups:
         # The deck's own subject first: a picture found through a heading such as
         # "Tahlil va natijalar" is what put unrelated photos into slides. A
@@ -176,7 +206,8 @@ async def _collect_images(topic, slides_content, total=5, lang="uz"):
             slot_urls[index] = None
     for index in range(len(slot_urls)):
         if not slot_urls[index]:
-            slot_urls[index] = take(leftovers)
+            # Oxirgi chora: bahosi pastroq bo'lsa ham mavzuga tegishli rasm.
+            slot_urls[index] = take(leftovers) or take(leftovers, ("A", "B", ""))
 
     distinct = len({url for url in ([cover_url] + slot_urls) if url})
     if distinct < min(5, 1 + slide_slots):
@@ -206,7 +237,7 @@ async def _collect_images(topic, slides_content, total=5, lang="uz"):
         leftovers = sorted(dict.fromkeys(leftovers), key=grade_rank)
         for index in range(len(slot_urls)):
             if not slot_urls[index]:
-                slot_urls[index] = take(leftovers)
+                slot_urls[index] = take(leftovers) or take(leftovers, ("A", "B", ""))
         if not cover_url:
             cover_url = take(leftovers)
 
@@ -982,8 +1013,9 @@ async def cb_confirm(call: CallbackQuery, state: FSMContext):
     order_id = await db.add_order(user_id, service, topic, options, 0 if free_mode else price, topic[:100])
     if order_id:
         saved = _persist_file(order_id, doc.data, doc.filename)
-        if saved:
-            await db.set_order_file(order_id, saved, doc.filename)
+        file_url = await _upload_copy(order_id, doc.data, doc.filename)
+        if saved or file_url:
+            await db.set_order_file(order_id, saved, doc.filename, file_url)
     await state.clear()
 
 # ===== 11. Essay: reja tasdiqlandi, to'liq matn yoziladi =====
@@ -1048,6 +1080,7 @@ async def cb_essay_go(call: CallbackQuery, state: FSMContext):
     order_id = await db.add_order(user_id, service, topic, options, 0 if free_mode else price, topic[:100])
     if order_id:
         saved = _persist_file(order_id, doc.data, doc.filename)
-        if saved:
-            await db.set_order_file(order_id, saved, doc.filename)
+        file_url = await _upload_copy(order_id, doc.data, doc.filename)
+        if saved or file_url:
+            await db.set_order_file(order_id, saved, doc.filename, file_url)
     await state.clear()

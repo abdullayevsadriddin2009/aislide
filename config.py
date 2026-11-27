@@ -25,6 +25,21 @@ AI_BASE_URL = os.environ.get("AI_BASE_URL", "https://openrouter.ai/api/v1").stri
 AI_API_URL = AI_BASE_URL
 AI_API_KEY = os.environ.get("AI_API_KEY", "").strip()
 AI_MODEL = os.getenv("AI_MODEL", "auto")
+# Hugging Face Inference Providers token (hf_ prefix)
+HF_TOKEN = (os.environ.get("HF_TOKEN", "")
+             or os.environ.get("HUGGINGFACEHUB_API_TOKEN", "")
+             or os.environ.get("HUGGINGFACE_KEY", ""))
+# DeepSeek va Mistral AI kalitlari (OpenAI-mos API).
+DEEPSEEK_KEY = os.environ.get("DEEPSEEK_KEY", "").strip()
+MISTRAL_KEY = os.environ.get("MISTRAL_KEY", "").strip()
+# Hugging Face Storage Buckets (S3-mos): ixtiyoriy zaxira saqlash.
+HF_S3_ENDPOINT = os.environ.get("HF_S3_ENDPOINT", "").strip()
+HF_S3_BUCKET = os.environ.get("HF_S3_BUCKET", "").strip()
+# Bucket public bo'lsa, havolalar shu manzil orqali beriladi (ixtiyoriy).
+HF_S3_PUBLIC_URL = os.environ.get("HF_S3_PUBLIC_URL", "").strip()
+HF_S3_ACCESS_KEY_ID = os.environ.get("HF_S3_ACCESS_KEY_ID", "").strip()
+HF_S3_SECRET_ACCESS_KEY = os.environ.get("HF_S3_SECRET_ACCESS_KEY", "").strip()
+
 AI_TIMEOUT = int(os.getenv("AI_TIMEOUT", "120"))
 # Bitta hujjat uchun umumiy chegara: undan oshsa xato xabari yuboriladi, jim qolmaydi.
 GEN_TIMEOUT = int(os.getenv("GEN_TIMEOUT", "900"))
