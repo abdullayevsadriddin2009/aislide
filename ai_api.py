@@ -4419,7 +4419,7 @@ async def chat_answer(question, user_lang="uz", history=None, on_text=None):
     # FAQAT barcha AI provayderlari ishlamagan holatda failure message.
     return _chat_failure_message(lang)
 
-async def test_api(timeout=20, concurrency=6):
+async def test_api(timeout=45, concurrency=6):
     """Probe every configured provider/model quickly and report each result.
 
     The old version called the models one after another with the full
@@ -4427,6 +4427,10 @@ async def test_api(timeout=20, concurrency=6):
     many minutes and the admin never received a report at all. Probes now run
     concurrently with a short per-request timeout, every model gets its own
     line, and the shared LAST_ERROR of real generation is restored afterwards.
+
+    The per-request timeout is 45s, not 20s: the newest flash/thinking models
+    need longer than 20s to answer a real (non empty) probe, so a 20s cap
+    reported working models as "no answer" and made the report misleading.
     """
     import asyncio
 
@@ -4465,8 +4469,19 @@ async def test_api(timeout=20, concurrency=6):
     payload = {"messages": [{"role": "user", "content": "Reply with the single word OK."}],
                "temperature": 0.1, "max_tokens": 200}
 
+    # A rejected key (401), an unpaid provider (402) or a forbidden key (403)
+    # fails for every model on that key. Probing the rest is only wasted
+    # requests, so after the first such answer the provider is left alone.
+    dead_keys = {}
+
     async def probe(api, model):
+        reason = dead_keys.get(api["name"])
+        if reason:
+            return api["name"], model, None, reason
         async with semaphore:
+            reason = dead_keys.get(api["name"])
+            if reason:
+                return api["name"], model, None, reason
             try:
                 status, text, err = await asyncio.wait_for(
                     _try_post(api, model, dict(payload)), timeout=timeout)
@@ -4477,6 +4492,9 @@ async def test_api(timeout=20, concurrency=6):
             if status == 200 and text:
                 _mark_api_alive(api)
                 return api["name"], model, True, ""
+            if status in (401, 402, 403):
+                dead_keys[api["name"]] = (f"kalit/balans rad etdi (HTTP {status}) — "
+                                          "qolgan modellar sinalmadi")
             return api["name"], model, False, str(err or (f"HTTP {status}" if status else "javob yo'q"))
 
     results = await asyncio.gather(*(probe(api, model) for api, model in jobs)) if jobs else []
@@ -4515,6 +4533,8 @@ async def test_api(timeout=20, concurrency=6):
         for model, ok, detail in rows:
             if ok:
                 lines.append(f"   ✅ {model}")
+            elif ok is None:
+                lines.append(f"   ⏭ {model} — {detail}")
             elif _model_skipped(api, model):
                 # Provayderning o'zi bermaydigan yoki hozir band model: navbatdagi
                 # so'rovlarda o'tkazib yuboriladi, shuning uchun ❌ emas ⏭.
